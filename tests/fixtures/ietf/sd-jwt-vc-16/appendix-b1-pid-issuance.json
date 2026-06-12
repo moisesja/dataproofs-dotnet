@@ -1,0 +1,381 @@
+{
+  "description": "Person Identification Data (PID) credential example, issuance: citizen input data (Figure 22, includes a PNG portrait as a data URI and non-ASCII values), the issued SD-JWT in compact serialization with 28 Disclosures (Figure 23), the SD-JWT payload (Figure 24), and all 28 Disclosures including recursive ones for address, place_of_birth and age_equal_or_over.",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Appendix B.1, Figures 22-24",
+  "input_data": {
+    "iss": "https://pid-issuer.aendgard.example",
+    "vct": "urn:example:eudi:pid:aendgard:1",
+    "given_name": "Astrid",
+    "family_name": "Holmgren",
+    "birthdate": "1978-04-10",
+    "address": {
+      "street_address": "Sjøgata 12",
+      "locality": "Viken",
+      "postal_code": "12001",
+      "country": "Kingdom of Ændgard"
+    },
+    "nationalities": [
+      "Ændgard"
+    ],
+    "sex": 2,
+    "birth_family_name": "Jensen",
+    "place_of_birth": {
+      "locality": "Ændholm",
+      "country": "Kingdom of Ændgard"
+    },
+    "age_equal_or_over": {
+      "12": true,
+      "14": true,
+      "16": true,
+      "18": true,
+      "21": true,
+      "65": false
+    },
+    "age_in_years": 47,
+    "age_birth_year": 1978,
+    "portrait": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAWAQMAAACSfKx9AAAAAXNSR0IB2cksfwAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAAZQTFRFAAAA////pdmf3QAAAFFJREFUCNdNylENgDAQA9ASBJyEWcDBLE0CTpDCpCDhPvexrBwlC/y8NG3RMunw9Ai5p6/pr/ZzlcAi4WiRN1nlXAesOgheBTSO8JDnND6Z3W+d90fCnTjjKQAAAABJRU5ErkJggg==",
+    "issuance_date": "2024-01-15",
+    "expiry_date": "2034-01-15",
+    "issuing_authority": "Kingdom of Ændgard, Ministry of Interior",
+    "issuing_country": "ÆG"
+  },
+  "issued_sd_jwt": "eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImRjK3NkLWp3dCJ9.eyJfc2QiOiBbIjJyMDA5ZHp2SHVWcldyUlhUNWtKTW1IbnFFSEhuV2UwTUxWWnc4UEFUQjgiLCAiM05kREpZUndCcWFFSXlYQ0hjbjRhNVlLSmFnUGdJUDBXa2c5QW9yZ0FLZyIsICI1Zm42SWlYalVQbUdRNG1ZSHhEZHQ2RWp2QlE3Z1J2R2NkRW5TQ0VOOEVrIiwgIjZCek1CazdGR2l2b2dibGRPNzVmM05Md2pGbGlDcWI3bm4xR2hnQ29rclEiLCAiOTBDVDhBYUJQYm41WDhuUlhrZXNqdTFpMEJxaFdxWjN3cUQ0akYtcURHayIsICI5bkV3VXJkZVo2a2NSYkVqNTJRSDNuT1Itb2llMF9wOXRNTklBRXVGdk1VIiwgIkhUaDZacjJKOGFpcXBhOTYzY0xrdUtlUURmOU8wMEZ6T0hoeWpHcFZmVGciLCAiSkNwMksyTmhILUxFNUwwajdNRTBMTngtVC1weDlRRnRhbVNzeG1DVUN4VSIsICJMb01HcmhsRG1fYlVXVVgxZ2RoUnhUc3k0ZDR6eXdHemxTVm9jUlNZMDFNIiwgIlVnVWpxNXdoelFld081OWZWTmowZjBtcXlWOFlQWFU1NHNwNGtMZWN3UWsiLCAiWTBILUUzaHpLRVVuQXlyaV94OXRUOWstajRpNjVhbzloa2VFSE5leG9zSSIsICJlekNBbWFUd0kyblBqXzFJaUIzS1pmaUVPUkxlUndoWnNNTURNWklKOGtBIiwgImkwSF8tV0FId2ZFanQ4dHFRSDc0dU9DV3ZxdVkzRnd1WC1reDRlMlJKSDgiLCAicjFHckg0NnlEVjYyc2V6SW1FanhhNmNKU1pNVDIxMmpyT1NIaWVjOXl0TSIsICJyVmozUkxzN0s4emROeTd6WHoxQ3IzOVk2cm9nOHVsTm96azRGN05DdUMwIiwgInQ1a3AwSGZ4TVMxZUhOQ0dSenJLOUdpNW9UWnJlZzVVZTlsTFFJdUx2QjQiXSwgImlzcyI6ICJodHRwczovL3BpZC1pc3N1ZXIuYWVuZGdhcmQuZXhhbXBsZSIsICJpYXQiOiAxNjgzMDAwMDAwLCAiZXhwIjogMTg4MzAwMDAwMCwgInZjdCI6ICJ1cm46ZXhhbXBsZTpldWRpOnBpZDphZW5kZ2FyZDoxIiwgIl9zZF9hbGciOiAic2hhLTI1NiIsICJjbmYiOiB7Imp3ayI6IHsia3R5IjogIkVDIiwgImNydiI6ICJQLTI1NiIsICJ4IjogIlRDQUVSMTladnUzT0hGNGo0VzR2ZlNWb0hJUDFJTGlsRGxzN3ZDZUdlbWMiLCAieSI6ICJaeGppV1diWk1RR0hWV0tWUTRoYlNJaXJzVmZ1ZWNDRTZ0NGpUOUYySFpRIn19fQ.NsDsoawVCSfu9cjYWtq47Cs8xX83PJi075Ap_79UTqik8WUim8gp6GOh3PzCIvzZt8yfMdtXYradxrHdsjUIkg~WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImdpdmVuX25hbWUiLCAiQXN0cmlkIl0~WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgImZhbWlseV9uYW1lIiwgIkhvbG1ncmVuIl0~WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgImJpcnRoZGF0ZSIsICIxOTc4LTA0LTEwIl0~WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgInN0cmVldF9hZGRyZXNzIiwgIlNqXHUwMGY4Z2F0YSAxMiJd~WyJRZ19PNjR6cUF4ZTQxMmExMDhpcm9BIiwgImxvY2FsaXR5IiwgIlZpa2VuIl0~WyJBSngtMDk1VlBycFR0TjRRTU9xUk9BIiwgInBvc3RhbF9jb2RlIiwgIjEyMDAxIl0~WyJQYzMzSk0yTGNoY1VfbEhnZ3ZfdWZRIiwgImNvdW50cnkiLCAiS2luZ2RvbSBvZiBcdTAwYzZuZGdhcmQiXQ~WyJHMDJOU3JRZmpGWFE3SW8wOXN5YWpBIiwgImFkZHJlc3MiLCB7Il9zZCI6IFsiNjBCM0N3cTA0aGxQQndzdnNmdks5SlV4dnVMRlViSlFmZ1BCYk9fSDlyTSIsICI4eWpQUjNyOGRPNUhXTG55MWdCZU1KVFBSZ2tCY2h1cTQzcUg4V2xfZjFjIiwgIk5hcmQ3NHcyTl85YW5WRW1TbGVjRUpscXgzanhiY3F4dlZ6QnNCRFgweHMiLCAiVS16RDFESS03WjB6WW94WHF5NUhTVE5VZWdhaFJDSHlkQWVzS09fc0VQYyJdfV0~WyJsa2x4RjVqTVlsR1RQVW92TU5JdkNBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIlx1MDBjNm5kZ2FyZCJdXQ~WyJuUHVvUW5rUkZxM0JJZUFtN0FuWEZBIiwgInNleCIsIDJd~WyI1YlBzMUlxdVpOYTBoa2FGenp6Wk53IiwgImJpcnRoX2ZhbWlseV9uYW1lIiwgIkplbnNlbiJd~WyI1YTJXMF9OcmxFWnpmcW1rXzdQcS13IiwgImxvY2FsaXR5IiwgIlx1MDBjNm5kaG9sbSJd~WyJ5MXNWVTV3ZGZKYWhWZGd3UGdTN1JRIiwgImNvdW50cnkiLCAiS2luZ2RvbSBvZiBcdTAwYzZuZGdhcmQiXQ~WyJIYlE0WDhzclZXM1FEeG5JSmRxeU9BIiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIkpET1lLUzB3MENvZm8tSGpaR3ZyZDdIaXJwU2ZpWURBTFU2cjhUX0xFMWciLCAib1RacjlFbXk5eG1ycGNmUTVaU1U4c3Z4ZE1ZOHk0WElGXzVqOVAxdTF5QSJdfV0~WyJDOUdTb3VqdmlKcXVFZ1lmb2pDYjFBIiwgIjEyIiwgdHJ1ZV0~WyJreDVrRjE3Vi14MEptd1V4OXZndnR3IiwgIjE0IiwgdHJ1ZV0~WyJIM28xdXN3UDc2MEZpMnllR2RWQ0VRIiwgIjE2IiwgdHJ1ZV0~WyJPQktsVFZsdkxnLUFkd3FZR2JQOFpBIiwgIjE4IiwgdHJ1ZV0~WyJNMEpiNTd0NDF1YnJrU3V5ckRUM3hBIiwgIjIxIiwgdHJ1ZV0~WyJEc210S05ncFY0ZEFIcGpyY2Fvc0F3IiwgIjY1IiwgZmFsc2Vd~WyJlSzVvNXBIZmd1cFBwbHRqMXFoQUp3IiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbIjF0RWl5elBSWU9Lc2Y3U3NZR01nUFpLc09UMWxRWlJ4SFhBMHI1X0J3a2siLCAiQ1ZLbmx5NVA5MHlKczNFd3R4UWlPdFVjemFYQ1lOQTRJY3pSYW9ock1EZyIsICJhNDQtZzJHcjhfM0FtSncyWFo4a0kxeTBRel96ZTlpT2NXMlczUkxwWEdnIiwgImdrdnkwRnV2QkJ2ajBoczJaTnd4Y3FPbGY4bXUyLWtDRTctTmIyUXh1QlUiLCAiaHJZNEhubUY1YjVKd0M5ZVR6YUZDVWNlSVFBYUlkaHJxVVhRTkNXYmZaSSIsICJ5NlNGclZGUnlxNTBJYlJKdmlUWnFxalFXejB0TGl1Q21NZU8wS3FhekdJIl19XQ~WyJqN0FEZGIwVVZiMExpMGNpUGNQMGV3IiwgImFnZV9pbl95ZWFycyIsIDQ3XQ~WyJXcHhKckZ1WDh1U2kycDRodDA5anZ3IiwgImFnZV9iaXJ0aF95ZWFyIiwgMTk3OF0~WyJhdFNtRkFDWU1iSlZLRDA1bzNKZ3RRIiwgInBvcnRyYWl0IiwgImRhdGE6aW1hZ2UvcG5nO2Jhc2U2NCxpVkJPUncwS0dnb0FBQUFOU1VoRVVnQUFBQ1FBQUFBV0FRTUFBQUNTZkt4OUFBQUFBWE5TUjBJQjJja3Nmd0FBQUFSblFVMUJBQUN4and2OFlRVUFBQUFnWTBoU1RRQUFlaVlBQUlDRUFBRDZBQUFBZ09nQUFIVXdBQURxWUFBQU9wZ0FBQmR3bkxwUlBBQUFBQVpRVEZSRkFBQUEvLy8vcGRtZjNRQUFBRkZKUkVGVUNOZE55bEVOZ0RBUUE5QVNCSnlFV2NEQkxFMENUcERDcENEaFB2ZXhyQndsQy95OE5HM1JNdW53OUFpNXA2L3ByL1p6bGNBaTRXaVJOMW5sWEFlc09naGVCVFNPOEpEbk5ENlozVytkOTBmQ25UampLUUFBQUFCSlJVNUVya0pnZ2c9PSJd~WyI0S3lSMzJvSVp0LXprV3ZGcWJVTEtnIiwgImlzc3VhbmNlX2RhdGUiLCAiMjAyNC0wMS0xNSJd~WyJjaEJDc3loeWgtSjg2SS1hd1FEaUNRIiwgImV4cGlyeV9kYXRlIiwgIjIwMzQtMDEtMTUiXQ~WyJmbE5QMW5jTXo5TGctYzlxTUl6XzlnIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIktpbmdkb20gb2YgXHUwMGM2bmRnYXJkLCBNaW5pc3RyeSBvZiBJbnRlcmlvciJd~WyJvdm9WMXJraF9BTm04NjFxVUFBMkF3IiwgImlzc3VpbmdfY291bnRyeSIsICJcdTAwYzZHIl0~",
+  "sd_jwt_payload": {
+    "_sd": [
+      "2r009dzvHuVrWrRXT5kJMmHnqEHHnWe0MLVZw8PATB8",
+      "3NdDJYRwBqaEIyXCHcn4a5YKJagPgIP0Wkg9AorgAKg",
+      "5fn6IiXjUPmGQ4mYHxDdt6EjvBQ7gRvGcdEnSCEN8Ek",
+      "6BzMBk7FGivogbldO75f3NLwjFliCqb7nn1GhgCokrQ",
+      "90CT8AaBPbn5X8nRXkesju1i0BqhWqZ3wqD4jF-qDGk",
+      "9nEwUrdeZ6kcRbEj52QH3nOR-oie0_p9tMNIAEuFvMU",
+      "HTh6Zr2J8aiqpa963cLkuKeQDf9O00FzOHhyjGpVfTg",
+      "JCp2K2NhH-LE5L0j7ME0LNx-T-px9QFtamSsxmCUCxU",
+      "LoMGrhlDm_bUWUX1gdhRxTsy4d4zywGzlSVocRSY01M",
+      "UgUjq5whzQewO59fVNj0f0mqyV8YPXU54sp4kLecwQk",
+      "Y0H-E3hzKEUnAyri_x9tT9k-j4i65ao9hkeEHNexosI",
+      "ezCAmaTwI2nPj_1IiB3KZfiEORLeRwhZsMMDMZIJ8kA",
+      "i0H_-WAHwfEjt8tqQH74uOCWvquY3FwuX-kx4e2RJH8",
+      "r1GrH46yDV62sezImEjxa6cJSZMT212jrOSHiec9ytM",
+      "rVj3RLs7K8zdNy7zXz1Cr39Y6rog8ulNozk4F7NCuC0",
+      "t5kp0HfxMS1eHNCGRzrK9Gi5oTZreg5Ue9lLQIuLvB4"
+    ],
+    "iss": "https://pid-issuer.aendgard.example",
+    "iat": 1683000000,
+    "exp": 1883000000,
+    "vct": "urn:example:eudi:pid:aendgard:1",
+    "_sd_alg": "sha-256",
+    "cnf": {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "TCAER19Zvu3OHF4j4W4vfSVoHIP1ILilDls7vCeGemc",
+        "y": "ZxjiWWbZMQGHVWKVQ4hbSIirsVfuecCE6t4jT9F2HZQ"
+      }
+    }
+  },
+  "hash_algorithm": "sha-256",
+  "disclosures": [
+    {
+      "claim_name": "given_name",
+      "disclosure_b64": "WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImdpdmVuX25hbWUiLCAiQXN0cmlkIl0",
+      "decoded": [
+        "2GLC42sKQveCfGfryNRN9w",
+        "given_name",
+        "Astrid"
+      ],
+      "sha256_digest_b64url": "3NdDJYRwBqaEIyXCHcn4a5YKJagPgIP0Wkg9AorgAKg"
+    },
+    {
+      "claim_name": "family_name",
+      "disclosure_b64": "WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgImZhbWlseV9uYW1lIiwgIkhvbG1ncmVuIl0",
+      "decoded": [
+        "eluV5Og3gSNII8EYnsxA_A",
+        "family_name",
+        "Holmgren"
+      ],
+      "sha256_digest_b64url": "JCp2K2NhH-LE5L0j7ME0LNx-T-px9QFtamSsxmCUCxU"
+    },
+    {
+      "claim_name": "birthdate",
+      "disclosure_b64": "WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgImJpcnRoZGF0ZSIsICIxOTc4LTA0LTEwIl0",
+      "decoded": [
+        "6Ij7tM-a5iVPGboS5tmvVA",
+        "birthdate",
+        "1978-04-10"
+      ],
+      "sha256_digest_b64url": "5fn6IiXjUPmGQ4mYHxDdt6EjvBQ7gRvGcdEnSCEN8Ek"
+    },
+    {
+      "claim_name": "street_address",
+      "disclosure_b64": "WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgInN0cmVldF9hZGRyZXNzIiwgIlNqXHUwMGY4Z2F0YSAxMiJd",
+      "decoded": [
+        "eI8ZWm9QnKPpNPeNenHdhQ",
+        "street_address",
+        "Sjøgata 12"
+      ],
+      "sha256_digest_b64url": "8yjPR3r8dO5HWLny1gBeMJTPRgkBchuq43qH8Wl_f1c"
+    },
+    {
+      "claim_name": "locality",
+      "disclosure_b64": "WyJRZ19PNjR6cUF4ZTQxMmExMDhpcm9BIiwgImxvY2FsaXR5IiwgIlZpa2VuIl0",
+      "decoded": [
+        "Qg_O64zqAxe412a108iroA",
+        "locality",
+        "Viken"
+      ],
+      "sha256_digest_b64url": "Nard74w2N_9anVEmSlecEJlqx3jxbcqxvVzBsBDX0xs"
+    },
+    {
+      "claim_name": "postal_code",
+      "disclosure_b64": "WyJBSngtMDk1VlBycFR0TjRRTU9xUk9BIiwgInBvc3RhbF9jb2RlIiwgIjEyMDAxIl0",
+      "decoded": [
+        "AJx-095VPrpTtN4QMOqROA",
+        "postal_code",
+        "12001"
+      ],
+      "sha256_digest_b64url": "60B3Cwq04hlPBwsvsfvK9JUxvuLFUbJQfgPBbO_H9rM"
+    },
+    {
+      "claim_name": "country",
+      "disclosure_b64": "WyJQYzMzSk0yTGNoY1VfbEhnZ3ZfdWZRIiwgImNvdW50cnkiLCAiS2luZ2RvbSBvZiBcdTAwYzZuZGdhcmQiXQ",
+      "decoded": [
+        "Pc33JM2LchcU_lHggv_ufQ",
+        "country",
+        "Kingdom of Ændgard"
+      ],
+      "sha256_digest_b64url": "U-zD1DI-7Z0zYoxXqy5HSTNUegahRCHydAesKO_sEPc"
+    },
+    {
+      "claim_name": "address",
+      "disclosure_b64": "WyJHMDJOU3JRZmpGWFE3SW8wOXN5YWpBIiwgImFkZHJlc3MiLCB7Il9zZCI6IFsiNjBCM0N3cTA0aGxQQndzdnNmdks5SlV4dnVMRlViSlFmZ1BCYk9fSDlyTSIsICI4eWpQUjNyOGRPNUhXTG55MWdCZU1KVFBSZ2tCY2h1cTQzcUg4V2xfZjFjIiwgIk5hcmQ3NHcyTl85YW5WRW1TbGVjRUpscXgzanhiY3F4dlZ6QnNCRFgweHMiLCAiVS16RDFESS03WjB6WW94WHF5NUhTVE5VZWdhaFJDSHlkQWVzS09fc0VQYyJdfV0",
+      "decoded": [
+        "G02NSrQfjFXQ7Io09syajA",
+        "address",
+        {
+          "_sd": [
+            "60B3Cwq04hlPBwsvsfvK9JUxvuLFUbJQfgPBbO_H9rM",
+            "8yjPR3r8dO5HWLny1gBeMJTPRgkBchuq43qH8Wl_f1c",
+            "Nard74w2N_9anVEmSlecEJlqx3jxbcqxvVzBsBDX0xs",
+            "U-zD1DI-7Z0zYoxXqy5HSTNUegahRCHydAesKO_sEPc"
+          ]
+        }
+      ],
+      "sha256_digest_b64url": "i0H_-WAHwfEjt8tqQH74uOCWvquY3FwuX-kx4e2RJH8"
+    },
+    {
+      "claim_name": "nationalities",
+      "disclosure_b64": "WyJsa2x4RjVqTVlsR1RQVW92TU5JdkNBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIlx1MDBjNm5kZ2FyZCJdXQ",
+      "decoded": [
+        "lklxF5jMYlGTPUovMNIvCA",
+        "nationalities",
+        [
+          "Ændgard"
+        ]
+      ],
+      "sha256_digest_b64url": "HTh6Zr2J8aiqpa963cLkuKeQDf9O00FzOHhyjGpVfTg"
+    },
+    {
+      "claim_name": "sex",
+      "disclosure_b64": "WyJuUHVvUW5rUkZxM0JJZUFtN0FuWEZBIiwgInNleCIsIDJd",
+      "decoded": [
+        "nPuoQnkRFq3BIeAm7AnXFA",
+        "sex",
+        2
+      ],
+      "sha256_digest_b64url": "90CT8AaBPbn5X8nRXkesju1i0BqhWqZ3wqD4jF-qDGk"
+    },
+    {
+      "claim_name": "birth_family_name",
+      "disclosure_b64": "WyI1YlBzMUlxdVpOYTBoa2FGenp6Wk53IiwgImJpcnRoX2ZhbWlseV9uYW1lIiwgIkplbnNlbiJd",
+      "decoded": [
+        "5bPs1IquZNa0hkaFzzzZNw",
+        "birth_family_name",
+        "Jensen"
+      ],
+      "sha256_digest_b64url": "t5kp0HfxMS1eHNCGRzrK9Gi5oTZreg5Ue9lLQIuLvB4"
+    },
+    {
+      "claim_name": "locality",
+      "disclosure_b64": "WyI1YTJXMF9OcmxFWnpmcW1rXzdQcS13IiwgImxvY2FsaXR5IiwgIlx1MDBjNm5kaG9sbSJd",
+      "decoded": [
+        "5a2W0_NrlEZzfqmk_7Pq-w",
+        "locality",
+        "Ændholm"
+      ],
+      "sha256_digest_b64url": "JDOYKS0w0Cofo-HjZGvrd7HirpSfiYDALU6r8T_LE1g"
+    },
+    {
+      "claim_name": "country",
+      "disclosure_b64": "WyJ5MXNWVTV3ZGZKYWhWZGd3UGdTN1JRIiwgImNvdW50cnkiLCAiS2luZ2RvbSBvZiBcdTAwYzZuZGdhcmQiXQ",
+      "decoded": [
+        "y1sVU5wdfJahVdgwPgS7RQ",
+        "country",
+        "Kingdom of Ændgard"
+      ],
+      "sha256_digest_b64url": "oTZr9Emy9xmrpcfQ5ZSU8svxdMY8y4XIF_5j9P1u1yA"
+    },
+    {
+      "claim_name": "place_of_birth",
+      "disclosure_b64": "WyJIYlE0WDhzclZXM1FEeG5JSmRxeU9BIiwgInBsYWNlX29mX2JpcnRoIiwgeyJfc2QiOiBbIkpET1lLUzB3MENvZm8tSGpaR3ZyZDdIaXJwU2ZpWURBTFU2cjhUX0xFMWciLCAib1RacjlFbXk5eG1ycGNmUTVaU1U4c3Z4ZE1ZOHk0WElGXzVqOVAxdTF5QSJdfV0",
+      "decoded": [
+        "HbQ4X8srVW3QDxnIJdqyOA",
+        "place_of_birth",
+        {
+          "_sd": [
+            "JDOYKS0w0Cofo-HjZGvrd7HirpSfiYDALU6r8T_LE1g",
+            "oTZr9Emy9xmrpcfQ5ZSU8svxdMY8y4XIF_5j9P1u1yA"
+          ]
+        }
+      ],
+      "sha256_digest_b64url": "r1GrH46yDV62sezImEjxa6cJSZMT212jrOSHiec9ytM"
+    },
+    {
+      "claim_name": "12",
+      "disclosure_b64": "WyJDOUdTb3VqdmlKcXVFZ1lmb2pDYjFBIiwgIjEyIiwgdHJ1ZV0",
+      "decoded": [
+        "C9GSoujviJquEgYfojCb1A",
+        "12",
+        true
+      ],
+      "sha256_digest_b64url": "gkvy0FuvBBvj0hs2ZNwxcqOlf8mu2-kCE7-Nb2QxuBU"
+    },
+    {
+      "claim_name": "14",
+      "disclosure_b64": "WyJreDVrRjE3Vi14MEptd1V4OXZndnR3IiwgIjE0IiwgdHJ1ZV0",
+      "decoded": [
+        "kx5kF17V-x0JmwUx9vgvtw",
+        "14",
+        true
+      ],
+      "sha256_digest_b64url": "y6SFrVFRyq50IbRJviTZqqjQWz0tLiuCmMeO0KqazGI"
+    },
+    {
+      "claim_name": "16",
+      "disclosure_b64": "WyJIM28xdXN3UDc2MEZpMnllR2RWQ0VRIiwgIjE2IiwgdHJ1ZV0",
+      "decoded": [
+        "H3o1uswP760Fi2yeGdVCEQ",
+        "16",
+        true
+      ],
+      "sha256_digest_b64url": "hrY4HnmF5b5JwC9eTzaFCUceIQAaIdhrqUXQNCWbfZI"
+    },
+    {
+      "claim_name": "18",
+      "disclosure_b64": "WyJPQktsVFZsdkxnLUFkd3FZR2JQOFpBIiwgIjE4IiwgdHJ1ZV0",
+      "decoded": [
+        "OBKlTVlvLg-AdwqYGbP8ZA",
+        "18",
+        true
+      ],
+      "sha256_digest_b64url": "CVKnly5P90yJs3EwtxQiOtUczaXCYNA4IczRaohrMDg"
+    },
+    {
+      "claim_name": "21",
+      "disclosure_b64": "WyJNMEpiNTd0NDF1YnJrU3V5ckRUM3hBIiwgIjIxIiwgdHJ1ZV0",
+      "decoded": [
+        "M0Jb57t41ubrkSuyrDT3xA",
+        "21",
+        true
+      ],
+      "sha256_digest_b64url": "1tEiyzPRYOKsf7SsYGMgPZKsOT1lQZRxHXA0r5_Bwkk"
+    },
+    {
+      "claim_name": "65",
+      "disclosure_b64": "WyJEc210S05ncFY0ZEFIcGpyY2Fvc0F3IiwgIjY1IiwgZmFsc2Vd",
+      "decoded": [
+        "DsmtKNgpV4dAHpjrcaosAw",
+        "65",
+        false
+      ],
+      "sha256_digest_b64url": "a44-g2Gr8_3AmJw2XZ8kI1y0Qz_ze9iOcW2W3RLpXGg"
+    },
+    {
+      "claim_name": "age_equal_or_over",
+      "disclosure_b64": "WyJlSzVvNXBIZmd1cFBwbHRqMXFoQUp3IiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbIjF0RWl5elBSWU9Lc2Y3U3NZR01nUFpLc09UMWxRWlJ4SFhBMHI1X0J3a2siLCAiQ1ZLbmx5NVA5MHlKczNFd3R4UWlPdFVjemFYQ1lOQTRJY3pSYW9ock1EZyIsICJhNDQtZzJHcjhfM0FtSncyWFo4a0kxeTBRel96ZTlpT2NXMlczUkxwWEdnIiwgImdrdnkwRnV2QkJ2ajBoczJaTnd4Y3FPbGY4bXUyLWtDRTctTmIyUXh1QlUiLCAiaHJZNEhubUY1YjVKd0M5ZVR6YUZDVWNlSVFBYUlkaHJxVVhRTkNXYmZaSSIsICJ5NlNGclZGUnlxNTBJYlJKdmlUWnFxalFXejB0TGl1Q21NZU8wS3FhekdJIl19XQ",
+      "decoded": [
+        "eK5o5pHfgupPpltj1qhAJw",
+        "age_equal_or_over",
+        {
+          "_sd": [
+            "1tEiyzPRYOKsf7SsYGMgPZKsOT1lQZRxHXA0r5_Bwkk",
+            "CVKnly5P90yJs3EwtxQiOtUczaXCYNA4IczRaohrMDg",
+            "a44-g2Gr8_3AmJw2XZ8kI1y0Qz_ze9iOcW2W3RLpXGg",
+            "gkvy0FuvBBvj0hs2ZNwxcqOlf8mu2-kCE7-Nb2QxuBU",
+            "hrY4HnmF5b5JwC9eTzaFCUceIQAaIdhrqUXQNCWbfZI",
+            "y6SFrVFRyq50IbRJviTZqqjQWz0tLiuCmMeO0KqazGI"
+          ]
+        }
+      ],
+      "sha256_digest_b64url": "2r009dzvHuVrWrRXT5kJMmHnqEHHnWe0MLVZw8PATB8"
+    },
+    {
+      "claim_name": "age_in_years",
+      "disclosure_b64": "WyJqN0FEZGIwVVZiMExpMGNpUGNQMGV3IiwgImFnZV9pbl95ZWFycyIsIDQ3XQ",
+      "decoded": [
+        "j7ADdb0UVb0Li0ciPcP0ew",
+        "age_in_years",
+        47
+      ],
+      "sha256_digest_b64url": "LoMGrhlDm_bUWUX1gdhRxTsy4d4zywGzlSVocRSY01M"
+    },
+    {
+      "claim_name": "age_birth_year",
+      "disclosure_b64": "WyJXcHhKckZ1WDh1U2kycDRodDA5anZ3IiwgImFnZV9iaXJ0aF95ZWFyIiwgMTk3OF0",
+      "decoded": [
+        "WpxJrFuX8uSi2p4ht09jvw",
+        "age_birth_year",
+        1978
+      ],
+      "sha256_digest_b64url": "rVj3RLs7K8zdNy7zXz1Cr39Y6rog8ulNozk4F7NCuC0"
+    },
+    {
+      "claim_name": "portrait",
+      "disclosure_b64": "WyJhdFNtRkFDWU1iSlZLRDA1bzNKZ3RRIiwgInBvcnRyYWl0IiwgImRhdGE6aW1hZ2UvcG5nO2Jhc2U2NCxpVkJPUncwS0dnb0FBQUFOU1VoRVVnQUFBQ1FBQUFBV0FRTUFBQUNTZkt4OUFBQUFBWE5TUjBJQjJja3Nmd0FBQUFSblFVMUJBQUN4and2OFlRVUFBQUFnWTBoU1RRQUFlaVlBQUlDRUFBRDZBQUFBZ09nQUFIVXdBQURxWUFBQU9wZ0FBQmR3bkxwUlBBQUFBQVpRVEZSRkFBQUEvLy8vcGRtZjNRQUFBRkZKUkVGVUNOZE55bEVOZ0RBUUE5QVNCSnlFV2NEQkxFMENUcERDcENEaFB2ZXhyQndsQy95OE5HM1JNdW53OUFpNXA2L3ByL1p6bGNBaTRXaVJOMW5sWEFlc09naGVCVFNPOEpEbk5ENlozVytkOTBmQ25UampLUUFBQUFCSlJVNUVya0pnZ2c9PSJd",
+      "decoded": [
+        "atSmFACYMbJVKD05o3JgtQ",
+        "portrait",
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAWAQMAAACSfKx9AAAAAXNSR0IB2cksfwAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAAZQTFRFAAAA////pdmf3QAAAFFJREFUCNdNylENgDAQA9ASBJyEWcDBLE0CTpDCpCDhPvexrBwlC/y8NG3RMunw9Ai5p6/pr/ZzlcAi4WiRN1nlXAesOgheBTSO8JDnND6Z3W+d90fCnTjjKQAAAABJRU5ErkJggg=="
+      ],
+      "sha256_digest_b64url": "9nEwUrdeZ6kcRbEj52QH3nOR-oie0_p9tMNIAEuFvMU"
+    },
+    {
+      "claim_name": "issuance_date",
+      "disclosure_b64": "WyI0S3lSMzJvSVp0LXprV3ZGcWJVTEtnIiwgImlzc3VhbmNlX2RhdGUiLCAiMjAyNC0wMS0xNSJd",
+      "decoded": [
+        "4KyR32oIZt-zkWvFqbULKg",
+        "issuance_date",
+        "2024-01-15"
+      ],
+      "sha256_digest_b64url": "ezCAmaTwI2nPj_1IiB3KZfiEORLeRwhZsMMDMZIJ8kA"
+    },
+    {
+      "claim_name": "expiry_date",
+      "disclosure_b64": "WyJjaEJDc3loeWgtSjg2SS1hd1FEaUNRIiwgImV4cGlyeV9kYXRlIiwgIjIwMzQtMDEtMTUiXQ",
+      "decoded": [
+        "chBCsyhyh-J86I-awQDiCQ",
+        "expiry_date",
+        "2034-01-15"
+      ],
+      "sha256_digest_b64url": "Y0H-E3hzKEUnAyri_x9tT9k-j4i65ao9hkeEHNexosI"
+    },
+    {
+      "claim_name": "issuing_authority",
+      "disclosure_b64": "WyJmbE5QMW5jTXo5TGctYzlxTUl6XzlnIiwgImlzc3VpbmdfYXV0aG9yaXR5IiwgIktpbmdkb20gb2YgXHUwMGM2bmRnYXJkLCBNaW5pc3RyeSBvZiBJbnRlcmlvciJd",
+      "decoded": [
+        "flNP1ncMz9Lg-c9qMIz_9g",
+        "issuing_authority",
+        "Kingdom of Ændgard, Ministry of Interior"
+      ],
+      "sha256_digest_b64url": "6BzMBk7FGivogbldO75f3NLwjFliCqb7nn1GhgCokrQ"
+    },
+    {
+      "claim_name": "issuing_country",
+      "disclosure_b64": "WyJvdm9WMXJraF9BTm04NjFxVUFBMkF3IiwgImlzc3VpbmdfY291bnRyeSIsICJcdTAwYzZHIl0",
+      "decoded": [
+        "ovoV1rkh_ANm861qUAA2Aw",
+        "issuing_country",
+        "ÆG"
+      ],
+      "sha256_digest_b64url": "UgUjq5whzQewO59fVNj0f0mqyV8YPXU54sp4kLecwQk"
+    }
+  ]
+}

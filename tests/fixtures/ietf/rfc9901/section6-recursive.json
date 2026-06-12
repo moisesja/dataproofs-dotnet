@@ -1,0 +1,82 @@
+{
+  "description": "SD-JWT with recursive Disclosures: address itself is selectively disclosable and its Disclosure contains an _sd array referencing the four sub-claim Disclosures (street_address, locality, region, country).",
+  "source_section": "RFC 9901 Section 6.3 (input claims set from Section 6)",
+  "input_jwt_claims_set": {
+    "sub": "6c5c0a49-b589-431d-bae7-219122a9ec2c",
+    "address": {
+      "street_address": "Schulstr. 12",
+      "locality": "Schulpforta",
+      "region": "Sachsen-Anhalt",
+      "country": "DE"
+    }
+  },
+  "sd_jwt_payload": {
+    "_sd": [
+      "HvrKX6fPV0v9K_yCVFBiLFHsMaxcD_114Em6VT8x1lg"
+    ],
+    "iss": "https://issuer.example.com",
+    "iat": 1683000000,
+    "exp": 1883000000,
+    "sub": "6c5c0a49-b589-431d-bae7-219122a9ec2c",
+    "_sd_alg": "sha-256"
+  },
+  "disclosures": [
+    {
+      "claim_name": "street_address",
+      "disclosure_b64": "WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgInN0cmVldF9hZGRyZXNzIiwgIlNjaHVsc3RyLiAxMiJd",
+      "decoded": [
+        "2GLC42sKQveCfGfryNRN9w",
+        "street_address",
+        "Schulstr. 12"
+      ],
+      "sha256_digest_b64url": "9gjVuXtdFROCgRrtNcGUXmF65rdezi_6Er_j76kmYyM"
+    },
+    {
+      "claim_name": "locality",
+      "disclosure_b64": "WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgImxvY2FsaXR5IiwgIlNjaHVscGZvcnRhIl0",
+      "decoded": [
+        "eluV5Og3gSNII8EYnsxA_A",
+        "locality",
+        "Schulpforta"
+      ],
+      "sha256_digest_b64url": "6vh9bq-zS4GKM_7GpggVbYzzu6oOGXrmNVGPHP75Ud0"
+    },
+    {
+      "claim_name": "region",
+      "disclosure_b64": "WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgInJlZ2lvbiIsICJTYWNoc2VuLUFuaGFsdCJd",
+      "decoded": [
+        "6Ij7tM-a5iVPGboS5tmvVA",
+        "region",
+        "Sachsen-Anhalt"
+      ],
+      "sha256_digest_b64url": "KURDPh4ZC19-3tiz-Df39V8eidy1oV3a3H1Da2N0g88"
+    },
+    {
+      "claim_name": "country",
+      "disclosure_b64": "WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgImNvdW50cnkiLCAiREUiXQ",
+      "decoded": [
+        "eI8ZWm9QnKPpNPeNenHdhQ",
+        "country",
+        "DE"
+      ],
+      "sha256_digest_b64url": "WN9r9dCBJ8HTCsS2jKASxTjEyW5m5x65_Z_2ro2jfXM"
+    },
+    {
+      "claim_name": "address",
+      "disclosure_b64": "WyJRZ19PNjR6cUF4ZTQxMmExMDhpcm9BIiwgImFkZHJlc3MiLCB7Il9zZCI6IFsiNnZoOWJxLXpTNEdLTV83R3BnZ1ZiWXp6dTZvT0dYcm1OVkdQSFA3NVVkMCIsICI5Z2pWdVh0ZEZST0NnUnJ0TmNHVVhtRjY1cmRlemlfNkVyX2o3NmttWXlNIiwgIktVUkRQaDRaQzE5LTN0aXotRGYzOVY4ZWlkeTFvVjNhM0gxRGEyTjBnODgiLCAiV045cjlkQ0JKOEhUQ3NTMmpLQVN4VGpFeVc1bTV4NjVfWl8ycm8yamZYTSJdfV0",
+      "decoded": [
+        "Qg_O64zqAxe412a108iroA",
+        "address",
+        {
+          "_sd": [
+            "6vh9bq-zS4GKM_7GpggVbYzzu6oOGXrmNVGPHP75Ud0",
+            "9gjVuXtdFROCgRrtNcGUXmF65rdezi_6Er_j76kmYyM",
+            "KURDPh4ZC19-3tiz-Df39V8eidy1oV3a3H1Da2N0g88",
+            "WN9r9dCBJ8HTCsS2jKASxTjEyW5m5x65_Z_2ro2jfXM"
+          ]
+        }
+      ],
+      "sha256_digest_b64url": "HvrKX6fPV0v9K_yCVFBiLFHsMaxcD_114Em6VT8x1lg"
+    }
+  ]
+}

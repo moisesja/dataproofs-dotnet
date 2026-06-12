@@ -1,0 +1,57 @@
+{
+  "description": "Main worked example (Section 5.1): the input JWT Claims Set about the user, and the SD-JWT payload constructed from it (8 _sd digests, 2 selectively disclosable nationalities array elements, cnf key for Key Binding).",
+  "source_section": "RFC 9901 Section 5.1",
+  "input_jwt_claims_set": {
+    "sub": "user_42",
+    "given_name": "John",
+    "family_name": "Doe",
+    "email": "johndoe@example.com",
+    "phone_number": "+1-202-555-0101",
+    "phone_number_verified": true,
+    "address": {
+      "street_address": "123 Main St",
+      "locality": "Anytown",
+      "region": "Anystate",
+      "country": "US"
+    },
+    "birthdate": "1940-01-01",
+    "updated_at": 1570000000,
+    "nationalities": [
+      "US",
+      "DE"
+    ]
+  },
+  "sd_jwt_payload": {
+    "_sd": [
+      "CrQe7S5kqBAHt-nMYXgc6bdt2SH5aTY1sU_M-PgkjPI",
+      "JzYjH4svliH0R3PyEMfeZu6Jt69u5qehZo7F7EPYlSE",
+      "PorFbpKuVu6xymJagvkFsFXAbRoc2JGlAUA2BA4o7cI",
+      "TGf4oLbgwd5JQaHyKVQZU9UdGE0w5rtDsrZzfUaomLo",
+      "XQ_3kPKt1XyX7KANkqVR6yZ2Va5NrPIvPYbyMvRKBMM",
+      "XzFrzwscM6Gn6CJDc6vVK8BkMnfG8vOSKfpPIZdAfdE",
+      "gbOsI4Edq2x2Kw-w5wPEzakob9hV1cRD0ATN3oQL9JM",
+      "jsu9yVulwQQlhFlM_3JlzMaSFzglhQG0DpfayQwLUK4"
+    ],
+    "iss": "https://issuer.example.com",
+    "iat": 1683000000,
+    "exp": 1883000000,
+    "sub": "user_42",
+    "nationalities": [
+      {
+        "...": "pFndjkZ_VCzmyTa6UjlZo3dh-ko8aIKQc9DlGzhaVYo"
+      },
+      {
+        "...": "7Cf6JkPudry3lcbwHgeZ8khAv1U1OSlerP0VkBJrWZ0"
+      }
+    ],
+    "_sd_alg": "sha-256",
+    "cnf": {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "TCAER19Zvu3OHF4j4W4vfSVoHIP1ILilDls7vCeGemc",
+        "y": "ZxjiWWbZMQGHVWKVQ4hbSIirsVfuecCE6t4jT9F2HZQ"
+      }
+    }
+  }
+}

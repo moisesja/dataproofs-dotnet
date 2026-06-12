@@ -1,0 +1,43 @@
+{
+  "description": "Disclosure format worked examples: object-property disclosure for family_name (with three equivalent alternative JSON encodings), its SHA-256 digest, an array-element disclosure for nationality 'FR' with its digest, and the example payload fragments embedding those digests.",
+  "source_section": "RFC 9901 Sections 4.2.1, 4.2.2, 4.2.3, 4.2.4.1, 4.2.4.2",
+  "object_property_disclosure": {
+    "claim_name": "family_name",
+    "disclosure_b64": "WyJfMjZiYzRMVC1hYzZxMktJNmNCVzVlcyIsICJmYW1pbHlfbmFtZSIsICJNw7ZiaXVzIl0",
+    "decoded": [
+      "_26bc4LT-ac6q2KI6cBW5es",
+      "family_name",
+      "Möbius"
+    ],
+    "sha256_digest_b64url": "X9yH0Ajrdm1Oij4tWso9UzzKJvPoDxwmuEcO3XAdRC0",
+    "equivalent_alternative_encodings": [
+      "WyJfMjZiYzRMVC1hYzZxMktJNmNCVzVlcyIsICJmYW1pbHlfbmFtZSIsICJNXHUwMGY2Yml1cyJd",
+      "WyJfMjZiYzRMVC1hYzZxMktJNmNCVzVlcyIsImZhbWlseV9uYW1lIiwiTcO2Yml1cyJd",
+      "WwoiXzI2YmM0TFQtYWM2cTJLSTZjQlc1ZXMiLAoiZmFtaWx5X25hbWUiLAoiTcO2Yml1cyIKXQ"
+    ],
+    "embedding_example_payload": {
+      "given_name": "Alice",
+      "_sd": [
+        "X9yH0Ajrdm1Oij4tWso9UzzKJvPoDxwmuEcO3XAdRC0"
+      ]
+    }
+  },
+  "array_element_disclosure": {
+    "claim_name": null,
+    "disclosure_b64": "WyJsa2x4RjVqTVlsR1RQVW92TU5JdkNBIiwgIkZSIl0",
+    "decoded": [
+      "lklxF5jMYlGTPUovMNIvCA",
+      "FR"
+    ],
+    "sha256_digest_b64url": "w0I8EKcdCtUPkGCNUrfwVp2xEgNjtoIDlOxc9-PlOhs",
+    "embedding_example_payload": {
+      "nationalities": [
+        "DE",
+        {
+          "...": "w0I8EKcdCtUPkGCNUrfwVp2xEgNjtoIDlOxc9-PlOhs"
+        },
+        "US"
+      ]
+    }
+  }
+}

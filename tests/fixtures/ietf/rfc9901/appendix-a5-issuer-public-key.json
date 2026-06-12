@@ -1,0 +1,10 @@
+{
+  "description": "The Elliptic Curve public key (JWK) that validates the Issuer signatures of all examples in RFC 9901. The Holder's KB-JWT key is the cnf claim of each example.",
+  "source_section": "RFC 9901 Appendix A.5",
+  "issuer_public_key_jwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "b28d4MwZMjw8-00CG4xfnn9SLMVMM19SlqZpVb_uNtQ",
+    "y": "Xv5zWwuoaTgdS6hV43yI6gBwTnjukmFQQnJ_kCxzqk8"
+  }
+}

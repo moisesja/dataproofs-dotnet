@@ -1,0 +1,15 @@
+{
+  "description": "Type Metadata example of Section 4.1: the vct and vct#integrity claims of the SD-JWT VC payload excerpt (Figure 15; the figure elides the remaining claims with '...'), and the Type Metadata document retrieved from the vct URL (Figure 16). The vct#integrity hash binds the payload to that document.",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Section 4.1, Figures 15 and 16",
+  "sd_jwt_vc_payload_excerpt": {
+    "vct": "https://betelgeuse.example.com/education_credential/v42",
+    "vct#integrity": "sha256-1odmyxoVQCuQx8SAym8rWHXba41fM/Iv/V1H8VHGN00="
+  },
+  "type_metadata_document": {
+    "vct": "https://betelgeuse.example.com/education_credential/v42",
+    "name": "Betelgeuse Education Credential - Version 42",
+    "description": "This is our education credential. Don't panic.",
+    "extends": "https://galaxy.example.com/galactic-education-credential/v2",
+    "extends#integrity": "sha256-ilOUJsTultOwLfz7QUcFALaRa3BP/jelX1ds04kB9yU="
+  }
+}

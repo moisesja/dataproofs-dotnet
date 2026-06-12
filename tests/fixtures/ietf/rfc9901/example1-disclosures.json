@@ -1,0 +1,110 @@
+{
+  "description": "All 10 Disclosures of the main worked example: 8 object properties (given_name, family_name, email, phone_number, phone_number_verified, address, birthdate, updated_at) and 2 array elements of nationalities (US, DE). claim_name null denotes an array-element disclosure.",
+  "source_section": "RFC 9901 Section 5.1",
+  "hash_algorithm": "sha-256",
+  "disclosures": [
+    {
+      "claim_name": "given_name",
+      "disclosure_b64": "WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImdpdmVuX25hbWUiLCAiSm9obiJd",
+      "decoded": [
+        "2GLC42sKQveCfGfryNRN9w",
+        "given_name",
+        "John"
+      ],
+      "sha256_digest_b64url": "jsu9yVulwQQlhFlM_3JlzMaSFzglhQG0DpfayQwLUK4"
+    },
+    {
+      "claim_name": "family_name",
+      "disclosure_b64": "WyJlbHVWNU9nM2dTTklJOEVZbnN4QV9BIiwgImZhbWlseV9uYW1lIiwgIkRvZSJd",
+      "decoded": [
+        "eluV5Og3gSNII8EYnsxA_A",
+        "family_name",
+        "Doe"
+      ],
+      "sha256_digest_b64url": "TGf4oLbgwd5JQaHyKVQZU9UdGE0w5rtDsrZzfUaomLo"
+    },
+    {
+      "claim_name": "email",
+      "disclosure_b64": "WyI2SWo3dE0tYTVpVlBHYm9TNXRtdlZBIiwgImVtYWlsIiwgImpvaG5kb2VAZXhhbXBsZS5jb20iXQ",
+      "decoded": [
+        "6Ij7tM-a5iVPGboS5tmvVA",
+        "email",
+        "johndoe@example.com"
+      ],
+      "sha256_digest_b64url": "JzYjH4svliH0R3PyEMfeZu6Jt69u5qehZo7F7EPYlSE"
+    },
+    {
+      "claim_name": "phone_number",
+      "disclosure_b64": "WyJlSThaV205UW5LUHBOUGVOZW5IZGhRIiwgInBob25lX251bWJlciIsICIrMS0yMDItNTU1LTAxMDEiXQ",
+      "decoded": [
+        "eI8ZWm9QnKPpNPeNenHdhQ",
+        "phone_number",
+        "+1-202-555-0101"
+      ],
+      "sha256_digest_b64url": "PorFbpKuVu6xymJagvkFsFXAbRoc2JGlAUA2BA4o7cI"
+    },
+    {
+      "claim_name": "phone_number_verified",
+      "disclosure_b64": "WyJRZ19PNjR6cUF4ZTQxMmExMDhpcm9BIiwgInBob25lX251bWJlcl92ZXJpZmllZCIsIHRydWVd",
+      "decoded": [
+        "Qg_O64zqAxe412a108iroA",
+        "phone_number_verified",
+        true
+      ],
+      "sha256_digest_b64url": "XQ_3kPKt1XyX7KANkqVR6yZ2Va5NrPIvPYbyMvRKBMM"
+    },
+    {
+      "claim_name": "address",
+      "disclosure_b64": "WyJBSngtMDk1VlBycFR0TjRRTU9xUk9BIiwgImFkZHJlc3MiLCB7InN0cmVldF9hZGRyZXNzIjogIjEyMyBNYWluIFN0IiwgImxvY2FsaXR5IjogIkFueXRvd24iLCAicmVnaW9uIjogIkFueXN0YXRlIiwgImNvdW50cnkiOiAiVVMifV0",
+      "decoded": [
+        "AJx-095VPrpTtN4QMOqROA",
+        "address",
+        {
+          "street_address": "123 Main St",
+          "locality": "Anytown",
+          "region": "Anystate",
+          "country": "US"
+        }
+      ],
+      "sha256_digest_b64url": "XzFrzwscM6Gn6CJDc6vVK8BkMnfG8vOSKfpPIZdAfdE"
+    },
+    {
+      "claim_name": "birthdate",
+      "disclosure_b64": "WyJQYzMzSk0yTGNoY1VfbEhnZ3ZfdWZRIiwgImJpcnRoZGF0ZSIsICIxOTQwLTAxLTAxIl0",
+      "decoded": [
+        "Pc33JM2LchcU_lHggv_ufQ",
+        "birthdate",
+        "1940-01-01"
+      ],
+      "sha256_digest_b64url": "gbOsI4Edq2x2Kw-w5wPEzakob9hV1cRD0ATN3oQL9JM"
+    },
+    {
+      "claim_name": "updated_at",
+      "disclosure_b64": "WyJHMDJOU3JRZmpGWFE3SW8wOXN5YWpBIiwgInVwZGF0ZWRfYXQiLCAxNTcwMDAwMDAwXQ",
+      "decoded": [
+        "G02NSrQfjFXQ7Io09syajA",
+        "updated_at",
+        1570000000
+      ],
+      "sha256_digest_b64url": "CrQe7S5kqBAHt-nMYXgc6bdt2SH5aTY1sU_M-PgkjPI"
+    },
+    {
+      "claim_name": null,
+      "disclosure_b64": "WyJsa2x4RjVqTVlsR1RQVW92TU5JdkNBIiwgIlVTIl0",
+      "decoded": [
+        "lklxF5jMYlGTPUovMNIvCA",
+        "US"
+      ],
+      "sha256_digest_b64url": "pFndjkZ_VCzmyTa6UjlZo3dh-ko8aIKQc9DlGzhaVYo"
+    },
+    {
+      "claim_name": null,
+      "disclosure_b64": "WyJuUHVvUW5rUkZxM0JJZUFtN0FuWEZBIiwgIkRFIl0",
+      "decoded": [
+        "nPuoQnkRFq3BIeAm7AnXFA",
+        "DE"
+      ],
+      "sha256_digest_b64url": "7Cf6JkPudry3lcbwHgeZ8khAv1U1OSlerP0VkBJrWZ0"
+    }
+  ]
+}

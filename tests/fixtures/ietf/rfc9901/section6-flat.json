@@ -1,0 +1,40 @@
+{
+  "description": "Flat SD-JWT: the entire address claim is a single Disclosure that can only be disclosed in full. Includes shared input claims set, SD-JWT payload and the one Disclosure.",
+  "source_section": "RFC 9901 Section 6.1 (input claims set from Section 6)",
+  "input_jwt_claims_set": {
+    "sub": "6c5c0a49-b589-431d-bae7-219122a9ec2c",
+    "address": {
+      "street_address": "Schulstr. 12",
+      "locality": "Schulpforta",
+      "region": "Sachsen-Anhalt",
+      "country": "DE"
+    }
+  },
+  "sd_jwt_payload": {
+    "_sd": [
+      "fOBUSQvo46yQO-wRwXBcGqvnbKIueISEL961_Sjd4do"
+    ],
+    "iss": "https://issuer.example.com",
+    "iat": 1683000000,
+    "exp": 1883000000,
+    "sub": "6c5c0a49-b589-431d-bae7-219122a9ec2c",
+    "_sd_alg": "sha-256"
+  },
+  "disclosures": [
+    {
+      "claim_name": "address",
+      "disclosure_b64": "WyIyR0xDNDJzS1F2ZUNmR2ZyeU5STjl3IiwgImFkZHJlc3MiLCB7InN0cmVldF9hZGRyZXNzIjogIlNjaHVsc3RyLiAxMiIsICJsb2NhbGl0eSI6ICJTY2h1bHBmb3J0YSIsICJyZWdpb24iOiAiU2FjaHNlbi1BbmhhbHQiLCAiY291bnRyeSI6ICJERSJ9XQ",
+      "decoded": [
+        "2GLC42sKQveCfGfryNRN9w",
+        "address",
+        {
+          "street_address": "Schulstr. 12",
+          "locality": "Schulpforta",
+          "region": "Sachsen-Anhalt",
+          "country": "DE"
+        }
+      ],
+      "sha256_digest_b64url": "fOBUSQvo46yQO-wRwXBcGqvnbKIueISEL961_Sjd4do"
+    }
+  ]
+}

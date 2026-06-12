@@ -1,0 +1,17 @@
+{
+  "description": "Registered JWT claims usage rules for the SD-JWT component of an SD-JWT VC: claims that MUST NOT be selectively disclosed (never in Disclosures) versus claims that MAY be selectively disclosed, with their requirement levels.",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Section 2.2.2.2",
+  "must_not_be_selectively_disclosed": {
+    "iss": "OPTIONAL",
+    "nbf": "OPTIONAL",
+    "exp": "OPTIONAL",
+    "cnf": "OPTIONAL unless cryptographic Key Binding is to be supported, in which case it is REQUIRED",
+    "vct": "REQUIRED",
+    "vct#integrity": "OPTIONAL",
+    "status": "OPTIONAL"
+  },
+  "may_be_selectively_disclosed": {
+    "sub": "OPTIONAL",
+    "iat": "OPTIONAL"
+  }
+}

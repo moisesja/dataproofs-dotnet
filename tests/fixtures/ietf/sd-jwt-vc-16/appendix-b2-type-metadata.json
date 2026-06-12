@@ -1,0 +1,218 @@
+{
+  "description": "Full Type Metadata example: an SD-JWT VC payload using vct https://betelgeuse.example.com/education_credential/v42 with vct#integrity (Figure 28), and the complete Type Metadata document with extends, display (simple + svg_templates renderings, en-US/de-DE locales) and claim metadata including claim paths with null array selectors and sd/mandatory flags (Figure 29).",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Appendix B.2, Figures 28 and 29",
+  "sd_jwt_vc_payload": {
+    "vct": "https://betelgeuse.example.com/education_credential/v42",
+    "vct#integrity": "sha256-1odmyxoVQCuQx8SAym8rWHXba41fM/Iv/V1H8VHGN00=",
+    "name": "Zaphod Beeblebrox",
+    "address": {
+      "street_address": "42 Galaxy Way",
+      "city": "Betelgeuse City",
+      "postal_code": "12345",
+      "country": "Betelgeuse"
+    },
+    "degrees": [
+      {
+        "field_of_study": "Intergalactic Politics",
+        "date_awarded": "2020-05-15"
+      },
+      {
+        "field_of_study": "Space Navigation",
+        "date_awarded": "2018-06-20"
+      },
+      {
+        "field_of_study": "Quantum Mechanics",
+        "date_awarded": "2016-07-25"
+      }
+    ]
+  },
+  "type_metadata_document": {
+    "vct": "https://betelgeuse.example.com/education_credential/v42",
+    "name": "Betelgeuse Education Credential - First Version",
+    "description": "This is our first version of the education credential. Don't panic.",
+    "extends": "https://galaxy.example.com/galactic-education-credential/v2",
+    "extends#integrity": "sha256-ilOUJsTultOwLfz7QUcFALaRa3BP/jelX1ds04kB9yU=",
+    "display": [
+      {
+        "locale": "en-US",
+        "name": "Betelgeuse Education Credential",
+        "description": "An education credential for all carbon-based life forms on Betelgeuse.",
+        "rendering": {
+          "simple": {
+            "logo": {
+              "uri": "https://betelgeuse.example.com/public/education-logo.png",
+              "uri#integrity": "sha256-LmXfh+9cLlJNXN+TsMk+PmKjZ5t0WRL5ca/xGgX3c1U=",
+              "alt_text": "Betelgeuse Ministry of Education logo"
+            },
+            "background_image": {
+              "uri": "https://betelgeuse.example.com/public/credential-background.png",
+              "uri#integrity": "sha256-5sBT7mMLylHLWrrS/qQ8aHpRAxoraWVmWX6eUVMlrrA="
+            },
+            "background_color": "#12107c",
+            "text_color": "#FFFFFF"
+          },
+          "svg_templates": [
+            {
+              "uri": "https://betelgeuse.example.com/public/credential-english.svg",
+              "uri#integrity": "sha256-I4JcBGO7UfrkOBrsV7ytNJAfGuKLQh+e+Z31mc7iAb4=",
+              "properties": {
+                "orientation": "landscape",
+                "color_scheme": "light",
+                "contrast": "high"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "locale": "de-DE",
+        "name": "Betelgeuse-Bildungsnachweis",
+        "description": "Ein Bildungsnachweis für alle kohlenstoffbasierten Lebensformen auf Betelgeuse.",
+        "rendering": {
+          "simple": {
+            "logo": {
+              "uri": "https://betelgeuse.example.com/public/education-logo-de.png",
+              "uri#integrity": "sha256-LmXfh+9cLlJNXN+TsMk+PmKjZ5t0WRL5ca/xGgX3c1U=",
+              "alt_text": "Logo des Betelgeusischen Bildungsministeriums"
+            },
+            "background_image": {
+              "uri": "https://betelgeuse.example.com/public/credential-background-de.png",
+              "uri#integrity": "sha256-9cLlJNXN+TsMk+PmKjZ5t0WRL5ca/xGgX3c1ULmXfh="
+            },
+            "background_color": "#12107c",
+            "text_color": "#FFFFFF"
+          },
+          "svg_templates": [
+            {
+              "uri": "https://betelgeuse.example.com/public/credential-german.svg",
+              "uri#integrity": "sha256-I4JcBGO7UfrkOBrsV7ytNJAfGuKLQh+e+Z31mc7iAb4=",
+              "properties": {
+                "orientation": "landscape",
+                "color_scheme": "light",
+                "contrast": "high"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "claims": [
+      {
+        "path": [
+          "name"
+        ],
+        "display": [
+          {
+            "locale": "de-DE",
+            "label": "Vor- und Nachname",
+            "description": "Der Name des/der Studierenden"
+          },
+          {
+            "locale": "en-US",
+            "label": "Name",
+            "description": "The name of the student"
+          }
+        ],
+        "sd": "always",
+        "mandatory": true
+      },
+      {
+        "path": [
+          "address"
+        ],
+        "display": [
+          {
+            "locale": "de-DE",
+            "label": "Adresse",
+            "description": "Adresse zum Zeitpunkt des Abschlusses"
+          },
+          {
+            "locale": "en-US",
+            "label": "Address",
+            "description": "Address at the time of graduation"
+          }
+        ],
+        "sd": "always"
+      },
+      {
+        "path": [
+          "address",
+          "street_address"
+        ],
+        "display": [
+          {
+            "locale": "de-DE",
+            "label": "Straße"
+          },
+          {
+            "locale": "en-US",
+            "label": "Street Address"
+          }
+        ],
+        "sd": "always",
+        "svg_id": "address_street_address"
+      },
+      {
+        "path": [
+          "degrees"
+        ],
+        "display": [
+          {
+            "locale": "de-DE",
+            "label": "Abschlüsse",
+            "description": "Abschlüsse des/der Studierenden"
+          },
+          {
+            "locale": "en-US",
+            "label": "Degrees",
+            "description": "Degrees earned by the student"
+          }
+        ],
+        "sd": "never"
+      },
+      {
+        "path": [
+          "degrees",
+          null
+        ],
+        "sd": "always"
+      },
+      {
+        "path": [
+          "degrees",
+          null,
+          "field_of_study"
+        ],
+        "display": [
+          {
+            "locale": "de-DE",
+            "label": "Studienfach"
+          },
+          {
+            "locale": "en-US",
+            "label": "Field of Study"
+          }
+        ],
+        "sd": "never"
+      },
+      {
+        "path": [
+          "degrees",
+          null,
+          "date_awarded"
+        ],
+        "display": [
+          {
+            "locale": "de-DE",
+            "label": "Verleihungsdatum"
+          },
+          {
+            "locale": "en-US",
+            "label": "Date Awarded"
+          }
+        ],
+        "sd": "always"
+      }
+    ]
+  }
+}
