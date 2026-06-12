@@ -14,6 +14,10 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="coverlet.collector" />
+    <!-- Test-side only: constructing adversarial/malformed COSE messages for negative-path
+         theories. The AC-7 ban on System.Formats.Cbor applies to public API surfaces of src/
+         packages, not to test tooling. -->
+    <PackageReference Include="System.Formats.Cbor" />
   </ItemGroup>
 
   <ItemGroup>
@@ -21,8 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Vendored conformance fixtures (PRD §9 conventions): copied beside the test binaries -->
-    <Content Include="../fixtures/**/*" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Vendored conformance fixtures (PRD §9 conventions): copied beside the test binaries.
+         Scoped to the AC-4 sources: cose-wg COSE_Sign1 vectors and RFC 8392 Appendix A. -->
+    <Content Include="../fixtures/cose-wg/**/*" LinkBase="fixtures/cose-wg" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/ietf/rfc8392/**/*" LinkBase="fixtures/ietf/rfc8392" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
