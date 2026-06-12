@@ -1,0 +1,22 @@
+{
+  "source": "RFC 8037, Appendix A.4 and A.5",
+  "privateKeyJwk": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "d": "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A",
+    "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+  },
+  "publicKeyJwk": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+  },
+  "protectedHeaderJson": "{\"alg\":\"EdDSA\"}",
+  "protectedHeaderB64url": "eyJhbGciOiJFZERTQSJ9",
+  "payloadText": "Example of Ed25519 signing",
+  "payloadB64url": "RXhhbXBsZSBvZiBFZDI1NTE5IHNpZ25pbmc",
+  "jwsSigningInput": "eyJhbGciOiJFZERTQSJ9.RXhhbXBsZSBvZiBFZDI1NTE5IHNpZ25pbmc",
+  "signatureHex": "860c98d2297f3060a33f42739672d61b53cf3adefed3d3c672f320dc021b411e9d59b8628dc351e248b88b29468e0e41855b0fb7d83bb15be902bfccb8cd0a02",
+  "signatureB64url": "hgyY0il_MGCjP0JzlnLWG1PPOt7-09PGcvMg3AIbQR6dWbhijcNR4ki4iylGjg5BhVsPt9g7sVvpAr_MuM0KAg",
+  "compactJws": "eyJhbGciOiJFZERTQSJ9.RXhhbXBsZSBvZiBFZDI1NTE5IHNpZ25pbmc.hgyY0il_MGCjP0JzlnLWG1PPOt7-09PGcvMg3AIbQR6dWbhijcNR4ki4iylGjg5BhVsPt9g7sVvpAr_MuM0KAg"
+}

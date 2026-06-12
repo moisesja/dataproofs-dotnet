@@ -1,0 +1,39 @@
+{
+  "source": "RFC 7518, Appendix C",
+  "aliceEphemeralPrivateKeyJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0",
+    "y": "SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps",
+    "d": "0_NxaRPUMQoAJt50Gz8YiTr8gRTwyEaCumd-MToTmIo"
+  },
+  "bobStaticPrivateKeyJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "weNJy2HscCSM6AEDTDg04biOvhFhyyWvOHQfeF_PxMQ",
+    "y": "e8lnCO-AlStT-NJVX-crhB7QRYhiix03illJOVAOyck",
+    "d": "VEmDZpDXXK8p8N0Cndsxs924q6nS1RXFASRl6BfUqdw"
+  },
+  "header": {
+    "alg": "ECDH-ES",
+    "enc": "A128GCM",
+    "apu": "QWxpY2U",
+    "apv": "Qm9i",
+    "epk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0",
+      "y": "SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps"
+    }
+  },
+  "zHex": "9e56d91d817135d372834283bf84269cfb316ea3da806a48f6daa7798cfe90c4",
+  "keydatalen": 128,
+  "algorithmIdHex": "000000074131323847434d",
+  "partyUInfoHex": "00000005416c696365",
+  "partyVInfoHex": "00000003426f62",
+  "suppPubInfoHex": "00000080",
+  "otherInfoHex": "000000074131323847434d00000005416c69636500000003426f6200000080",
+  "concatKdfRound1HashInputHex": "000000019e56d91d817135d372834283bf84269cfb316ea3da806a48f6daa7798cfe90c4000000074131323847434d00000005416c69636500000003426f6200000080",
+  "derivedKeyHex": "56aa8deaf8236d205c2228cd71a7101a",
+  "derivedKeyB64url": "VqqN6vgjbSBcIijNcacQGg"
+}

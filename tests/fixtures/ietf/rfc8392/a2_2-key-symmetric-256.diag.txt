@@ -1,0 +1,7 @@
+{
+  / k /   -1: h'403697de87af64611c1d32a05dab0fe1fcb715a86ab435f1
+                ec99192d79569388'
+  / kty /  1: 4 / Symmetric /,
+  / kid /  4: h'53796d6d6574726963323536' / 'Symmetric256' /,
+  / alg /  3: 4 / HMAC 256/64 /
+}
