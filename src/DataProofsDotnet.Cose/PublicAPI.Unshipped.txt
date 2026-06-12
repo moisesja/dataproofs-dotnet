@@ -1,1 +1,112 @@
 #nullable enable
+const DataProofsDotnet.Cose.VcCose.CredentialContentType = "application/vc" -> string!
+const DataProofsDotnet.Cose.VcCose.EnvelopeType = "application/vc+cose" -> string!
+DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CoseAlgorithm.EdDsa = -8 -> DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CoseAlgorithm.ES256 = -7 -> DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CoseAlgorithm.ES256K = -47 -> DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CoseAlgorithm.ES384 = -35 -> DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CoseException
+DataProofsDotnet.Cose.CoseException.CoseException(string! message) -> void
+DataProofsDotnet.Cose.CoseException.CoseException(string! message, System.Exception? innerException) -> void
+DataProofsDotnet.Cose.CoseSign1
+DataProofsDotnet.Cose.CoseSign1Message
+DataProofsDotnet.Cose.CoseSign1Message.Algorithm.get -> DataProofsDotnet.Cose.CoseAlgorithm?
+DataProofsDotnet.Cose.CoseSign1Message.ContentFormat.get -> int?
+DataProofsDotnet.Cose.CoseSign1Message.ContentType.get -> string?
+DataProofsDotnet.Cose.CoseSign1Message.EncodedProtectedHeaders.get -> System.ReadOnlyMemory<byte>
+DataProofsDotnet.Cose.CoseSign1Message.IsTagged.get -> bool
+DataProofsDotnet.Cose.CoseSign1Message.KeyId.get -> System.ReadOnlyMemory<byte>?
+DataProofsDotnet.Cose.CoseSign1Message.Payload.get -> System.ReadOnlyMemory<byte>?
+DataProofsDotnet.Cose.CoseSign1Message.Signature.get -> System.ReadOnlyMemory<byte>
+DataProofsDotnet.Cose.CoseSign1Message.Type.get -> string?
+DataProofsDotnet.Cose.CoseSign1SignOptions
+DataProofsDotnet.Cose.CoseSign1SignOptions.Algorithm.get -> DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CoseSign1SignOptions.Algorithm.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.ContentFormat.get -> int?
+DataProofsDotnet.Cose.CoseSign1SignOptions.ContentFormat.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.ContentType.get -> string?
+DataProofsDotnet.Cose.CoseSign1SignOptions.ContentType.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.CoseSign1SignOptions() -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.DetachedPayload.get -> bool
+DataProofsDotnet.Cose.CoseSign1SignOptions.DetachedPayload.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.ExternalData.get -> System.ReadOnlyMemory<byte>
+DataProofsDotnet.Cose.CoseSign1SignOptions.ExternalData.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.IncludeCoseSign1Tag.get -> bool
+DataProofsDotnet.Cose.CoseSign1SignOptions.IncludeCoseSign1Tag.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.KeyId.get -> System.ReadOnlyMemory<byte>?
+DataProofsDotnet.Cose.CoseSign1SignOptions.KeyId.init -> void
+DataProofsDotnet.Cose.CoseSign1SignOptions.Type.get -> string?
+DataProofsDotnet.Cose.CoseSign1SignOptions.Type.init -> void
+DataProofsDotnet.Cose.CoseSign1VerificationResult
+DataProofsDotnet.Cose.CoseSign1VerificationResult.Failure.get -> DataProofsDotnet.Cose.CoseVerificationFailure?
+DataProofsDotnet.Cose.CoseSign1VerificationResult.Message.get -> DataProofsDotnet.Cose.CoseSign1Message?
+DataProofsDotnet.Cose.CoseSign1VerificationResult.Verified.get -> bool
+DataProofsDotnet.Cose.CoseSign1VerifyOptions
+DataProofsDotnet.Cose.CoseSign1VerifyOptions.CoseSign1VerifyOptions() -> void
+DataProofsDotnet.Cose.CoseSign1VerifyOptions.DetachedPayload.get -> System.ReadOnlyMemory<byte>?
+DataProofsDotnet.Cose.CoseSign1VerifyOptions.DetachedPayload.init -> void
+DataProofsDotnet.Cose.CoseSign1VerifyOptions.ExternalData.get -> System.ReadOnlyMemory<byte>
+DataProofsDotnet.Cose.CoseSign1VerifyOptions.ExternalData.init -> void
+DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.AlgorithmKeyMismatch = 5 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.Expired = 12 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.InvalidContentType = 9 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.InvalidSignature = 8 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.InvalidType = 10 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.MalformedClaims = 11 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.MalformedMessage = 0 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.MissingAlgorithm = 3 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.NotYetValid = 13 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.PayloadMissing = 7 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.UnexpectedCborTag = 1 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.UnknownCriticalHeader = 6 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.UnsupportedAlgorithm = 4 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationErrorCode.UnsupportedCoseStructure = 2 -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationFailure
+DataProofsDotnet.Cose.CoseVerificationFailure.Code.get -> DataProofsDotnet.Cose.CoseVerificationErrorCode
+DataProofsDotnet.Cose.CoseVerificationFailure.Message.get -> string!
+DataProofsDotnet.Cose.Cwt
+DataProofsDotnet.Cose.CwtClaims
+DataProofsDotnet.Cose.CwtClaims.Audience.get -> string?
+DataProofsDotnet.Cose.CwtClaims.Audience.init -> void
+DataProofsDotnet.Cose.CwtClaims.CwtClaims() -> void
+DataProofsDotnet.Cose.CwtClaims.CwtId.get -> System.ReadOnlyMemory<byte>?
+DataProofsDotnet.Cose.CwtClaims.CwtId.init -> void
+DataProofsDotnet.Cose.CwtClaims.ExpirationTime.get -> System.DateTimeOffset?
+DataProofsDotnet.Cose.CwtClaims.ExpirationTime.init -> void
+DataProofsDotnet.Cose.CwtClaims.IssuedAt.get -> System.DateTimeOffset?
+DataProofsDotnet.Cose.CwtClaims.IssuedAt.init -> void
+DataProofsDotnet.Cose.CwtClaims.Issuer.get -> string?
+DataProofsDotnet.Cose.CwtClaims.Issuer.init -> void
+DataProofsDotnet.Cose.CwtClaims.NotBefore.get -> System.DateTimeOffset?
+DataProofsDotnet.Cose.CwtClaims.NotBefore.init -> void
+DataProofsDotnet.Cose.CwtClaims.Subject.get -> string?
+DataProofsDotnet.Cose.CwtClaims.Subject.init -> void
+DataProofsDotnet.Cose.CwtSignOptions
+DataProofsDotnet.Cose.CwtSignOptions.Algorithm.get -> DataProofsDotnet.Cose.CoseAlgorithm
+DataProofsDotnet.Cose.CwtSignOptions.Algorithm.init -> void
+DataProofsDotnet.Cose.CwtSignOptions.CwtSignOptions() -> void
+DataProofsDotnet.Cose.CwtSignOptions.IncludeCwtTag.get -> bool
+DataProofsDotnet.Cose.CwtSignOptions.IncludeCwtTag.init -> void
+DataProofsDotnet.Cose.CwtSignOptions.KeyId.get -> System.ReadOnlyMemory<byte>?
+DataProofsDotnet.Cose.CwtSignOptions.KeyId.init -> void
+DataProofsDotnet.Cose.CwtValidationOptions
+DataProofsDotnet.Cose.CwtValidationOptions.ClockSkew.get -> System.TimeSpan
+DataProofsDotnet.Cose.CwtValidationOptions.ClockSkew.init -> void
+DataProofsDotnet.Cose.CwtValidationOptions.CwtValidationOptions() -> void
+DataProofsDotnet.Cose.CwtValidationOptions.ValidationTime.get -> System.DateTimeOffset?
+DataProofsDotnet.Cose.CwtValidationOptions.ValidationTime.init -> void
+DataProofsDotnet.Cose.CwtVerificationResult
+DataProofsDotnet.Cose.CwtVerificationResult.Claims.get -> DataProofsDotnet.Cose.CwtClaims?
+DataProofsDotnet.Cose.CwtVerificationResult.Failure.get -> DataProofsDotnet.Cose.CoseVerificationFailure?
+DataProofsDotnet.Cose.CwtVerificationResult.Verified.get -> bool
+DataProofsDotnet.Cose.VcCose
+static DataProofsDotnet.Cose.CoseSign1.Decode(System.ReadOnlyMemory<byte> encodedMessage) -> DataProofsDotnet.Cose.CoseSign1Message!
+static DataProofsDotnet.Cose.CoseSign1.SignAsync(System.ReadOnlyMemory<byte> payload, NetCrypto.ISigner! signer, DataProofsDotnet.Cose.CoseSign1SignOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+static DataProofsDotnet.Cose.CoseSign1.Verify(System.ReadOnlyMemory<byte> encodedMessage, NetCrypto.KeyType keyType, System.ReadOnlyMemory<byte> publicKey, DataProofsDotnet.Cose.CoseSign1VerifyOptions? options = null) -> DataProofsDotnet.Cose.CoseSign1VerificationResult!
+static DataProofsDotnet.Cose.Cwt.DecodeClaims(System.ReadOnlyMemory<byte> encodedClaimsSet) -> DataProofsDotnet.Cose.CwtClaims!
+static DataProofsDotnet.Cose.Cwt.SignAsync(DataProofsDotnet.Cose.CwtClaims! claims, NetCrypto.ISigner! signer, DataProofsDotnet.Cose.CwtSignOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+static DataProofsDotnet.Cose.Cwt.Verify(System.ReadOnlyMemory<byte> encodedCwt, NetCrypto.KeyType keyType, System.ReadOnlyMemory<byte> publicKey, DataProofsDotnet.Cose.CwtValidationOptions? options = null) -> DataProofsDotnet.Cose.CwtVerificationResult!
+static DataProofsDotnet.Cose.VcCose.EnvelopeCredentialAsync(System.ReadOnlyMemory<byte> credentialJson, NetCrypto.ISigner! signer, DataProofsDotnet.Cose.CoseAlgorithm algorithm, System.ReadOnlyMemory<byte>? keyId = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+static DataProofsDotnet.Cose.VcCose.Verify(System.ReadOnlyMemory<byte> envelope, NetCrypto.KeyType keyType, System.ReadOnlyMemory<byte> publicKey) -> DataProofsDotnet.Cose.CoseSign1VerificationResult!
