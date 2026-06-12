@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp /Users/moises/Projects/didcomm-dotnet/.gitignore /Users/moises/Projects/didcomm-dotnet/.editorconfig /Users/moises/Projects/didcomm-dotnet/LICENSE /Users/moises/Projects/dataproofs-dotnet/)",
+      "Bash(sed -n '1,10p' /Users/moises/Projects/didcomm-dotnet/NOTICE)"
+    ]
+  }
+}

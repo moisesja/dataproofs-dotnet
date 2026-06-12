@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DataProofsDotnet</RootNamespace>
+    <AssemblyName>DataProofsDotnet.Core</AssemblyName>
+    <PackageId>DataProofsDotnet.Core</PackageId>
+    <Version>$(DataProofsVersion)</Version>
+    <Description>Embedded-proof core for W3C VC Data Integrity 1.0: proof model, add/verify proof pipeline, cryptosuite registry, JCS cryptosuites (eddsa-jcs-2022, ecdsa-jcs-2019), and the verification-method resolver abstraction. All cryptography via NetCrypto; multiformats and JCS via NetCid.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- All cryptography (hash, sign, AEAD, KDF) routes through NetCrypto — PRD §2.2 -->
+    <PackageReference Include="NetCrypto" />
+    <!-- Multibase/multicodec/Multikey + JCS canonicalization — owned by NetCid stack-wide -->
+    <PackageReference Include="NetCid" />
+    <!-- JWK boundary exception: only the JsonWebKey type may appear in public API (AC-7) -->
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DataProofsDotnet.Core.Tests" />
+  </ItemGroup>
+
+</Project>

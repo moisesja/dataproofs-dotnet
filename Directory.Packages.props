@@ -1,0 +1,39 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Cryptography substrate: ALL cryptography (hashing, signing, AEAD, key wrap, KDF, BBS)
+         routes through NetCrypto — PRD §2.2; no other crypto backend may appear in src/. -->
+    <PackageVersion Include="NetCrypto" Version="1.0.0-preview.1" />
+    <!-- Multiformats (multibase/multicodec/multihash/Multikey) + JCS — owned by NetCid stack-wide. -->
+    <PackageVersion Include="NetCid" Version="1.6.0" />
+    <!-- JWK boundary exception: only the JsonWebKey type may surface in public API (PRD §2.2, AC-7). -->
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
+    <!-- JSON-LD / RDF Dataset Canonicalization — sole dotNetRDF reference in the stack, Rdfc only. -->
+    <PackageVersion Include="dotNetRdf.Core" Version="3.5.1" />
+    <!-- CBOR encoding — Cose only; never in a public signature (AC-7). -->
+    <PackageVersion Include="System.Formats.Cbor" Version="10.0.8" />
+    <!-- Logging (FR-23: abstractions only, no mandatory logger) -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
+    <!-- Dependency Injection (Extensions.DependencyInjection package + tests) -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
+    <!-- Build-time only -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
+    <!-- Testing -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- FluentAssertions deliberately held at 7.0.0 — v8 moved to a paid commercial license
+         (Xceed) unsuitable for this open-source library. Do not bump. -->
+    <PackageVersion Include="FluentAssertions" Version="7.0.0" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <!-- Test-only interop oracles (AC-3); must NOT appear in any src/ closure (AC-6).
+         SdJwt.Net is the nuget.org ID of the OWF sd-jwt-dotnet oracle named in the PRD. -->
+    <PackageVersion Include="jose-jwt" Version="5.3.0" />
+    <PackageVersion Include="SdJwt.Net" Version="1.0.8" />
+  </ItemGroup>
+</Project>

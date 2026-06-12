@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DataProofsDotnet.Extensions.DependencyInjection</RootNamespace>
+    <AssemblyName>DataProofsDotnet.Extensions.DependencyInjection</AssemblyName>
+    <PackageId>DataProofsDotnet.Extensions.DependencyInjection</PackageId>
+    <Version>$(DataProofsVersion)</Version>
+    <Description>Dependency-injection composition for DataProofsDotnet: AddDataProofs(...) builder-style registration of the proof pipeline, cryptosuite registry, per-package suite registrations (JCS, RDFC, bbs-2023, JOSE, COSE), and caller-supplied verification-method resolvers.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <ProjectReference Include="../DataProofsDotnet.Jose/DataProofsDotnet.Jose.csproj" />
+    <ProjectReference Include="../DataProofsDotnet.Cose/DataProofsDotnet.Cose.csproj" />
+    <ProjectReference Include="../DataProofsDotnet.Rdfc/DataProofsDotnet.Rdfc.csproj" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DataProofsDotnet.Extensions.DependencyInjection.Tests" />
+  </ItemGroup>
+
+</Project>

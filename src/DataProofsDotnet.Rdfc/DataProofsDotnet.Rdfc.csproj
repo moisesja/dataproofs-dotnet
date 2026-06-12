@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DataProofsDotnet.Rdfc</RootNamespace>
+    <AssemblyName>DataProofsDotnet.Rdfc</AssemblyName>
+    <PackageId>DataProofsDotnet.Rdfc</PackageId>
+    <Version>$(DataProofsVersion)</Version>
+    <Description>RDF-canonicalization family for W3C Data Integrity: JSON-LD 1.1 processing and RDFC-1.0 behind the library's own canonicalizer interface, the offline-default document loader, the RDFC cryptosuites (eddsa-rdfc-2022, ecdsa-rdfc-2019), and bbs-2023 selective disclosure. Sole dotNetRDF reference in the stack; no dotNetRDF or Newtonsoft type in any public signature.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <!-- Sole dotNetRDF reference in the entire stack (PRD §2.2); Newtonsoft rides only as its internal transitive -->
+    <PackageReference Include="dotNetRdf.Core" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DataProofsDotnet.Rdfc.Tests" />
+  </ItemGroup>
+
+</Project>

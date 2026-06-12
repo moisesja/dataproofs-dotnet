@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DataProofsDotnet.Jose</RootNamespace>
+    <AssemblyName>DataProofsDotnet.Jose</AssemblyName>
+    <PackageId>DataProofsDotnet.Jose</PackageId>
+    <Version>$(DataProofsVersion)</Version>
+    <Description>Enveloping proofs over JOSE: JWS (compact/JSON, detached, multi-signature), JWE (compact/General JSON, multi-recipient, ECDH-ES and ECDH-1PU), JWT claims validation, JWK with RFC 7638 thumbprints, SD-JWT (RFC 9901) with Key Binding, SD-JWT VC, and the JOSE half of VC-JOSE-COSE. All cryptography via NetCrypto.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DataProofsDotnet.Jose.Tests" />
+  </ItemGroup>
+
+</Project>

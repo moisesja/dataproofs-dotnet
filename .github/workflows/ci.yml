@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore DataProofsDotnet.sln
+
+      - name: Build (warnings as errors — NFR-1)
+        run: dotnet build DataProofsDotnet.sln --configuration Release --no-restore /warnaserror
+
+      - name: Test
+        run: dotnet test DataProofsDotnet.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect "XPlat Code Coverage"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: |
+            **/TestResults/**/test-results.trx
+            **/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+
+  # PRD §9: one job per acceptance criterion, ac-1 … ac-11, all required for merge to main.
+  # Jobs are added as their phases land (Phase A: ac-1 JCS portions; Phase B: ac-3 partial,
+  # ac-5; Phase E: ac-1 full, ac-2; Phase F: ac-6 … ac-10). ac-11 runs in publish.yml.

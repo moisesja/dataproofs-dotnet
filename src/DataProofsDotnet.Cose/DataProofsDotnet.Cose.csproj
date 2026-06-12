@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DataProofsDotnet.Cose</RootNamespace>
+    <AssemblyName>DataProofsDotnet.Cose</AssemblyName>
+    <PackageId>DataProofsDotnet.Cose</PackageId>
+    <Version>$(DataProofsVersion)</Version>
+    <Description>Enveloping proofs over COSE: COSE_Sign1 signing and verification (RFC 9052), CWT claims (RFC 8392), and the COSE half of VC-JOSE-COSE. CBOR via System.Formats.Cbor (never surfaced in public API); all cryptography via NetCrypto.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <!-- CBOR is an internal encoding detail; no System.Formats.Cbor type may surface publicly (AC-7) -->
+    <PackageReference Include="System.Formats.Cbor" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DataProofsDotnet.Cose.Tests" />
+  </ItemGroup>
+
+</Project>

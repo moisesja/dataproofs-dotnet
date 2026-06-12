@@ -1,0 +1,65 @@
+name: Publish to NuGet
+
+# Tag-driven release: build + test + AC gates + pack + push all five DataProofsDotnet.*
+# packages. Tag as vMAJOR.MINOR.PATCH; the package version is derived from the tag,
+# overriding the dev-default DataProofsVersion in Directory.Build.props.
+#
+# Prerequisites (one-time owner actions, see RELEASING.md):
+#  - repository secret NUGET_API_KEY scoped to the nuget-release environment
+#  - the DataProofsDotnet ID prefix reserved on nuget.org (ac-11 fails closed until then)
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  pack-and-publish:
+    name: pack + publish to NuGet
+    runs-on: ubuntu-latest
+    # Gate the irreversible publish: add "Required reviewers" to the `nuget-release`
+    # environment (repo Settings > Environments) so each tag push waits for approval.
+    environment: nuget-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Derive version from tag
+        id: version
+        # Strip the leading 'v': refs/tags/v1.0.0 -> GITHUB_REF_NAME=v1.0.0 -> 1.0.0.
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore DataProofsDotnet.sln
+
+      - name: Build (warnings as errors — NFR-1)
+        run: dotnet build DataProofsDotnet.sln --configuration Release --no-restore /warnaserror -p:DataProofsVersion=${{ steps.version.outputs.version }}
+
+      - name: Test
+        run: dotnet test DataProofsDotnet.sln --configuration Release --no-build
+
+      # ac-11 — package identity & publish readiness (PRD §9). Publishing is blocked on it.
+      # The tasks/package-identity tool lands in Phase F; until then this step fails closed.
+      - name: ac-11 package identity gate
+        run: dotnet run --project tasks/package-identity --configuration Release -- --owner moisesja
+
+      - name: Pack
+        run: dotnet pack DataProofsDotnet.sln --configuration Release --no-build -p:DataProofsVersion=${{ steps.version.outputs.version }} --output artifacts
+
+      - name: Upload packages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs
+          path: artifacts/*.*nupkg
+          if-no-files-found: error
+
+      - name: Push to NuGet.org
+        # Pushes the .nupkg files; the matching .snupkg symbol packages ride along automatically.
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate

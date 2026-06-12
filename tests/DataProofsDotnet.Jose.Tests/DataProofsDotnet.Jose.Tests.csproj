@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>DataProofsDotnet.Jose.Tests</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="coverlet.collector" />
+    <!-- Interop oracles (AC-3): test-project-only; must NOT appear in any src/ closure (AC-6) -->
+    <PackageReference Include="jose-jwt" />
+    <PackageReference Include="SdJwt.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/DataProofsDotnet.Jose/DataProofsDotnet.Jose.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored conformance fixtures (PRD §9 conventions): copied beside the test binaries -->
+    <Content Include="../fixtures/**/*" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
