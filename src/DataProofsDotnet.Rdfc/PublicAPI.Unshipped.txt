@@ -1,4 +1,14 @@
 #nullable enable
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Bbs2023Cryptosuite() -> void
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Bbs2023Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, System.ReadOnlyMemory<byte> bbsPrivateKey, System.ReadOnlyMemory<byte> hmacKey, System.Collections.Generic.IReadOnlyList<string!>! mandatoryPointers, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.DeriveProof(System.Text.Json.JsonElement securedBaseDocument, System.Collections.Generic.IReadOnlyList<string!>! selectivePointers, System.ReadOnlyMemory<byte> presentationHeader) -> System.Text.Json.JsonElement
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.IsAvailable.get -> bool
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Name.get -> string!
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+const DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CryptosuiteName = "bbs-2023" -> string!
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite() -> void
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
@@ -14,6 +24,7 @@ DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.VerifyProof(System.
 DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration
 const DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CryptosuiteName = "ecdsa-rdfc-2019" -> string!
 const DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CryptosuiteName = "eddsa-rdfc-2022" -> string!
+static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.AddBbs2023(this DataProofsDotnet.DataIntegrity.CryptosuiteRegistry! registry, DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
 static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.AddRdfcSuites(this DataProofsDotnet.DataIntegrity.CryptosuiteRegistry! registry, DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
 static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.CreateWithRdfcSuites(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
 DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader

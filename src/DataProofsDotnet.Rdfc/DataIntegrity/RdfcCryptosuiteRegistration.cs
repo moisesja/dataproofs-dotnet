@@ -24,18 +24,36 @@ public static class RdfcCryptosuiteRegistration
         return registry;
     }
 
-    // NOTE: AddBbs2023(...) and the bbs-2023 wiring of CreateWithRdfcSuites are added by the
-    // FR-12 bbs-2023 work; the RDFC suites (FR-11) land first on a proven pipeline (PRD §10).
+    /// <summary>
+    /// Registers the <c>bbs-2023</c> selective-disclosure cryptosuite (FR-12) into
+    /// <paramref name="registry"/>, over the offline-default RDFC canonicalizer when
+    /// <paramref name="canonicalizer"/> is omitted.
+    /// </summary>
+    /// <remarks>
+    /// Registration always succeeds, even when the BBS native binaries are absent on the host
+    /// (AC-6): the capability is probed lazily, and the <c>bbs-2023</c> lifecycle methods throw
+    /// NetCrypto's documented <c>BbsUnavailableException</c> only when actually used without
+    /// native support.
+    /// </remarks>
+    /// <returns>The same registry, for chaining.</returns>
+    public static CryptosuiteRegistry AddBbs2023(this CryptosuiteRegistry registry, IRdfCanonicalizer? canonicalizer = null)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        canonicalizer ??= new RdfcDocumentCanonicalizer();
+        registry.Register(new Bbs2023Cryptosuite(canonicalizer));
+        return registry;
+    }
 
     /// <summary>
     /// Creates a registry pre-populated with everything <c>Core</c> ships (the JCS suites)
-    /// plus the RDFC suites — the deterministic-signature v1 Data Integrity suite set.
-    /// (<c>bbs-2023</c> is added by <c>AddBbs2023</c> once the FR-12 suite is registered.)
+    /// plus the RDFC suites (<c>eddsa-rdfc-2022</c>, <c>ecdsa-rdfc-2019</c>) and the
+    /// selective-disclosure <c>bbs-2023</c> suite — the full v1 Data Integrity suite set.
     /// </summary>
     public static CryptosuiteRegistry CreateWithRdfcSuites(IRdfCanonicalizer? canonicalizer = null)
     {
         var registry = CryptosuiteRegistry.CreateDefault();
         registry.AddRdfcSuites(canonicalizer);
+        registry.AddBbs2023(canonicalizer);
         return registry;
     }
 }
