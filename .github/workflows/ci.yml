@@ -9,6 +9,15 @@ on:
 permissions:
   contents: read
 
+# PRD §9: one CI job per acceptance criterion, ac-1 … ac-11, each exiting 0/non-zero, all
+# required for merge to main. ac-11 (package-identity publish gate) lives in publish.yml.
+#
+# The build-test job is the comprehensive gate: it builds the whole solution with
+# warnings-as-errors — which is itself the AC-6 banned-symbol scan (BannedApiAnalyzers) and the
+# AC-7 PublicApiAnalyzer surface gate at compile time — and runs every test. The ac-* jobs below
+# pin each individual criterion to its specific tests or tooling so a regression names the exact
+# criterion it broke.
+
 jobs:
   build-test:
     name: build + test (${{ matrix.os }})
@@ -18,23 +27,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-
       - name: Restore
         run: dotnet restore DataProofsDotnet.sln
-
-      - name: Build (warnings as errors — NFR-1)
+      - name: Build (warnings as errors — NFR-1; AC-6 banned-symbol + AC-7 analyzer gate)
         run: dotnet build DataProofsDotnet.sln --configuration Release --no-restore /warnaserror
-
       - name: Test
         run: dotnet test DataProofsDotnet.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect "XPlat Code Coverage"
-
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,6 +47,179 @@ jobs:
             **/TestResults/**/coverage.cobertura.xml
           if-no-files-found: warn
 
-  # PRD §9: one job per acceptance criterion, ac-1 … ac-11, all required for merge to main.
-  # Jobs are added as their phases land (Phase A: ac-1 JCS portions; Phase B: ac-3 partial,
-  # ac-5; Phase E: ac-1 full, ac-2; Phase F: ac-6 … ac-10). ac-11 runs in publish.yml.
+  ac-1:
+    name: ac-1 cryptosuite conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: dotnet restore DataProofsDotnet.sln
+      # JCS suites + controller authorization + proof sets/chains (Core); RDFC suites + bbs-2023
+      # lifecycle (Rdfc). Live bbs-2023 tests run where NetCrypto's BBS native assets are present
+      # and otherwise self-skip per the documented capability model (PRD FR-12 / §12.3); the
+      # BbsAbsent capability tests always run.
+      - name: ac-1 Core (JCS + controller-auth + sets/chains)
+        run: dotnet test tests/DataProofsDotnet.Core.Tests/DataProofsDotnet.Core.Tests.csproj --configuration Release --filter "FullyQualifiedName~DataProofsDotnet.Core.Tests.W3c|FullyQualifiedName~DataProofsDotnet.Core.Tests.Constructed"
+      - name: ac-1 Rdfc (RDFC suites + bbs-2023 lifecycle)
+        run: dotnet test tests/DataProofsDotnet.Rdfc.Tests/DataProofsDotnet.Rdfc.Tests.csproj --configuration Release --filter "FullyQualifiedName~RdfcSuiteVectorTests|FullyQualifiedName~Bbs2023"
+
+  ac-2:
+    name: ac-2 RDFC-1.0 canonicalizer conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: ac-2 rdf-canon manifest suite
+        run: dotnet test tests/DataProofsDotnet.Rdfc.Tests/DataProofsDotnet.Rdfc.Tests.csproj --configuration Release --filter "FullyQualifiedName~RdfCanonicalizationConformanceTests"
+
+  ac-3:
+    name: ac-3 JOSE / SD-JWT / SD-JWT VC / VC-JOSE-COSE (JOSE half)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # All Jose conformance + oracle cross-verification + SD-JWT/VC + VcJose. (The ported
+      # didcomm parity suite is intermixed in these namespaces and runs here too; its dedicated
+      # assertion-equality gate is ac-5.)
+      - name: ac-3 Jose conformance + oracle + SD-JWT(/VC) + VcJose
+        run: dotnet test tests/DataProofsDotnet.Jose.Tests/DataProofsDotnet.Jose.Tests.csproj --configuration Release
+
+  ac-4:
+    name: ac-4 COSE / CWT / VC-JOSE-COSE (COSE half)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: ac-4 Cose suite
+        run: dotnet test tests/DataProofsDotnet.Cose.Tests/DataProofsDotnet.Cose.Tests.csproj --configuration Release
+
+  ac-5:
+    name: ac-5 didcomm JWS/JWE behavior parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # AC-5 = the ported parity suite passes AND parity-diff finds zero assertion differences.
+      # The parity tests live intermixed in the Jose test namespaces, so run the whole suite.
+      - name: ac-5 parity suite passes
+        run: dotnet test tests/DataProofsDotnet.Jose.Tests/DataProofsDotnet.Jose.Tests.csproj --configuration Release
+      # parity-diff needs the didcomm source at the SHA recorded in PARITY.md.
+      - name: Checkout didcomm-dotnet (parity source)
+        uses: actions/checkout@v4
+        with:
+          repository: moisesja/didcomm-dotnet
+          path: .parity-src/didcomm-dotnet
+          fetch-depth: 0
+      - name: ac-5 parity-diff (zero assertion differences)
+        run: dotnet run --project tasks/parity-diff --configuration Release -- --didcomm-repo .parity-src/didcomm-dotnet
+
+  ac-6:
+    name: ac-6 dependency hygiene + NetCrypto-only crypto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # The banned-symbol scan is enforced at compile time by BannedApiAnalyzers under /warnaserror.
+      - name: Build src with banned-symbol analyzer (AC-6 banned symbols)
+        run: dotnet build DataProofsDotnet.sln --configuration Release /warnaserror
+      - name: ac-6 dependency-hygiene tool (project + packed graphs)
+        run: dotnet run --project tasks/dependency-hygiene --configuration Release --no-build
+      - name: ac-6 reflection hygiene gates
+        run: dotnet test tests/DataProofsDotnet.ApiSurface.Tests/DataProofsDotnet.ApiSurface.Tests.csproj --configuration Release --no-build
+
+  ac-7:
+    name: ac-7 public-API surface discipline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # PublicApiAnalyzers fail the build on any undeclared public API under /warnaserror.
+      - name: Build (PublicApiAnalyzer surface gate)
+        run: dotnet build DataProofsDotnet.sln --configuration Release /warnaserror
+      - name: ac-7 api-surface-scan (positive allowlist)
+        run: dotnet run --project tasks/api-surface-scan --configuration Release --no-build
+      - name: ac-7 reflection surface gates
+        run: dotnet test tests/DataProofsDotnet.ApiSurface.Tests/DataProofsDotnet.ApiSurface.Tests.csproj --configuration Release --no-build
+
+  ac-8:
+    name: ac-8 no-key-surrender property
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: ac-8 key-store signing access confined to signing-only members
+        run: dotnet test tests/DataProofsDotnet.Core.Tests/DataProofsDotnet.Core.Tests.csproj --configuration Release --filter "FullyQualifiedName~KeyStoreSigning"
+
+  ac-9:
+    name: ac-9 samples coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build (samples + tooling)
+        run: dotnet build DataProofsDotnet.sln --configuration Release /warnaserror
+      - name: ac-9 samples-coverage (100% non-allowlisted public surface)
+        run: dotnet run --project tasks/samples-coverage --configuration Release --no-build
+      - name: ac-9 every sample runs to exit 0
+        shell: bash
+        run: |
+          set -euo pipefail
+          for proj in samples/DataProofsDotnet.Samples.*/; do
+            echo "=== ${proj} ==="
+            dotnet run --project "${proj}" --configuration Release --no-build
+          done
+
+  ac-10:
+    name: ac-10 pack, install, and smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Pack all five packages to a local feed
+        run: dotnet pack DataProofsDotnet.sln --configuration Release --output ./local-feed
+      - name: ac-10 clean-room install + smoke per package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="0.1.0"
+          feed="$(pwd)/local-feed"
+          declare -A smoke=(
+            [DataProofsDotnet.Core]=tasks/smoke/Core
+            [DataProofsDotnet.Jose]=tasks/smoke/Jose
+            [DataProofsDotnet.Cose]=tasks/smoke/Cose
+            [DataProofsDotnet.Rdfc]=tasks/smoke/Rdfc
+            [DataProofsDotnet.Extensions.DependencyInjection]=tasks/smoke/DependencyInjection
+          )
+          for id in "${!smoke[@]}"; do
+            echo "=== clean-room install + smoke: ${id} ==="
+            tmp="$(mktemp -d)"
+            ( cd "$tmp" && dotnet new console -n SmokeApp >/dev/null )
+            cp "${smoke[$id]}/Program.cs" "$tmp/SmokeApp/Program.cs"
+            ( cd "$tmp/SmokeApp" \
+              && dotnet nuget add source "$feed" --name local-feed \
+              && dotnet add package "$id" --version "$version" --source "$feed" \
+              && dotnet run -c Release )
+          done
+
+  # ac-11 (package identity & publish readiness) is the publish gate — see publish.yml.
