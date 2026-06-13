@@ -146,9 +146,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         var mandatoryHash = HashMandatory(transformed.Mandatory.Values);
         var bbsHeader = Concat(proofHash, mandatoryHash);
 
-        // BBS messages are the non-mandatory N-Quads, in index order (the mandatory group is
-        // bound via mandatoryHash inside bbsHeader, not signed as individual messages).
-        var messages = transformed.NonMandatory.Values.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        // BBS messages are ALL the relabeled N-Quads in canonical order. The W3C suite binds
+        // the mandatory group through the BBS header (proofHash ‖ mandatoryHash); NetCrypto's
+        // IBbsCryptoProvider v1 does not surface that header, so to keep the mandatory group
+        // cryptographically bound (tampering a mandatory statement MUST fail verification) the
+        // mandatory statements are signed as always-disclosed messages alongside the
+        // selectively-disclosable ones. (See the type's BBS-header remarks.)
+        var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
         var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, messages);
 
         var proofValue = Bbs2023ProofValue.SerializeBaseProof(
@@ -374,19 +378,24 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     {
         var transformed = Transform(document, baseComponents.HmacKey, baseComponents.MandatoryPointers);
 
+        // Selective indexes: positions in the FULL relabeled N-Quad list of the non-mandatory
+        // statements the combined pointers disclose.
         var combinedMatches = SelectionNQuads(transformed.SkolemizedDocument, combinedPointers, transformed.LabelMap);
+        var mandatorySet = new HashSet<int>(transformed.Mandatory.Indexes);
         var selectiveIndexes = new List<int>();
-        for (var i = 0; i < transformed.NonMandatory.Values.Count; i++)
+        for (var i = 0; i < transformed.NQuads.Count; i++)
         {
-            if (combinedMatches.Contains(transformed.NonMandatory.Values[i]))
+            if (!mandatorySet.Contains(i) && combinedMatches.Contains(transformed.NQuads[i]))
             {
                 selectiveIndexes.Add(i);
             }
         }
 
-        var messages = transformed.NonMandatory.Values.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        // Reveal the mandatory group AND the selected statements (ascending full-list order).
+        var revealedIndexes = transformed.Mandatory.Indexes.Concat(selectiveIndexes).Distinct().OrderBy(x => x).ToList();
+        var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
         var bbsProof = _bbs.DeriveProof(
-            baseComponents.PublicKey, baseComponents.BbsSignature, messages, selectiveIndexes, presentationHeader);
+            baseComponents.PublicKey, baseComponents.BbsSignature, messages, revealedIndexes, presentationHeader);
 
         // Select the reveal document on the SKOLEMIZED document so it carries the stable
         // urn:bnid ids; the verifier deskolemizes + relabels with the same labelMap.
@@ -403,26 +412,20 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
     // createVerifyData (§3.4.8): the reveal document carries stable skolem ids; canonicalize,
     // deskolemize, relabel via the derived proof's labelMap and sort to recover the disclosed
-    // N-Quads. The mandatory group (by mandatoryIndexes) is bound separately; the remaining
-    // disclosed N-Quads are the revealed BBS messages at the selective indexes.
+    // N-Quads — these are exactly the revealed BBS messages. Their original full-list indexes
+    // are the union of the mandatory and selective index sets, ascending.
     private VerifyData CreateVerifyData(JsonElement revealDocument, Bbs2023ProofValue.DerivedProofComponents components)
     {
         var stable = SkolemizedToStableNQuads(JsonLdSkolemizer.Skolemize(revealDocument));
-        var relabeled = BlankNodeLabels.RelabelAndSort(stable, components.LabelMap);
+        var disclosedMessages = BlankNodeLabels.RelabelAndSort(stable, components.LabelMap);
 
-        // The disclosed non-mandatory messages are every reveal N-Quad NOT in the mandatory
-        // group, paired with the selective indexes the proof was generated against.
-        var mandatory = new HashSet<int>(components.MandatoryIndexes);
-        var disclosedMessages = new List<string>();
-        for (var i = 0; i < relabeled.Count; i++)
-        {
-            if (!mandatory.Contains(i))
-            {
-                disclosedMessages.Add(relabeled[i]);
-            }
-        }
+        var revealedIndexes = components.MandatoryIndexes
+            .Concat(components.SelectiveIndexes)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
 
-        return new VerifyData(disclosedMessages, components.SelectiveIndexes);
+        return new VerifyData(disclosedMessages, revealedIndexes);
     }
 
     // Skolemize → canonicalize (only named nodes survive) → deskolemize back to stable _:b*

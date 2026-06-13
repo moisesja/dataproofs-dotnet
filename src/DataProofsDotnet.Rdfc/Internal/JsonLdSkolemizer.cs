@@ -40,16 +40,18 @@ internal static class JsonLdSkolemizer
 
         var root = (JsonObject)JsonNode.Parse(document.GetRawText())!;
         var counter = 0;
-        SkolemizeNode(root, ref counter, isRoot: true);
+        SkolemizeNode(root, ref counter);
         return root;
     }
 
-    private static void SkolemizeNode(JsonNode? node, ref int counter, bool isRoot)
+    private static void SkolemizeNode(JsonNode? node, ref int counter)
     {
         switch (node)
         {
             case JsonObject obj:
-                if (!isRoot && IsNodeObject(obj) && !HasId(obj))
+                // Assign a stable id to every blank node object (including the top-level node,
+                // which is itself a blank node when it carries no @id) so selections inherit it.
+                if (IsNodeObject(obj) && !HasId(obj))
                 {
                     obj["@id"] = UrnPrefix + "_:b" + counter.ToString(CultureInfo.InvariantCulture);
                     counter++;
@@ -62,7 +64,7 @@ internal static class JsonLdSkolemizer
                         continue;
                     }
 
-                    SkolemizeNode(property.Value, ref counter, isRoot: false);
+                    SkolemizeNode(property.Value, ref counter);
                 }
 
                 break;
@@ -70,7 +72,7 @@ internal static class JsonLdSkolemizer
             case JsonArray array:
                 foreach (var element in array)
                 {
-                    SkolemizeNode(element, ref counter, isRoot: false);
+                    SkolemizeNode(element, ref counter);
                 }
 
                 break;

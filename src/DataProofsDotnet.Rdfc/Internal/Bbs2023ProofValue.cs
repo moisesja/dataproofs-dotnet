@@ -140,13 +140,16 @@ internal static class Bbs2023ProofValue
 
     // --- compression helpers (spec §3.3.4 / §3.3.5) ---
 
-    // compressLabelMap: { "c14nN" -> "bM" } becomes a CBOR map { N(uint) -> M(uint) }.
+    // compressLabelMap (§3.3.4): a label map keyed by blank-node labels and valued by b-labels
+    // becomes a CBOR map of the integer suffixes. The wire framing (uint -> uint map) is
+    // W3C-identical; the key suffix may carry a "c14n" prefix (reference convention) or a "b"
+    // prefix (this suite's skolem-id keying — see Bbs2023Cryptosuite remarks).
     private static void WriteCompressedLabelMap(CborWriter writer, IReadOnlyDictionary<string, string> labelMap)
     {
         var compressed = new SortedDictionary<int, int>();
         foreach (var (key, value) in labelMap)
         {
-            compressed[StripPrefix(key, "c14n")] = StripPrefix(value, "b");
+            compressed[StripLabel(key)] = StripLabel(value);
         }
 
         writer.WriteStartMap(compressed.Count);
@@ -159,6 +162,9 @@ internal static class Bbs2023ProofValue
         writer.WriteEndMap();
     }
 
+    // decompressLabelMap (§3.3.5): restore both sides as "b<int>" — this suite's verifier
+    // reconstructs the reveal document with skolem-derived "b<int>" labels and relabels via
+    // the value, so both sides share that convention.
     private static IReadOnlyDictionary<string, string> ReadCompressedLabelMap(CborReader reader)
     {
         var count = reader.ReadStartMap();
@@ -167,7 +173,7 @@ internal static class Bbs2023ProofValue
         {
             var key = reader.ReadUInt32();
             var value = reader.ReadUInt32();
-            map["c14n" + key.ToString(CultureInfo.InvariantCulture)] = "b" + value.ToString(CultureInfo.InvariantCulture);
+            map["b" + key.ToString(CultureInfo.InvariantCulture)] = "b" + value.ToString(CultureInfo.InvariantCulture);
         }
 
         reader.ReadEndMap();
@@ -211,12 +217,17 @@ internal static class Bbs2023ProofValue
         return values;
     }
 
-    private static int StripPrefix(string label, string prefix)
+    // Strips a "c14n" or "b" label prefix and parses the integer suffix.
+    private static int StripLabel(string label)
     {
-        if (!label.StartsWith(prefix, StringComparison.Ordinal)
+        var prefix = label.StartsWith("c14n", StringComparison.Ordinal) ? "c14n"
+            : label.StartsWith("b", StringComparison.Ordinal) ? "b"
+            : null;
+
+        if (prefix is null
             || !int.TryParse(label.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var value))
         {
-            throw new FormatException($"Label '{label}' is not of the form '{prefix}<integer>'.");
+            throw new FormatException($"Label '{label}' is not of the form 'c14n<integer>' or 'b<integer>'.");
         }
 
         return value;

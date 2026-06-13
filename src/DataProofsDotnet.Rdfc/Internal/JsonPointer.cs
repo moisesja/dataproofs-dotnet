@@ -190,12 +190,15 @@ internal static class JsonPointer
             return;
         }
 
-        foreach (var typeKey in new[] { "@type", "type" })
+        // Carry the node's identity (@id / id — including skolem urn:bnid ids) and type
+        // members onto every intermediate selection node, so the selection canonicalizes to
+        // the same RDF nodes as the corresponding part of the whole document.
+        foreach (var key in new[] { "@id", "id", "@type", "type" })
         {
-            if (sourceObject.TryGetPropertyValue(typeKey, out var typeValue) && typeValue is not null
-                && !selObject.ContainsKey(typeKey))
+            if (sourceObject.TryGetPropertyValue(key, out var value) && value is not null
+                && !selObject.ContainsKey(key))
             {
-                selObject[typeKey] = DeepClone(typeValue);
+                selObject[key] = DeepClone(value);
             }
         }
     }
