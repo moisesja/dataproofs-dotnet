@@ -40,18 +40,28 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// absent on the host. <see cref="IsAvailable"/> reports the capability without throwing.
 /// </para>
 /// <para>
-/// <b>BBS header binding.</b> The W3C suite binds the BBS <c>header</c> parameter to
-/// <c>bbsHeader = proofHash ‖ mandatoryHash</c> at both sign and proof-generation time.
-/// NetCrypto's <see cref="IBbsCryptoProvider"/> v1 does not surface the BBS <c>header</c>
-/// argument; this suite therefore produces and verifies <em>self-consistent</em>
-/// <c>bbs-2023</c> proofs (own base proof → derive → verify round-trips) but its
-/// <c>proofValue</c> bytes are not interchangeable with W3C reference vectors that were
-/// generated with a non-empty BBS header. The CBOR framing and proof-value headers match the
-/// reference wire form; the blank-node relabeling keys the HMAC on document-order-stable
-/// skolem identifiers (see the partition note below) rather than canonical <c>c14n*</c>
-/// labels, which keeps the create → derive → verify partition exactly consistent across the
-/// lifecycle without depending on canonical-label alignment between sub-documents. Immutable
-/// and thread-safe after construction (NFR-4).
+/// <b>⚠ EXPERIMENTAL — mandatory disclosure is NOT cryptographically enforced (security
+/// limitation).</b> The W3C suite binds the BBS <c>header</c> parameter to
+/// <c>bbsHeader = proofHash ‖ mandatoryHash</c> at both sign and proof-generation time; that
+/// binding is what forces a holder to keep every issuer-designated mandatory statement in a
+/// presentation. NetCrypto v1's <see cref="IBbsCryptoProvider"/> does not surface the BBS
+/// <c>header</c> argument (it is hardcoded empty), so this suite cannot bind the mandatory
+/// group. <b>Consequence:</b> a malicious holder can derive a proof that omits a mandatory
+/// statement and it will still verify. Do not rely on the mandatory-disclosure guarantee until
+/// NetCrypto exposes the header (tracked: <c>docs/dependencies/netcrypto-bbs-header.md</c>,
+/// upstream <c>moisesja/crypto-dotnet#2</c>); treat <c>bbs-2023</c> as experimental — it is
+/// pinned to a Candidate Recommendation <em>draft</em> (PRD §12.3). The honest create → derive →
+/// verify lifecycle is otherwise correct (BBS proves the revealed messages were issuer-signed).
+/// </para>
+/// <para>
+/// As a further consequence, the suite's <c>proofValue</c> bytes are not interchangeable with
+/// W3C reference vectors generated with a non-empty BBS header (those are validated structurally
+/// in the test suite). The CBOR framing and proof-value headers match the reference wire form;
+/// the blank-node relabeling keys the HMAC on document-order-stable skolem identifiers (see the
+/// partition note below) rather than canonical <c>c14n*</c> labels, which keeps the create →
+/// derive → verify partition exactly consistent across the lifecycle without depending on
+/// canonical-label alignment between sub-documents. Immutable and thread-safe after construction
+/// (NFR-4).
 /// </para>
 /// </remarks>
 public sealed class Bbs2023Cryptosuite : ICryptosuite
