@@ -1,8 +1,10 @@
 name: Publish to NuGet
 
 # Tag-driven release: build + test + AC gates + pack + push all five DataProofsDotnet.*
-# packages. Tag as vMAJOR.MINOR.PATCH; the package version is derived from the tag,
-# overriding the dev-default DataProofsVersion in Directory.Build.props.
+# packages. Tag as vMAJOR.MINOR.PATCH or a prerelease vMAJOR.MINOR.PATCH-preview.N; the package
+# version is derived from the tag (a hyphenated suffix publishes as a NuGet prerelease),
+# overriding the dev-default DataProofsVersion in Directory.Build.props. The first release ships
+# as a preview (e.g. v0.1.0-preview.1) — see RELEASING.md.
 #
 # Prerequisites (one-time owner actions, see RELEASING.md):
 #  - repository secret NUGET_API_KEY scoped to the nuget-release environment
