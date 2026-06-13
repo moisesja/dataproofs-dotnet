@@ -1,0 +1,32 @@
+{
+  "description": "Frozen ES256K (secp256k1, RFC 8812) JWS regression vectors. Deterministic per RFC 6979.",
+  "privateKeyJwk": {
+    "kty": "EC",
+    "crv": "secp256k1",
+    "x": "buaV8zivHNa1bxmsNajAl5Io7xNVZZmqoDU8TJLVVl4",
+    "y": "q57mxv3Pz99IbWJNHB5V3FtS6DQ17fnDBqX1KC65V00",
+    "d": "jypVlJDU3sIuzeHj4blqivH3pNLI6iyeajtvH0yKnSE",
+    "kid": "es256k-2026"
+  },
+  "publicKeyJwk": {
+    "kty": "EC",
+    "crv": "secp256k1",
+    "x": "buaV8zivHNa1bxmsNajAl5Io7xNVZZmqoDU8TJLVVl4",
+    "y": "q57mxv3Pz99IbWJNHB5V3FtS6DQ17fnDBqX1KC65V00",
+    "kid": "es256k-2026"
+  },
+  "payloadText": "Example of ES256K signing (RFC 8812)",
+  "payloadB64url": "RXhhbXBsZSBvZiBFUzI1Nksgc2lnbmluZyAoUkZDIDg4MTIp",
+  "protectedHeaderB64url": "eyJhbGciOiJFUzI1NksiLCJraWQiOiJlczI1NmstMjAyNiJ9",
+  "jwsSigningInput": "eyJhbGciOiJFUzI1NksiLCJraWQiOiJlczI1NmstMjAyNiJ9.RXhhbXBsZSBvZiBFUzI1Nksgc2lnbmluZyAoUkZDIDg4MTIp",
+  "signatureB64url": "A2UnhWr7hjyg6-1rKeK3oxCbtWFNL6_ioAD_8SIQTsZIG8fPZvDh5XNY9dkiPuZpzEL8JZsCA_9eu80VhmtFwg",
+  "compactJws": "eyJhbGciOiJFUzI1NksiLCJraWQiOiJlczI1NmstMjAyNiJ9.RXhhbXBsZSBvZiBFUzI1Nksgc2lnbmluZyAoUkZDIDg4MTIp.A2UnhWr7hjyg6-1rKeK3oxCbtWFNL6_ioAD_8SIQTsZIG8fPZvDh5XNY9dkiPuZpzEL8JZsCA_9eu80VhmtFwg",
+  "flattenedJws": {
+    "payload": "RXhhbXBsZSBvZiBFUzI1Nksgc2lnbmluZyAoUkZDIDg4MTIp",
+    "protected": "eyJhbGciOiJFUzI1NksiLCJraWQiOiJlczI1NmstMjAyNiJ9",
+    "header": {
+      "kid": "es256k-2026"
+    },
+    "signature": "A2UnhWr7hjyg6-1rKeK3oxCbtWFNL6_ioAD_8SIQTsZIG8fPZvDh5XNY9dkiPuZpzEL8JZsCA_9eu80VhmtFwg"
+  }
+}

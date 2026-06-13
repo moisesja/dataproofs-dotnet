@@ -26,6 +26,8 @@
   <ItemGroup>
     <!-- Vendored conformance fixtures (PRD §9 conventions): copied beside the test binaries -->
     <Content Include="../fixtures/**/*" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+    <!-- AC-3 step 4: machine-read by Conformance/NetCryptoEquivalenceTests.cs -->
+    <Content Include="jwe-algorithm-omissions.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

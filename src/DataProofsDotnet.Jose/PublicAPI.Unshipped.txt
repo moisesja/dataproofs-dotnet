@@ -1,1 +1,190 @@
 #nullable enable
+const DataProofsDotnet.Jose.JoseAlgorithms.A256CbcHs512 = "A256CBC-HS512" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.A256Gcm = "A256GCM" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.A256Kw = "A256KW" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.CrvEd25519 = "Ed25519" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.CrvP256 = "P-256" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.CrvP384 = "P-384" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.CrvP521 = "P-521" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.CrvSecp256k1 = "secp256k1" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.CrvX25519 = "X25519" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.Ecdh1PuA256Kw = "ECDH-1PU+A256KW" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.EcdhEsA256Kw = "ECDH-ES+A256KW" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.EdDSA = "EdDSA" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.ES256 = "ES256" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.ES256K = "ES256K" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.ES384 = "ES384" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.ES512 = "ES512" -> string!
+const DataProofsDotnet.Jose.JoseAlgorithms.XC20P = "XC20P" -> string!
+DataProofsDotnet.Jose.Base64Url
+DataProofsDotnet.Jose.Encryption.ApuComputer
+DataProofsDotnet.Jose.Encryption.ApvComputer
+DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver
+DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.FindPresent(System.Collections.Generic.IEnumerable<string!>! kids) -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.TryGet(string! kid) -> DataProofsDotnet.Jose.Jwk?
+DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver
+DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver.TryGet(string! skid) -> DataProofsDotnet.Jose.Jwk?
+DataProofsDotnet.Jose.Encryption.JweBuilder
+DataProofsDotnet.Jose.Encryption.JweParser
+DataProofsDotnet.Jose.Encryption.JweParseResult
+DataProofsDotnet.Jose.Encryption.JweParseResult.Algorithm.get -> string!
+DataProofsDotnet.Jose.Encryption.JweParseResult.Algorithm.init -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.AllRecipientKids.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.Encryption.JweParseResult.AllRecipientKids.init -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.ContentEncryption.get -> string!
+DataProofsDotnet.Jose.Encryption.JweParseResult.ContentEncryption.init -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.IsAuthenticated.get -> bool
+DataProofsDotnet.Jose.Encryption.JweParseResult.IsAuthenticated.init -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.JweParseResult(byte[]! Plaintext, string! Algorithm, string! ContentEncryption, string! RecipientKid, System.Collections.Generic.IReadOnlyList<string!>! AllRecipientKids, string! SenderKid, bool IsAuthenticated) -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.Plaintext.get -> byte[]!
+DataProofsDotnet.Jose.Encryption.JweParseResult.Plaintext.init -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.RecipientKid.get -> string!
+DataProofsDotnet.Jose.Encryption.JweParseResult.RecipientKid.init -> void
+DataProofsDotnet.Jose.Encryption.JweParseResult.SenderKid.get -> string!
+DataProofsDotnet.Jose.Encryption.JweParseResult.SenderKid.init -> void
+DataProofsDotnet.Jose.Encryption.JwePeekResult
+DataProofsDotnet.Jose.Encryption.JwePeekResult.Algorithm.get -> string!
+DataProofsDotnet.Jose.Encryption.JwePeekResult.Algorithm.init -> void
+DataProofsDotnet.Jose.Encryption.JwePeekResult.JwePeekResult(string! Algorithm, string? Skid, System.Collections.Generic.IReadOnlyList<string!>! RecipientKids) -> void
+DataProofsDotnet.Jose.Encryption.JwePeekResult.RecipientKids.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.Encryption.JwePeekResult.RecipientKids.init -> void
+DataProofsDotnet.Jose.Encryption.JwePeekResult.Skid.get -> string?
+DataProofsDotnet.Jose.Encryption.JwePeekResult.Skid.init -> void
+DataProofsDotnet.Jose.IJoseCryptoProvider
+DataProofsDotnet.Jose.IJoseCryptoProvider.AeadDecrypt(string! enc, System.ReadOnlySpan<byte> cek, System.ReadOnlySpan<byte> iv, System.ReadOnlySpan<byte> aad, System.ReadOnlySpan<byte> ciphertext, System.ReadOnlySpan<byte> tag) -> byte[]!
+DataProofsDotnet.Jose.IJoseCryptoProvider.AeadEncrypt(string! enc, System.ReadOnlySpan<byte> cek, System.ReadOnlySpan<byte> iv, System.ReadOnlySpan<byte> aad, System.ReadOnlySpan<byte> plaintext) -> (byte[]! Ciphertext, byte[]! Tag)
+DataProofsDotnet.Jose.IJoseCryptoProvider.DeriveSharedSecret(string! crv, System.ReadOnlySpan<byte> privateKey, System.ReadOnlySpan<byte> publicKey) -> byte[]!
+DataProofsDotnet.Jose.IJoseCryptoProvider.Fill(System.Span<byte> destination) -> void
+DataProofsDotnet.Jose.IJoseCryptoProvider.KeyUnwrap(string! alg, System.ReadOnlySpan<byte> kek, System.ReadOnlySpan<byte> wrapped) -> byte[]!
+DataProofsDotnet.Jose.IJoseCryptoProvider.KeyWrap(string! alg, System.ReadOnlySpan<byte> kek, System.ReadOnlySpan<byte> cek) -> byte[]!
+DataProofsDotnet.Jose.IJoseCryptoProvider.Verify(string! joseAlg, System.ReadOnlySpan<byte> publicKey, System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> signature) -> bool
+DataProofsDotnet.Jose.JoseAlgorithms
+DataProofsDotnet.Jose.JoseCryptoException
+DataProofsDotnet.Jose.JoseCryptoException.JoseCryptoException(string! message) -> void
+DataProofsDotnet.Jose.JoseCryptoException.JoseCryptoException(string! message, System.Exception! innerException) -> void
+DataProofsDotnet.Jose.JoseCryptoProvider
+DataProofsDotnet.Jose.JoseCryptoProvider.AeadDecrypt(string! enc, System.ReadOnlySpan<byte> cek, System.ReadOnlySpan<byte> iv, System.ReadOnlySpan<byte> aad, System.ReadOnlySpan<byte> ciphertext, System.ReadOnlySpan<byte> tag) -> byte[]!
+DataProofsDotnet.Jose.JoseCryptoProvider.AeadEncrypt(string! enc, System.ReadOnlySpan<byte> cek, System.ReadOnlySpan<byte> iv, System.ReadOnlySpan<byte> aad, System.ReadOnlySpan<byte> plaintext) -> (byte[]! Ciphertext, byte[]! Tag)
+DataProofsDotnet.Jose.JoseCryptoProvider.DeriveSharedSecret(string! crv, System.ReadOnlySpan<byte> privateKey, System.ReadOnlySpan<byte> publicKey) -> byte[]!
+DataProofsDotnet.Jose.JoseCryptoProvider.Fill(System.Span<byte> destination) -> void
+DataProofsDotnet.Jose.JoseCryptoProvider.JoseCryptoProvider() -> void
+DataProofsDotnet.Jose.JoseCryptoProvider.JoseCryptoProvider(NetCrypto.ICryptoProvider! netCryptoProvider) -> void
+DataProofsDotnet.Jose.JoseCryptoProvider.KeyUnwrap(string! alg, System.ReadOnlySpan<byte> kek, System.ReadOnlySpan<byte> wrapped) -> byte[]!
+DataProofsDotnet.Jose.JoseCryptoProvider.KeyWrap(string! alg, System.ReadOnlySpan<byte> kek, System.ReadOnlySpan<byte> cek) -> byte[]!
+DataProofsDotnet.Jose.JoseCryptoProvider.Verify(string! joseAlg, System.ReadOnlySpan<byte> publicKey, System.ReadOnlySpan<byte> data, System.ReadOnlySpan<byte> signature) -> bool
+DataProofsDotnet.Jose.JoseException
+DataProofsDotnet.Jose.JoseException.JoseException(string! message) -> void
+DataProofsDotnet.Jose.JoseException.JoseException(string! message, System.Exception! innerException) -> void
+DataProofsDotnet.Jose.Jwk
+DataProofsDotnet.Jose.Jwk.AdditionalData.get -> System.Collections.Generic.IDictionary<string!, System.Text.Json.JsonElement>?
+DataProofsDotnet.Jose.Jwk.AdditionalData.set -> void
+DataProofsDotnet.Jose.Jwk.Alg.get -> string?
+DataProofsDotnet.Jose.Jwk.Alg.set -> void
+DataProofsDotnet.Jose.Jwk.Crv.get -> string?
+DataProofsDotnet.Jose.Jwk.Crv.set -> void
+DataProofsDotnet.Jose.Jwk.D.get -> string?
+DataProofsDotnet.Jose.Jwk.D.set -> void
+DataProofsDotnet.Jose.Jwk.Jwk() -> void
+DataProofsDotnet.Jose.Jwk.K.get -> string?
+DataProofsDotnet.Jose.Jwk.K.set -> void
+DataProofsDotnet.Jose.Jwk.Kid.get -> string?
+DataProofsDotnet.Jose.Jwk.Kid.set -> void
+DataProofsDotnet.Jose.Jwk.Kty.get -> string!
+DataProofsDotnet.Jose.Jwk.Kty.set -> void
+DataProofsDotnet.Jose.Jwk.Use.get -> string?
+DataProofsDotnet.Jose.Jwk.Use.set -> void
+DataProofsDotnet.Jose.Jwk.X.get -> string?
+DataProofsDotnet.Jose.Jwk.X.set -> void
+DataProofsDotnet.Jose.Jwk.Y.get -> string?
+DataProofsDotnet.Jose.Jwk.Y.set -> void
+DataProofsDotnet.Jose.JwkConversion
+DataProofsDotnet.Jose.JwkThumbprint
+DataProofsDotnet.Jose.Jwt.JwtClaims
+DataProofsDotnet.Jose.Jwt.JwtClaims.AdditionalClaims.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Text.Json.Nodes.JsonNode?>!
+DataProofsDotnet.Jose.Jwt.JwtClaims.Audiences.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.Jwt.JwtClaims.ExpiresAt.get -> System.DateTimeOffset?
+DataProofsDotnet.Jose.Jwt.JwtClaims.IssuedAt.get -> System.DateTimeOffset?
+DataProofsDotnet.Jose.Jwt.JwtClaims.Issuer.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtClaims.JwtClaims(string? issuer = null, string? subject = null, System.Collections.Generic.IReadOnlyList<string!>? audiences = null, System.DateTimeOffset? expiresAt = null, System.DateTimeOffset? notBefore = null, System.DateTimeOffset? issuedAt = null, string? jwtId = null, System.Collections.Generic.IReadOnlyDictionary<string!, System.Text.Json.Nodes.JsonNode?>? additionalClaims = null) -> void
+DataProofsDotnet.Jose.Jwt.JwtClaims.JwtId.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtClaims.NotBefore.get -> System.DateTimeOffset?
+DataProofsDotnet.Jose.Jwt.JwtClaims.Subject.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtClaims.ToJsonBytes() -> byte[]!
+DataProofsDotnet.Jose.Jwt.JwtHandler
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.AllowedAlgorithms.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.AllowedAlgorithms.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ClockSkew.get -> System.TimeSpan
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ClockSkew.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.CurrentTime.get -> System.DateTimeOffset?
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.CurrentTime.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedAudience.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedAudience.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedIssuer.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedIssuer.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedSubject.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedSubject.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.JwtValidationOptions() -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.RequireExpirationTime.get -> bool
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.RequireExpirationTime.init -> void
+DataProofsDotnet.Jose.Jwt.JwtVerificationResult
+DataProofsDotnet.Jose.Jwt.JwtVerificationResult.Claims.get -> DataProofsDotnet.Jose.Jwt.JwtClaims?
+DataProofsDotnet.Jose.Jwt.JwtVerificationResult.Errors.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.Jwt.JwtVerificationResult.IsValid.get -> bool
+DataProofsDotnet.Jose.Jwt.JwtVerificationResult.SignatureAlgorithm.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtVerificationResult.SignerKid.get -> string?
+DataProofsDotnet.Jose.MalformedJoseException
+DataProofsDotnet.Jose.MalformedJoseException.MalformedJoseException(string! message) -> void
+DataProofsDotnet.Jose.MalformedJoseException.MalformedJoseException(string! message, System.Exception! innerException) -> void
+DataProofsDotnet.Jose.Signing.JwsBuilder
+DataProofsDotnet.Jose.Signing.JwsParser
+DataProofsDotnet.Jose.Signing.JwsParseResult
+DataProofsDotnet.Jose.Signing.JwsParseResult.JwsParseResult(string! SignatureAlgorithm, string! SignerKid, byte[]! PayloadBytes) -> void
+DataProofsDotnet.Jose.Signing.JwsParseResult.PayloadBytes.get -> byte[]!
+DataProofsDotnet.Jose.Signing.JwsParseResult.PayloadBytes.init -> void
+DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm.get -> string!
+DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm.init -> void
+DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid.get -> string!
+DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid.init -> void
+DataProofsDotnet.Jose.Signing.JwsSigner
+DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm.get -> string!
+DataProofsDotnet.Jose.Signing.JwsSigner.JwsSigner(NetCrypto.ISigner! signer, string? kid = null) -> void
+DataProofsDotnet.Jose.Signing.JwsSigner.Kid.get -> string?
+DataProofsDotnet.Jose.Signing.JwsSigner.Signer.get -> NetCrypto.ISigner!
+static DataProofsDotnet.Jose.Base64Url.Decode(string! value) -> byte[]!
+static DataProofsDotnet.Jose.Base64Url.DecodeUtf8(string! value) -> string!
+static DataProofsDotnet.Jose.Base64Url.Encode(System.ReadOnlySpan<byte> bytes) -> string!
+static DataProofsDotnet.Jose.Base64Url.EncodeUtf8(string! utf8String) -> string!
+static DataProofsDotnet.Jose.Encryption.ApuComputer.Compute(string! skid) -> string!
+static DataProofsDotnet.Jose.Encryption.ApvComputer.Compute(System.Collections.Generic.IEnumerable<string!>! recipientKids) -> string!
+static DataProofsDotnet.Jose.Encryption.ApvComputer.ComputeBytes(System.Collections.Generic.IEnumerable<string!>! recipientKids) -> byte[]!
+static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildA256Kw(System.ReadOnlySpan<byte> plaintext, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Jwk!>! keyEncryptionKeys, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, string? typ = null) -> string!
+static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactA256Kw(System.ReadOnlySpan<byte> plaintext, DataProofsDotnet.Jose.Jwk! keyEncryptionKey, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> string!
+static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactEcdhEsA256Kw(System.ReadOnlySpan<byte> plaintext, DataProofsDotnet.Jose.Jwk! recipient, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> string!
+static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdh1PuA256Kw(System.ReadOnlySpan<byte> plaintext, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Jwk!>! recipients, DataProofsDotnet.Jose.Jwk! senderPrivateJwk, string! skid, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, string? typ = null) -> string!
+static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdhEsA256Kw(System.ReadOnlySpan<byte> plaintext, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Jwk!>! recipients, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, string? typ = null) -> string!
+static DataProofsDotnet.Jose.Encryption.JweParser.Parse(string! packed, DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver! recipientKeys, DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver? senderKeys, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Encryption.JweParseResult!
+static DataProofsDotnet.Jose.Encryption.JweParser.ParseCompact(string! compact, DataProofsDotnet.Jose.Jwk! recipientKey, DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver? senderKeys, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Encryption.JweParseResult!
+static DataProofsDotnet.Jose.Encryption.JweParser.PeekRecipients(string! packed) -> DataProofsDotnet.Jose.Encryption.JwePeekResult!
+static DataProofsDotnet.Jose.JoseAlgorithms.IsSupportedContentEncryption(string? enc) -> bool
+static DataProofsDotnet.Jose.JoseAlgorithms.SupportedContentEncryptionAlgorithms.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static DataProofsDotnet.Jose.JoseAlgorithms.SupportedKeyManagementAlgorithms.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static DataProofsDotnet.Jose.JoseAlgorithms.SupportedSignatureAlgorithms.get -> System.Collections.Generic.IReadOnlyList<string!>!
+static DataProofsDotnet.Jose.JwkConversion.ExtractPublicKey(DataProofsDotnet.Jose.Jwk! jwk) -> (NetCrypto.KeyType KeyType, byte[]! PublicKey)
+static DataProofsDotnet.Jose.JwkConversion.FromMultikey(string! publicKeyMultibase, string? kid = null) -> DataProofsDotnet.Jose.Jwk!
+static DataProofsDotnet.Jose.JwkConversion.ToJsonWebKey(DataProofsDotnet.Jose.Jwk! source) -> Microsoft.IdentityModel.Tokens.JsonWebKey!
+static DataProofsDotnet.Jose.JwkConversion.ToMultikey(DataProofsDotnet.Jose.Jwk! jwk) -> string!
+static DataProofsDotnet.Jose.JwkConversion.ToPrivateJwk(NetCrypto.KeyPair! keyPair, string? kid = null) -> DataProofsDotnet.Jose.Jwk!
+static DataProofsDotnet.Jose.JwkConversion.ToPublicJwk(NetCrypto.KeyType keyType, byte[]! publicKey, string? kid = null) -> DataProofsDotnet.Jose.Jwk!
+static DataProofsDotnet.Jose.JwkThumbprint.Compute(DataProofsDotnet.Jose.Jwk! jwk) -> byte[]!
+static DataProofsDotnet.Jose.JwkThumbprint.ComputeBase64Url(DataProofsDotnet.Jose.Jwk! jwk) -> string!
+static DataProofsDotnet.Jose.JwkThumbprint.ComputeKid(DataProofsDotnet.Jose.Jwk! jwk) -> string!
+static DataProofsDotnet.Jose.Jwt.JwtClaims.Parse(System.ReadOnlySpan<byte> utf8Json) -> DataProofsDotnet.Jose.Jwt.JwtClaims!
+static DataProofsDotnet.Jose.Jwt.JwtHandler.SignAsync(DataProofsDotnet.Jose.Jwt.JwtClaims! claims, DataProofsDotnet.Jose.Signing.JwsSigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+static DataProofsDotnet.Jose.Jwt.JwtHandler.Verify(string! jwt, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.Jwt.JwtValidationOptions? options = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null) -> DataProofsDotnet.Jose.Jwt.JwtVerificationResult!
+static DataProofsDotnet.Jose.Signing.JwsBuilder.BuildCompactAsync(System.ReadOnlyMemory<byte> payload, DataProofsDotnet.Jose.Signing.JwsSigner! signer, string? typ = null, bool detachedPayload = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+static DataProofsDotnet.Jose.Signing.JwsBuilder.BuildJsonAsync(System.ReadOnlyMemory<byte> payload, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Signing.JwsSigner!>! signers, string? typ = null, bool detachedPayload = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+static DataProofsDotnet.Jose.Signing.JwsParser.Parse(string! packed, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
+static DataProofsDotnet.Jose.Signing.JwsParser.Parse(string! packed, System.ReadOnlySpan<byte> detachedPayload, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
+static DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact(string! compact, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
+static DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact(string! compact, System.ReadOnlySpan<byte> detachedPayload, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!

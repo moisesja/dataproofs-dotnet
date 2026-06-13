@@ -1,0 +1,35 @@
+{
+  "description": "Frozen XC20P (XChaCha20-Poly1305, draft-irtf-cfrg-xchacha-03) regression vectors.",
+  "aeadKat": {
+    "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "nonceHex": "404142434445464748494a4b4c4d4e4f5051525354555657",
+    "aadAscii": "eyJhbGciOiJFQ0RILUVTK0EyNTZLVyIsImVuYyI6IlhDMjBQIn0",
+    "plaintextUtf8": "XChaCha20-Poly1305 frozen vector for DataProofsDotnet.Jose (no external JOSE oracle carries XC20P).",
+    "ciphertextHex": "8c7a6d1193881824bfd9d7d1c3e554a1a28f8da2613629ff04118b206a704ce2369f6d1c75d6e5649ee2862365bca9b5f41f138d1babfef3c59928dc7ddd6c31225f9d007ad229e8cf4ce3bafc16ee8e95ab630b4b5c160539c674b49d260115765c99",
+    "tagHex": "af241de01529b0cf7e482eacd839f822"
+  },
+  "frozenJwe": {
+    "recipientPrivateKeyJwk": {
+      "kty": "OKP",
+      "crv": "X25519",
+      "x": "1LlZlYasmp9Jh1SJKuQiIQgDzaDhqSt3bWPwq9jdnxw",
+      "d": "pUbja_BSfJ07FhVLgkZe3WIUTArB_FoYUGoiRLpEmkA",
+      "kid": "xc20p-recipient-2026"
+    },
+    "plaintextUtf8": "{\u0022hello\u0022:\u0022xc20p\u0022}",
+    "jweGeneralJson": {
+      "protected": "eyJhbGciOiJFQ0RILUVTK0EyNTZLVyIsImFwdiI6InpZNXB0WGMyN0pXV0ZkZEdrMWhEV3NnMlFUdkVIUk5wcmt3U2U5a3pfUTQiLCJlbmMiOiJYQzIwUCIsImVwayI6eyJjcnYiOiJYMjU1MTkiLCJrdHkiOiJPS1AiLCJ4IjoiX0ZXNXRrUVpQY1Axc21xQUd4Ui1mM0ozMC1uSU0xNDZuMzFadGVReXVsRSJ9fQ",
+      "recipients": [
+        {
+          "header": {
+            "kid": "xc20p-recipient-2026"
+          },
+          "encrypted_key": "Uei9JdsOhM7VxpslnGcItNhxlVhqDaQ76uwexLGZOjxmYN0p41JDRw"
+        }
+      ],
+      "iv": "Rb8B3W2lzg2od4QlyS1R3ztxGuwEUEII",
+      "ciphertext": "ixDEAyWjv_4nbp_Jvcm3DZE",
+      "tag": "EjQ0iuu3_jp01qoie_wY4A"
+    }
+  }
+}
