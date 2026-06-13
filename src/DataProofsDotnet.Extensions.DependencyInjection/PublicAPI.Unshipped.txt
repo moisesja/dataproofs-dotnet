@@ -1,1 +1,12 @@
 #nullable enable
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddBbs2023(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddCose() -> DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddJcsSuites() -> DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddJose() -> DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddRdfcSuites(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddVerificationMethodResolver(DataProofsDotnet.DataIntegrity.IVerificationMethodResolver! resolver) -> DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.Registry.get -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+DataProofsDotnet.Extensions.DependencyInjection.DataProofsServiceCollectionExtensions
+static DataProofsDotnet.Extensions.DependencyInjection.DataProofsServiceCollectionExtensions.AddDataProofs(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
