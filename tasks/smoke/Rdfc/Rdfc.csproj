@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>SmokeRdfc</AssemblyName>
+    <RootNamespace>DataProofsDotnet.Smoke.Rdfc</RootNamespace>
+  </PropertyGroup>
+
+  <!-- AC-10 clean-room form: `dotnet add package DataProofsDotnet.Rdfc` against the local feed.
+       Rdfc has no extra prerequisite (dotNetRDF rides transitively, never surfaced). The bundled
+       document is canonicalized through the OFFLINE loader (no network). See tasks/smoke/README.md. -->
+  <ItemGroup>
+    <PackageReference Include="DataProofsDotnet.Rdfc" Version="0.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The "bundled document" AC-10 requires: a self-contained JSON-LD credential whose @context
+         is in the Rdfc offline loader's bundled set, so canonicalization needs no network. -->
+    <EmbeddedResource Include="bundled-document.jsonld" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>DataProofsDotnet.Tools.ApiSurfaceScan</RootNamespace>
+    <AssemblyName>ApiSurfaceScan</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- No ProjectReference: the tool parses the checked-in PublicAPI.Shipped/Unshipped.txt files
+       as text (AC-7), so it builds and runs independently of the src packages' compile state. -->
+
+  <ItemGroup>
+    <!-- Ship the BCL allowlist alongside the tool so it resolves regardless of cwd. -->
+    <None Include="bcl-allowlist.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

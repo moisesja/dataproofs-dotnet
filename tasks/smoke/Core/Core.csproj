@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>SmokeCore</AssemblyName>
+    <RootNamespace>DataProofsDotnet.Smoke.Core</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    AC-10 clean-room form: the checked-in package reference is what the smoke job installs after
+    `dotnet new console` + `dotnet add package DataProofsDotnet.Core` against the local pack feed.
+    NetCrypto is the documented prerequisite (the signer/key-store substrate). Versions are pinned
+    here so the standalone project restores without the repo's Directory.Packages.props.
+    To validate locally against the repo source instead, swap this for:
+      <ProjectReference Include="../../../src/DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+      <ProjectReference Include="../../../<netcrypto-source>" />  (or keep the NetCrypto PackageReference)
+  -->
+  <ItemGroup>
+    <PackageReference Include="DataProofsDotnet.Core" Version="0.1.0" />
+    <PackageReference Include="NetCrypto" Version="1.0.0-preview.1" />
+  </ItemGroup>
+
+</Project>
