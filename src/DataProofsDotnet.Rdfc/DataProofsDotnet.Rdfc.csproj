@@ -12,8 +12,27 @@
     <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
     <!-- Sole dotNetRDF reference in the entire stack (PRD §2.2); Newtonsoft rides only as its internal transitive -->
     <PackageReference Include="dotNetRdf.Core" />
+    <!-- CBOR encoding for the bbs-2023 multi-component proofValue (FR-12). Internal only; no CBOR type
+         appears in any public signature (AC-7) — allowed for Rdfc's internal use (PRD §2.2 / phase brief). -->
+    <PackageReference Include="System.Formats.Cbor" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- FR-10: version-pinned core W3C JSON-LD contexts embedded as assembly resources for the
+       offline-default document loader. Six core contexts are embedded directly from the single
+       provenance source of record (tests/fixtures/contexts/, see its PROVENANCE.md) under stable
+       logical names so the package's served bytes never drift from the provenance record; the
+       credentials/examples/v2 context is authored locally (see Contexts/PROVENANCE.md). -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../tests/fixtures/contexts/credentials-v2.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.credentials-v2.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/credentials-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.credentials-v1.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/data-integrity-v2.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.data-integrity-v2.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/data-integrity-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.data-integrity-v1.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/multikey-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.multikey-v1.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/bbs-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.bbs-v1.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/jws-2020-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.jws-2020-v1.jsonld" />
+    <EmbeddedResource Include="Contexts/credentials-examples-v2.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.credentials-examples-v2.jsonld" />
   </ItemGroup>
 
   <ItemGroup>

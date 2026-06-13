@@ -1,1 +1,50 @@
 #nullable enable
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite() -> void
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.Name.get -> string!
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.EddsaRdfc2022Cryptosuite() -> void
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.EddsaRdfc2022Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.Name.get -> string!
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration
+const DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CryptosuiteName = "ecdsa-rdfc-2019" -> string!
+const DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CryptosuiteName = "eddsa-rdfc-2022" -> string!
+static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.AddRdfcSuites(this DataProofsDotnet.DataIntegrity.CryptosuiteRegistry! registry, DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
+static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.CreateWithRdfcSuites(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
+DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader
+DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.CachingNetworkDocumentLoader() -> void
+DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.CachingNetworkDocumentLoader(System.Net.Http.HttpClient! httpClient, DataProofsDotnet.Rdfc.IDocumentLoader? offlineLoader = null) -> void
+DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Dispose() -> void
+DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Load(System.Uri! url) -> DataProofsDotnet.Rdfc.LoadedContextDocument!
+DataProofsDotnet.Rdfc.IDocumentLoader
+DataProofsDotnet.Rdfc.IDocumentLoader.Load(System.Uri! url) -> DataProofsDotnet.Rdfc.LoadedContextDocument!
+DataProofsDotnet.Rdfc.IRdfCanonicalizer
+DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeJsonLd(System.Text.Json.JsonElement document, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> byte[]!
+DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuads(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> string!
+DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuadsToMap(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+DataProofsDotnet.Rdfc.LoadedContextDocument
+DataProofsDotnet.Rdfc.LoadedContextDocument.Content.get -> string!
+DataProofsDotnet.Rdfc.LoadedContextDocument.DocumentUrl.get -> System.Uri!
+DataProofsDotnet.Rdfc.LoadedContextDocument.LoadedContextDocument(System.Uri! documentUrl, string! content) -> void
+DataProofsDotnet.Rdfc.OfflineDocumentLoader
+DataProofsDotnet.Rdfc.OfflineDocumentLoader.Load(System.Uri! url) -> DataProofsDotnet.Rdfc.LoadedContextDocument!
+DataProofsDotnet.Rdfc.OfflineDocumentLoader.OfflineDocumentLoader() -> void
+DataProofsDotnet.Rdfc.RdfCanonicalizationException
+DataProofsDotnet.Rdfc.RdfCanonicalizationException.RdfCanonicalizationException(string! message) -> void
+DataProofsDotnet.Rdfc.RdfCanonicalizationException.RdfCanonicalizationException(string! message, System.Exception? innerException) -> void
+DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm
+DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256 = 0 -> DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm
+DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha384 = 1 -> DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeJsonLd(System.Text.Json.JsonElement document, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> byte[]!
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuads(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> string!
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuadsToMap(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.RdfcDocumentCanonicalizer() -> void
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.RdfcDocumentCanonicalizer(DataProofsDotnet.Rdfc.IDocumentLoader! documentLoader) -> void
+static DataProofsDotnet.Rdfc.OfflineDocumentLoader.BundledContextUrls.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static DataProofsDotnet.Rdfc.OfflineDocumentLoader.Instance.get -> DataProofsDotnet.Rdfc.OfflineDocumentLoader!
