@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-preview.1] - 2026-06-13
+
+First preview release of all five packages (`Core`, `Jose`, `Cose`, `Rdfc`,
+`Extensions.DependencyInjection`) — a NuGet prerelease for validation.
+
 ### Added
 
 - **Repository scaffold**: five-package solution (`Core`, `Jose`, `Cose`, `Rdfc`,
