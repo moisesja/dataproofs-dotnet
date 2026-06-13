@@ -1,0 +1,522 @@
+# Samples coverage report (FR-21 / AC-9)
+
+- Public members across 5 packages: **511**
+- Covered by at least one sample: **511**
+- Allowlisted (excused, with justification): **0**
+- Uncovered: **0**
+
+Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowlist: `/Users/moises/Projects/dataproofs-dotnet/tasks/samples-coverage/allowlist.txt`
+
+## Covered members
+
+- `DataProofsDotnet.Cose.CoseAlgorithm (type)`
+- `DataProofsDotnet.Cose.CoseException (type)`
+- `DataProofsDotnet.Cose.CoseException..ctor(String)`
+- `DataProofsDotnet.Cose.CoseException..ctor(String,Exception)`
+- `DataProofsDotnet.Cose.CoseSign1 (type)`
+- `DataProofsDotnet.Cose.CoseSign1.Decode`
+- `DataProofsDotnet.Cose.CoseSign1.SignAsync`
+- `DataProofsDotnet.Cose.CoseSign1.Verify`
+- `DataProofsDotnet.Cose.CoseSign1Message (type)`
+- `DataProofsDotnet.Cose.CoseSign1Message.Algorithm`
+- `DataProofsDotnet.Cose.CoseSign1Message.ContentFormat`
+- `DataProofsDotnet.Cose.CoseSign1Message.ContentType`
+- `DataProofsDotnet.Cose.CoseSign1Message.EncodedProtectedHeaders`
+- `DataProofsDotnet.Cose.CoseSign1Message.IsTagged`
+- `DataProofsDotnet.Cose.CoseSign1Message.KeyId`
+- `DataProofsDotnet.Cose.CoseSign1Message.Payload`
+- `DataProofsDotnet.Cose.CoseSign1Message.Signature`
+- `DataProofsDotnet.Cose.CoseSign1Message.Type`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions (type)`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions..ctor()`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.Algorithm`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.ContentFormat`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.ContentType`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.DetachedPayload`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.ExternalData`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.IncludeCoseSign1Tag`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.KeyId`
+- `DataProofsDotnet.Cose.CoseSign1SignOptions.Type`
+- `DataProofsDotnet.Cose.CoseSign1VerificationResult (type)`
+- `DataProofsDotnet.Cose.CoseSign1VerificationResult.Failure`
+- `DataProofsDotnet.Cose.CoseSign1VerificationResult.Message`
+- `DataProofsDotnet.Cose.CoseSign1VerificationResult.Verified`
+- `DataProofsDotnet.Cose.CoseSign1VerifyOptions (type)`
+- `DataProofsDotnet.Cose.CoseSign1VerifyOptions..ctor()`
+- `DataProofsDotnet.Cose.CoseSign1VerifyOptions.DetachedPayload`
+- `DataProofsDotnet.Cose.CoseSign1VerifyOptions.ExternalData`
+- `DataProofsDotnet.Cose.CoseVerificationErrorCode (type)`
+- `DataProofsDotnet.Cose.CoseVerificationFailure (type)`
+- `DataProofsDotnet.Cose.CoseVerificationFailure.Code`
+- `DataProofsDotnet.Cose.CoseVerificationFailure.Message`
+- `DataProofsDotnet.Cose.Cwt (type)`
+- `DataProofsDotnet.Cose.Cwt.DecodeClaims`
+- `DataProofsDotnet.Cose.Cwt.SignAsync`
+- `DataProofsDotnet.Cose.Cwt.Verify`
+- `DataProofsDotnet.Cose.CwtClaims (type)`
+- `DataProofsDotnet.Cose.CwtClaims..ctor()`
+- `DataProofsDotnet.Cose.CwtClaims.Audience`
+- `DataProofsDotnet.Cose.CwtClaims.CwtId`
+- `DataProofsDotnet.Cose.CwtClaims.ExpirationTime`
+- `DataProofsDotnet.Cose.CwtClaims.IssuedAt`
+- `DataProofsDotnet.Cose.CwtClaims.Issuer`
+- `DataProofsDotnet.Cose.CwtClaims.NotBefore`
+- `DataProofsDotnet.Cose.CwtClaims.Subject`
+- `DataProofsDotnet.Cose.CwtSignOptions (type)`
+- `DataProofsDotnet.Cose.CwtSignOptions..ctor()`
+- `DataProofsDotnet.Cose.CwtSignOptions.Algorithm`
+- `DataProofsDotnet.Cose.CwtSignOptions.IncludeCwtTag`
+- `DataProofsDotnet.Cose.CwtSignOptions.KeyId`
+- `DataProofsDotnet.Cose.CwtValidationOptions (type)`
+- `DataProofsDotnet.Cose.CwtValidationOptions..ctor()`
+- `DataProofsDotnet.Cose.CwtValidationOptions.ClockSkew`
+- `DataProofsDotnet.Cose.CwtValidationOptions.ValidationTime`
+- `DataProofsDotnet.Cose.CwtVerificationResult (type)`
+- `DataProofsDotnet.Cose.CwtVerificationResult.Claims`
+- `DataProofsDotnet.Cose.CwtVerificationResult.Failure`
+- `DataProofsDotnet.Cose.CwtVerificationResult.Verified`
+- `DataProofsDotnet.Cose.VcCose (type)`
+- `DataProofsDotnet.Cose.VcCose.CredentialContentType`
+- `DataProofsDotnet.Cose.VcCose.EnvelopeCredentialAsync`
+- `DataProofsDotnet.Cose.VcCose.EnvelopeType`
+- `DataProofsDotnet.Cose.VcCose.Verify`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry (type)`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry..ctor()`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.CreateDefault`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.GetByName`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.Register`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.RegisteredNames`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof (type)`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof..ctor()`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.AdditionalProperties`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Challenge`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Context`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Created`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Cryptosuite`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.DataIntegrityProofType`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Domain`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Expires`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Id`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Nonce`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.PreviousProof`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofPurpose`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofValue`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.Type`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProof.VerificationMethod`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline (type)`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline..ctor()`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline..ctor(CryptosuiteRegistry)`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.AddProofAsync`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.Suites`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.Verify`
+- `DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.VerifyAsync`
+- `DataProofsDotnet.DataIntegrity.DocumentVerificationResult (type)`
+- `DataProofsDotnet.DataIntegrity.DocumentVerificationResult..ctor()`
+- `DataProofsDotnet.DataIntegrity.DocumentVerificationResult.Problems`
+- `DataProofsDotnet.DataIntegrity.DocumentVerificationResult.ProofResults`
+- `DataProofsDotnet.DataIntegrity.DocumentVerificationResult.Verified`
+- `DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite (type)`
+- `DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite..ctor()`
+- `DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.CryptosuiteName`
+- `DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.Name`
+- `DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.VerifyProof`
+- `DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite (type)`
+- `DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite..ctor()`
+- `DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.CryptosuiteName`
+- `DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.Name`
+- `DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.VerifyProof`
+- `DataProofsDotnet.DataIntegrity.ICryptosuite (type)`
+- `DataProofsDotnet.DataIntegrity.ICryptosuite.CreateProofAsync`
+- `DataProofsDotnet.DataIntegrity.ICryptosuite.Name`
+- `DataProofsDotnet.DataIntegrity.ICryptosuite.VerifyProof`
+- `DataProofsDotnet.DataIntegrity.IVerificationMethodResolver (type)`
+- `DataProofsDotnet.DataIntegrity.IVerificationMethodResolver.ResolveAsync`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReference (type)`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReference.FromSingle`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReference.FromValues`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReference.IsArrayForm`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReference.Values`
+- `DataProofsDotnet.DataIntegrity.ProofProblem (type)`
+- `DataProofsDotnet.DataIntegrity.ProofProblem..ctor()`
+- `DataProofsDotnet.DataIntegrity.ProofProblem.Code`
+- `DataProofsDotnet.DataIntegrity.ProofProblem.Message`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes (type)`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidChallengeError`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidDomainError`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidVerificationMethod`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.ProofGenerationError`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.ProofTransformationError`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.ProofVerificationError`
+- `DataProofsDotnet.DataIntegrity.ProofPurposes (type)`
+- `DataProofsDotnet.DataIntegrity.ProofPurposes.AssertionMethod`
+- `DataProofsDotnet.DataIntegrity.ProofPurposes.Authentication`
+- `DataProofsDotnet.DataIntegrity.ProofPurposes.CapabilityDelegation`
+- `DataProofsDotnet.DataIntegrity.ProofPurposes.CapabilityInvocation`
+- `DataProofsDotnet.DataIntegrity.ProofPurposes.KeyAgreement`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions (type)`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions..ctor()`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedChallenge`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedDomain`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedProofPurpose`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.VerificationTime`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult (type)`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult..ctor()`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult.Failure`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult.Problems`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult.Proof`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult.Success`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationResult.Verified`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod (type)`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod..ctor()`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Controller`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.ControllerControlsMethod`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Id`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.PublicKey`
+- `DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Relationships`
+- `DataProofsDotnet.DataIntegrity.StaticVerificationMethodResolver (type)`
+- `DataProofsDotnet.DataIntegrity.StaticVerificationMethodResolver..ctor(IEnumerable`1)`
+- `DataProofsDotnet.DataIntegrity.StaticVerificationMethodResolver.ResolveAsync`
+- `DataProofsDotnet.DataProofsException (type)`
+- `DataProofsDotnet.DataProofsException..ctor()`
+- `DataProofsDotnet.DataProofsException..ctor(String)`
+- `DataProofsDotnet.DataProofsException..ctor(String,Exception)`
+- `DataProofsDotnet.DataProofsJsonOptions (type)`
+- `DataProofsDotnet.DataProofsJsonOptions.Default`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder (type)`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddBbs2023`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddCose`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddJcsSuites`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddJose`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddRdfcSuites`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.AddVerificationMethodResolver`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.Registry`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder.Services`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsServiceCollectionExtensions (type)`
+- `DataProofsDotnet.Extensions.DependencyInjection.DataProofsServiceCollectionExtensions.AddDataProofs`
+- `DataProofsDotnet.Jose.Base64Url (type)`
+- `DataProofsDotnet.Jose.Base64Url.Decode`
+- `DataProofsDotnet.Jose.Base64Url.DecodeUtf8`
+- `DataProofsDotnet.Jose.Base64Url.Encode`
+- `DataProofsDotnet.Jose.Base64Url.EncodeUtf8`
+- `DataProofsDotnet.Jose.Encryption.ApuComputer (type)`
+- `DataProofsDotnet.Jose.Encryption.ApuComputer.Compute`
+- `DataProofsDotnet.Jose.Encryption.ApvComputer (type)`
+- `DataProofsDotnet.Jose.Encryption.ApvComputer.Compute`
+- `DataProofsDotnet.Jose.Encryption.ApvComputer.ComputeBytes`
+- `DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver (type)`
+- `DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.FindPresent`
+- `DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.TryGet`
+- `DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver (type)`
+- `DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver.TryGet`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder (type)`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildA256Kw`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactA256Kw`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactEcdhEsA256Kw`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdh1PuA256Kw`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdhEsA256Kw`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult (type)`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult..ctor(Byte[],String,String,String,IReadOnlyList`1,String,Boolean)`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.Algorithm`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.AllRecipientKids`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.ContentEncryption`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.IsAuthenticated`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.Plaintext`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.RecipientKid`
+- `DataProofsDotnet.Jose.Encryption.JweParseResult.SenderKid`
+- `DataProofsDotnet.Jose.Encryption.JweParser (type)`
+- `DataProofsDotnet.Jose.Encryption.JweParser.Parse`
+- `DataProofsDotnet.Jose.Encryption.JweParser.ParseCompact`
+- `DataProofsDotnet.Jose.Encryption.JweParser.PeekRecipients`
+- `DataProofsDotnet.Jose.Encryption.JwePeekResult (type)`
+- `DataProofsDotnet.Jose.Encryption.JwePeekResult..ctor(String,String,IReadOnlyList`1)`
+- `DataProofsDotnet.Jose.Encryption.JwePeekResult.Algorithm`
+- `DataProofsDotnet.Jose.Encryption.JwePeekResult.RecipientKids`
+- `DataProofsDotnet.Jose.Encryption.JwePeekResult.Skid`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider (type)`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.AeadDecrypt`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.AeadEncrypt`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.DeriveSharedSecret`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.Fill`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.KeyUnwrap`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.KeyWrap`
+- `DataProofsDotnet.Jose.IJoseCryptoProvider.Verify`
+- `DataProofsDotnet.Jose.JoseAlgorithms (type)`
+- `DataProofsDotnet.Jose.JoseAlgorithms.A256CbcHs512`
+- `DataProofsDotnet.Jose.JoseAlgorithms.A256Gcm`
+- `DataProofsDotnet.Jose.JoseAlgorithms.A256Kw`
+- `DataProofsDotnet.Jose.JoseAlgorithms.CrvEd25519`
+- `DataProofsDotnet.Jose.JoseAlgorithms.CrvP256`
+- `DataProofsDotnet.Jose.JoseAlgorithms.CrvP384`
+- `DataProofsDotnet.Jose.JoseAlgorithms.CrvP521`
+- `DataProofsDotnet.Jose.JoseAlgorithms.CrvSecp256k1`
+- `DataProofsDotnet.Jose.JoseAlgorithms.CrvX25519`
+- `DataProofsDotnet.Jose.JoseAlgorithms.ES256`
+- `DataProofsDotnet.Jose.JoseAlgorithms.ES256K`
+- `DataProofsDotnet.Jose.JoseAlgorithms.ES384`
+- `DataProofsDotnet.Jose.JoseAlgorithms.ES512`
+- `DataProofsDotnet.Jose.JoseAlgorithms.Ecdh1PuA256Kw`
+- `DataProofsDotnet.Jose.JoseAlgorithms.EcdhEsA256Kw`
+- `DataProofsDotnet.Jose.JoseAlgorithms.EdDSA`
+- `DataProofsDotnet.Jose.JoseAlgorithms.IsSupportedContentEncryption`
+- `DataProofsDotnet.Jose.JoseAlgorithms.SupportedContentEncryptionAlgorithms`
+- `DataProofsDotnet.Jose.JoseAlgorithms.SupportedKeyManagementAlgorithms`
+- `DataProofsDotnet.Jose.JoseAlgorithms.SupportedSignatureAlgorithms`
+- `DataProofsDotnet.Jose.JoseAlgorithms.XC20P`
+- `DataProofsDotnet.Jose.JoseCryptoException (type)`
+- `DataProofsDotnet.Jose.JoseCryptoException..ctor(String)`
+- `DataProofsDotnet.Jose.JoseCryptoException..ctor(String,Exception)`
+- `DataProofsDotnet.Jose.JoseCryptoProvider (type)`
+- `DataProofsDotnet.Jose.JoseCryptoProvider..ctor()`
+- `DataProofsDotnet.Jose.JoseCryptoProvider..ctor(ICryptoProvider)`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.AeadDecrypt`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.AeadEncrypt`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.DeriveSharedSecret`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.Fill`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.KeyUnwrap`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.KeyWrap`
+- `DataProofsDotnet.Jose.JoseCryptoProvider.Verify`
+- `DataProofsDotnet.Jose.JoseException (type)`
+- `DataProofsDotnet.Jose.JoseException..ctor(String)`
+- `DataProofsDotnet.Jose.JoseException..ctor(String,Exception)`
+- `DataProofsDotnet.Jose.Jwk (type)`
+- `DataProofsDotnet.Jose.Jwk..ctor()`
+- `DataProofsDotnet.Jose.Jwk.AdditionalData`
+- `DataProofsDotnet.Jose.Jwk.Alg`
+- `DataProofsDotnet.Jose.Jwk.Crv`
+- `DataProofsDotnet.Jose.Jwk.D`
+- `DataProofsDotnet.Jose.Jwk.K`
+- `DataProofsDotnet.Jose.Jwk.Kid`
+- `DataProofsDotnet.Jose.Jwk.Kty`
+- `DataProofsDotnet.Jose.Jwk.Use`
+- `DataProofsDotnet.Jose.Jwk.X`
+- `DataProofsDotnet.Jose.Jwk.Y`
+- `DataProofsDotnet.Jose.JwkConversion (type)`
+- `DataProofsDotnet.Jose.JwkConversion.ExtractPublicKey`
+- `DataProofsDotnet.Jose.JwkConversion.FromMultikey`
+- `DataProofsDotnet.Jose.JwkConversion.ToJsonWebKey`
+- `DataProofsDotnet.Jose.JwkConversion.ToMultikey`
+- `DataProofsDotnet.Jose.JwkConversion.ToPrivateJwk`
+- `DataProofsDotnet.Jose.JwkConversion.ToPublicJwk`
+- `DataProofsDotnet.Jose.JwkThumbprint (type)`
+- `DataProofsDotnet.Jose.JwkThumbprint.Compute`
+- `DataProofsDotnet.Jose.JwkThumbprint.ComputeBase64Url`
+- `DataProofsDotnet.Jose.JwkThumbprint.ComputeKid`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims (type)`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims..ctor(String,String,IReadOnlyList`1,Nullable`1,Nullable`1,Nullable`1,String,IReadOnlyDictionary`2)`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.AdditionalClaims`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.Audiences`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.ExpiresAt`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.IssuedAt`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.Issuer`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.JwtId`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.NotBefore`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.Parse`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.Subject`
+- `DataProofsDotnet.Jose.Jwt.JwtClaims.ToJsonBytes`
+- `DataProofsDotnet.Jose.Jwt.JwtHandler (type)`
+- `DataProofsDotnet.Jose.Jwt.JwtHandler.SignAsync`
+- `DataProofsDotnet.Jose.Jwt.JwtHandler.Verify`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions (type)`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions..ctor()`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.AllowedAlgorithms`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ClockSkew`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.CurrentTime`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedAudience`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedIssuer`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedSubject`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.RequireExpirationTime`
+- `DataProofsDotnet.Jose.Jwt.JwtVerificationResult (type)`
+- `DataProofsDotnet.Jose.Jwt.JwtVerificationResult.Claims`
+- `DataProofsDotnet.Jose.Jwt.JwtVerificationResult.Errors`
+- `DataProofsDotnet.Jose.Jwt.JwtVerificationResult.IsValid`
+- `DataProofsDotnet.Jose.Jwt.JwtVerificationResult.SignatureAlgorithm`
+- `DataProofsDotnet.Jose.Jwt.JwtVerificationResult.SignerKid`
+- `DataProofsDotnet.Jose.MalformedJoseException (type)`
+- `DataProofsDotnet.Jose.MalformedJoseException..ctor(String)`
+- `DataProofsDotnet.Jose.MalformedJoseException..ctor(String,Exception)`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure (type)`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.ClaimName`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.ClaimValue`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.ComputeDigest`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.Encoded`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.ForArrayElement`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.ForObjectProperty`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.IsArrayElement`
+- `DataProofsDotnet.Jose.SdJwt.Disclosure.Parse`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame (type)`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame..ctor()`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame.Disclose`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseArrayElements`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseObject`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseObjectProperties`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseRecursiveObject`
+- `DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseRecursively`
+- `DataProofsDotnet.Jose.SdJwt.KeyBindingJwt (type)`
+- `DataProofsDotnet.Jose.SdJwt.KeyBindingJwt.IssueAsync`
+- `DataProofsDotnet.Jose.SdJwt.KeyBindingJwt.Type`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.ComputeDigest`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.ComputeSdHash`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Default`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.IsSupported`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Sha256`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Sha384`
+- `DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Sha512`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents.Disclosures`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents.HasKeyBinding`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents.IssuerJwt`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents.KeyBindingJwt`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents.Parse`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtComponents.SdJwtWithoutKeyBinding`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtHolder (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtHolder.CreatePresentation`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtHolder.CreatePresentationWithKeyBindingAsync`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer+Result (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer+Result..ctor(String,String,IReadOnlyList`1)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer+Result.Disclosures`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer+Result.Issuance`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer+Result.IssuerJwt`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.IssueAsync`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions..ctor()`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.DecoyDigestCount`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.HashAlgorithm`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.HolderConfirmationKey`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions..ctor()`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ClockSkew`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.CurrentTime`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ExpectedAudience`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ExpectedNonce`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.MaxKeyBindingAge`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.RequireKeyBinding`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.DisclosedPayload`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.Errors`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.IsValid`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.KeyBindingVerified`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.SignatureAlgorithm`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier (type)`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.Verify`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver.ResolveAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver..ctor()`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver..ctor(IReadOnlyDictionary`2)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver.ResolveAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MediaType`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MustNotBeSelectivelyDisclosed`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.StatusClaim`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.TransitionalMediaType`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctClaim`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctIntegrityClaim`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer.IssueAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.DisclosedPayload`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Errors`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.IsValid`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.KeyBindingVerified`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadata`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Vct`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyAsync`
+- `DataProofsDotnet.Jose.Signing.JwsBuilder (type)`
+- `DataProofsDotnet.Jose.Signing.JwsBuilder.BuildCompactAsync`
+- `DataProofsDotnet.Jose.Signing.JwsBuilder.BuildJsonAsync`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult (type)`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult..ctor(String,String,Byte[])`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult.PayloadBytes`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid`
+- `DataProofsDotnet.Jose.Signing.JwsParser (type)`
+- `DataProofsDotnet.Jose.Signing.JwsParser.Parse`
+- `DataProofsDotnet.Jose.Signing.JwsParser.Parse`
+- `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact`
+- `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact`
+- `DataProofsDotnet.Jose.Signing.JwsSigner (type)`
+- `DataProofsDotnet.Jose.Signing.JwsSigner..ctor(ISigner,String)`
+- `DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm`
+- `DataProofsDotnet.Jose.Signing.JwsSigner.Kid`
+- `DataProofsDotnet.Jose.Signing.JwsSigner.Signer`
+- `DataProofsDotnet.Jose.VcJose (type)`
+- `DataProofsDotnet.Jose.VcJose.CredentialContentType`
+- `DataProofsDotnet.Jose.VcJose.EnvelopeCredentialAsync`
+- `DataProofsDotnet.Jose.VcJose.EnvelopeType`
+- `DataProofsDotnet.Jose.VcJose.MediaType`
+- `DataProofsDotnet.Jose.VcJose.VerifyCredential`
+- `DataProofsDotnet.ProofGenerationException (type)`
+- `DataProofsDotnet.ProofGenerationException..ctor()`
+- `DataProofsDotnet.ProofGenerationException..ctor(String)`
+- `DataProofsDotnet.ProofGenerationException..ctor(String,Exception)`
+- `DataProofsDotnet.PublicKeyMaterial (type)`
+- `DataProofsDotnet.PublicKeyMaterial.FromJsonWebKey`
+- `DataProofsDotnet.PublicKeyMaterial.FromMultikey`
+- `DataProofsDotnet.PublicKeyMaterial.FromRaw`
+- `DataProofsDotnet.PublicKeyMaterial.KeyBytes`
+- `DataProofsDotnet.PublicKeyMaterial.KeyType`
+- `DataProofsDotnet.PublicKeyMaterial.ToJsonWebKey`
+- `DataProofsDotnet.PublicKeyMaterial.ToMultikey`
+- `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader (type)`
+- `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader..ctor()`
+- `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader..ctor(IDocumentLoader)`
+- `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Dispose`
+- `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Load`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite (type)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite..ctor()`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite..ctor(IRdfCanonicalizer)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CryptosuiteName`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.DeriveProof`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.IsAvailable`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Name`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.VerifyProof`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite (type)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite..ctor()`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite..ctor(IRdfCanonicalizer)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CryptosuiteName`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.Name`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.VerifyProof`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite (type)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite..ctor()`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite..ctor(IRdfCanonicalizer)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CryptosuiteName`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.Name`
+- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.VerifyProof`
+- `DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration (type)`
+- `DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.AddBbs2023`
+- `DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.AddRdfcSuites`
+- `DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.CreateWithRdfcSuites`
+- `DataProofsDotnet.Rdfc.IDocumentLoader (type)`
+- `DataProofsDotnet.Rdfc.IDocumentLoader.Load`
+- `DataProofsDotnet.Rdfc.IRdfCanonicalizer (type)`
+- `DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeJsonLd`
+- `DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuads`
+- `DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuadsToMap`
+- `DataProofsDotnet.Rdfc.LoadedContextDocument (type)`
+- `DataProofsDotnet.Rdfc.LoadedContextDocument..ctor(Uri,String)`
+- `DataProofsDotnet.Rdfc.LoadedContextDocument.Content`
+- `DataProofsDotnet.Rdfc.LoadedContextDocument.DocumentUrl`
+- `DataProofsDotnet.Rdfc.OfflineDocumentLoader (type)`
+- `DataProofsDotnet.Rdfc.OfflineDocumentLoader..ctor()`
+- `DataProofsDotnet.Rdfc.OfflineDocumentLoader.BundledContextUrls`
+- `DataProofsDotnet.Rdfc.OfflineDocumentLoader.Instance`
+- `DataProofsDotnet.Rdfc.OfflineDocumentLoader.Load`
+- `DataProofsDotnet.Rdfc.RdfCanonicalizationException (type)`
+- `DataProofsDotnet.Rdfc.RdfCanonicalizationException..ctor(String)`
+- `DataProofsDotnet.Rdfc.RdfCanonicalizationException..ctor(String,Exception)`
+- `DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm (type)`
+- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer (type)`
+- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer..ctor()`
+- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer..ctor(IDocumentLoader)`
+- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeJsonLd`
+- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuads`
+- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuadsToMap`

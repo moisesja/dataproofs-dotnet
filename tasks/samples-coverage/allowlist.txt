@@ -1,0 +1,9 @@
+# FR-21 / AC-9 samples-coverage allowlist.
+#
+# Each non-comment line excuses ONE uncovered public member from the coverage gate. Format:
+#
+#   Fully.Qualified.Member # justification: <why no sample needs to exercise this name>
+#
+# A line without a "# justification:" comment fails the tool (exit 2). Keep this list minimal and
+# honest: the default is that every public member is exercised by a sample. The label is exactly
+# the report's member label (e.g. "DataProofsDotnet.Foo.Bar" or "DataProofsDotnet.Foo..ctor(...)").
