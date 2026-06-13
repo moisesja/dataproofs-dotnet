@@ -1,0 +1,73 @@
+# AC-7 BCL allowlist — the EXACT enumerated System.* subset PRD §9 AC-7 / §2.2 permit in
+# public signatures. This is NOT all of System.*: backend/encoding namespaces
+# (System.Formats.Cbor.*, System.Security.Cryptography.*, System.Xml.*, System.Net.*,
+# System.IO.*) are deliberately EXCLUDED and any appearance fails the scan.
+#
+# Format: one fully-qualified type or namespace-prefix per line.
+#   * A line ending in ".*" is a namespace prefix: every type under it is allowed
+#     (e.g. System.Text.Json.* covers JsonElement, JsonSerializerOptions, Nodes.JsonNode, …).
+#   * Any other line is an exact fully-qualified type name.
+# Lines beginning with '#' are comments; blank lines ignored.
+# C# keyword aliases (void/bool/int/string/byte/object/…) are mapped to their System
+# types by the scanner BEFORE matching, so they need not be listed here — but the System
+# types they map to ARE listed below so the mapping resolves to an allowed entry.
+#
+# Additions to this file require a justification comment on the line above the entry (AC-7).
+
+# ---- scalar / primitive types (the C# keyword aliases resolve to these) ----
+System.Boolean
+System.Byte
+System.SByte
+System.Char
+System.Int16
+System.UInt16
+System.Int32
+System.UInt32
+System.Int64
+System.UInt64
+System.IntPtr
+System.UIntPtr
+System.Single
+System.Double
+System.Decimal
+System.String
+System.Object
+System.Void
+
+# ---- span / memory types ----
+System.ReadOnlySpan
+System.Span
+System.ReadOnlyMemory
+System.Memory
+
+# ---- System.Text.Json — the sanctioned serialization surface (incl. Nodes, Serialization) ----
+System.Text.Json.*
+
+# ---- async types ----
+System.Threading.Tasks.Task
+System.Threading.Tasks.ValueTask
+System.Threading.CancellationToken
+
+# ---- common collection interfaces (the generic collection surface the models use) ----
+System.Collections.Generic.*
+
+# ---- date / URI / id scalars the models need ----
+System.DateTimeOffset
+System.TimeSpan
+System.Uri
+System.Guid
+
+# ---- delegate scalars used in verify-API resolver callbacks (Func/Action over allowed types) ----
+# Func<>/Action<> themselves are allowlisted; their type arguments are checked independently,
+# so a forbidden type smuggled in as a generic argument still fails.
+System.Func
+System.Action
+
+# ---- exception base + nullability/tuple plumbing that appears in signatures ----
+# Library exceptions derive from these; System.Exception is the sanctioned base type, and
+# inner-exception parameters are typed System.Exception. Nullable<T> wraps allowed value types
+# (the wrapped T is checked independently). ValueTuple backs C# tuple return types whose
+# element types are checked independently.
+System.Exception
+System.Nullable
+System.ValueTuple

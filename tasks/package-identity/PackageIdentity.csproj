@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>DataProofsDotnet.Tools.PackageIdentity</RootNamespace>
+    <AssemblyName>PackageIdentity</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- No ProjectReference: the tool reads each src csproj's <PackageId> as XML text and queries
+       nuget.org over HTTP, so it builds and runs independently of the packages' compile state. -->
+
+</Project>
