@@ -17,7 +17,7 @@ namespace DataProofsDotnet.Rdfc.Tests;
 /// <remarks>
 /// The mandatory group is bound conformantly through the BBS signature <c>header</c>
 /// (<c>bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads)</c>, NetCrypto ≥
-/// 1.0.0-preview.2), recomputed at verify from the revealed mandatory messages (see
+/// 1.0.0), recomputed at verify from the revealed mandatory messages (see
 /// <see cref="Bbs2023Cryptosuite"/> remarks and
 /// <see cref="Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed"/>). The suite's
 /// <c>proofValue</c> bytes remain not byte-interchangeable with the W3C reference vectors because

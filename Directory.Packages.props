@@ -5,7 +5,7 @@
   <ItemGroup>
     <!-- Cryptography substrate: ALL cryptography (hashing, signing, AEAD, key wrap, KDF, BBS)
          routes through NetCrypto — PRD §2.2; no other crypto backend may appear in src/. -->
-    <PackageVersion Include="NetCrypto" Version="1.0.0-preview.2" />
+    <PackageVersion Include="NetCrypto" Version="1.0.0" />
     <!-- Multiformats (multibase/multicodec/multihash/Multikey) + JCS — owned by NetCid stack-wide. -->
     <PackageVersion Include="NetCid" Version="1.6.0" />
     <!-- JWK boundary exception: only the JsonWebKey type may surface in public API (PRD §2.2, AC-7). -->

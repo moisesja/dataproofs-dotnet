@@ -48,7 +48,7 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// messages — never taken from the holder-controlled derived proofValue — so a holder that drops
 /// or alters a mandatory statement produces a header that no longer matches the one committed by
 /// the proof, and verification fails. This makes mandatory disclosure cryptographically enforced
-/// (requires NetCrypto's BBS <c>header</c> parameter, ≥ 1.0.0-preview.2).
+/// (requires NetCrypto's BBS <c>header</c> parameter, ≥ 1.0.0).
 /// </para>
 /// <para>
 /// The blank-node relabeling keys the HMAC on document-order-stable skolem identifiers (see the

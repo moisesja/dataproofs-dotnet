@@ -22,5 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mandatory messages — so a holder that drops or alters a mandatory statement produces a header
   that no longer matches the one the proof commits to, and verification fails. Closes the
   adversarial-review finding that a holder could omit a mandatory claim and still verify. Requires
-  NetCrypto ≥ 1.0.0-preview.2 (the BBS `header` parameter, upstream moisesja/crypto-dotnet#2);
-  regression test `Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed`.
+  NetCrypto ≥ 1.0.0 (the BBS `header` parameter, upstream moisesja/crypto-dotnet#2; first
+  available in 1.0.0-preview.2, GA in 1.0.0); regression test
+  `Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed`.
