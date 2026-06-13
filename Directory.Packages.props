@@ -22,6 +22,9 @@
     <!-- Build-time only -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
+    <!-- AC-6 banned-symbol scan: bans direct System.Security.Cryptography primitives in src/
+         method bodies (a shared BannedSymbols.txt at repo root is added to each src csproj). -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>DataProofsDotnet.Tools.DependencyHygiene</RootNamespace>
+    <AssemblyName>DependencyHygiene</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- No ProjectReference: this tool shells out to `dotnet list package` and inspects packed
+       .nupkg nuspecs, so it must build and run independently of the src packages' compile state
+       (AC-6 / phase brief). -->
+
+</Project>

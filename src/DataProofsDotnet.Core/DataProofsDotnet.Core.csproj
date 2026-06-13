@@ -17,11 +17,15 @@
     <PackageReference Include="Microsoft.IdentityModel.Tokens" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+    <!-- AC-6 banned-symbol scan: no direct System.Security.Cryptography primitives in src/ -->
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <!-- Shared repo-root banned-symbol list (AC-6); $(MSBuildThisFileDirectory) is this csproj's dir -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
   </ItemGroup>
 
   <ItemGroup>

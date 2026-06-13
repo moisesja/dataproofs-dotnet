@@ -17,6 +17,9 @@
     <PackageReference Include="System.Formats.Cbor" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+    <!-- AC-6 banned-symbol scan: no direct System.Security.Cryptography primitives in src/.
+         Rdfc's sanctioned System.Formats.Cbor use is NOT in that namespace and stays allowed. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="All" />
   </ItemGroup>
 
   <!-- FR-10: version-pinned core W3C JSON-LD contexts embedded as assembly resources for the
@@ -38,6 +41,8 @@
   <ItemGroup>
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <!-- Shared repo-root banned-symbol list (AC-6); $(MSBuildThisFileDirectory) is this csproj's dir -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
   </ItemGroup>
 
   <ItemGroup>

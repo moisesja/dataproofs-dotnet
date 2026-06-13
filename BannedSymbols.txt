@@ -1,0 +1,84 @@
+# AC-6 banned-symbol scan — NetCrypto-only crypto (hashing included).
+#
+# Microsoft.CodeAnalysis.BannedApiAnalyzers reads this file (referenced from each of the five
+# src csprojs via <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />).
+# It bans every System.Security.Cryptography CRYPTOGRAPHIC PRIMITIVE — direct BCL hashing,
+# HMACs, signature algorithms, and AEADs — that a package-dependency check (the
+# tasks/dependency-hygiene tool) cannot see, because these live in System.Private.CoreLib /
+# System.Security.Cryptography.* assemblies that ship with the runtime, not as NuGet packages.
+# Every such operation MUST instead route through NetCrypto's hashing/signing/AEAD API
+# (PRD §2.2 / AC-6 / NFR-6).
+#
+# Format: one DocID per line, `<symbol-id>;<message>`. Banning a TYPE (`T:`) flags both
+# instance construction and static-factory use (e.g. SHA256.HashData(...)). Each declaration's
+# `Id` must be its DocumentationCommentId.
+#
+# DELIBERATELY NOT BANNED:
+#   * T:System.Security.Cryptography.CryptographicOperations is NOT banned here, so its
+#     FixedTimeEquals constant-time comparison utility stays available (NFR-6 — the single
+#     allowlisted symbol from this namespace; it is a comparison utility, not a keyed or
+#     algorithmic primitive). Banning the whole System.Security.Cryptography namespace (N:)
+#     would have caught it, which is why we ban the primitive TYPES individually instead.
+#   * System.Formats.Cbor.* is NOT in System.Security.Cryptography and is the sanctioned
+#     internal CBOR encoding for Cose/Rdfc (PRD §2.2) — nothing here touches it.
+#   * T:System.Security.Cryptography.RandomNumberGenerator is NOT banned. The AC-6 / PRD §2.2
+#     enumerated ban list is hashes + HMACs + signature algorithms + AEADs; randomness is
+#     deliberately outside it. NFR-5 bans System.Random (a non-cryptographic PRNG), NOT the
+#     platform CSPRNG, and requires "NetCrypto's randomness" — but NetCrypto v1 exposes no
+#     public randomness API (tasks/research/netcrypto-api.md §9), so there is no NetCrypto
+#     entry point to route to. DataProofsDotnet.Jose.JoseCryptoProvider.Fill therefore uses
+#     RandomNumberGenerator.Fill (the platform CSPRNG access point) for SD-JWT salts/IVs; this
+#     is a randomness SOURCE, not a keyed/algorithmic primitive, in the same allowlist category
+#     as FixedTimeEquals. Recorded as a hygiene NOTE in the Phase F report: if NetCrypto grows
+#     a SecureRandom API, reroute JoseCryptoProvider.Fill to it and add the ban line back here.
+
+# --- Hash algorithms (route through NetCrypto.Hash: Sha256/Sha384/Sha512, Keccak256) ---
+T:System.Security.Cryptography.SHA1;Hash via NetCrypto.Hash, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA256;Hash via NetCrypto.Hash.Sha256, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA384;Hash via NetCrypto.Hash.Sha384, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA512;Hash via NetCrypto.Hash.Sha512, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA3_256;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA3_384;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA3_512;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.MD5;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.IncrementalHash;Hash via NetCrypto.Hash, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.SHA3_256.Shake128;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.Shake128;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.Shake256;Hash via NetCrypto, never System.Security.Cryptography (AC-6).
+
+# --- HMAC / keyed hashing (route through NetCrypto: Hkdf, ConcatKdf, hashing API) ---
+T:System.Security.Cryptography.HMAC;HMAC/KDF via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA1;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA256;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA384;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA512;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA3_256;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA3_384;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACSHA3_512;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HMACMD5;HMAC via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.HKDF;KDF via NetCrypto.Hkdf, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.Rfc2898DeriveBytes;KDF via NetCrypto, never System.Security.Cryptography (AC-6).
+
+# --- Signature algorithms (route through NetCrypto ISigner / ICryptoProvider) ---
+T:System.Security.Cryptography.ECDsa;Sign/verify via NetCrypto ISigner, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.ECDsaOpenSsl;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.ECDsaCng;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.RSA;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.RSAOpenSsl;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.RSACng;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.RSACryptoServiceProvider;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.DSA;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.DSACng;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.DSAOpenSsl;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.DSACryptoServiceProvider;Sign/verify via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.ECDiffieHellman;Key agreement via NetCrypto ICryptoProvider.DeriveSharedSecret, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.ECDiffieHellmanOpenSsl;Key agreement via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.ECDiffieHellmanCng;Key agreement via NetCrypto, never System.Security.Cryptography (AC-6).
+
+# --- AEADs / symmetric ciphers / key wrap (route through NetCrypto cipher statics) ---
+T:System.Security.Cryptography.AesGcm;AEAD via NetCrypto.AesGcmCipher, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.AesCcm;AEAD via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.ChaCha20Poly1305;AEAD via NetCrypto.XChaCha20Poly1305Cipher, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.Aes;Symmetric cipher / key wrap via NetCrypto (AesCbcHmacCipher / AesKeyWrap), never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.AesManaged;Symmetric cipher via NetCrypto, never System.Security.Cryptography (AC-6).
+T:System.Security.Cryptography.TripleDES;Symmetric cipher via NetCrypto, never System.Security.Cryptography (AC-6).
