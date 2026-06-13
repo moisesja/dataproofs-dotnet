@@ -551,4 +551,3 @@ temp/
 # End of https://www.toptal.com/developers/gitignore/api/visualstudio
 # Claude Code session state and agent worktrees
 .claude/
-.claude/settings.json
