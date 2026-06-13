@@ -40,28 +40,23 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// absent on the host. <see cref="IsAvailable"/> reports the capability without throwing.
 /// </para>
 /// <para>
-/// <b>⚠ EXPERIMENTAL — mandatory disclosure is NOT cryptographically enforced (security
-/// limitation).</b> The W3C suite binds the BBS <c>header</c> parameter to
-/// <c>bbsHeader = proofHash ‖ mandatoryHash</c> at both sign and proof-generation time; that
-/// binding is what forces a holder to keep every issuer-designated mandatory statement in a
-/// presentation. NetCrypto v1's <see cref="IBbsCryptoProvider"/> does not surface the BBS
-/// <c>header</c> argument (it is hardcoded empty), so this suite cannot bind the mandatory
-/// group. <b>Consequence:</b> a malicious holder can derive a proof that omits a mandatory
-/// statement and it will still verify. Do not rely on the mandatory-disclosure guarantee until
-/// NetCrypto exposes the header (tracked: <c>docs/dependencies/netcrypto-bbs-header.md</c>,
-/// upstream <c>moisesja/crypto-dotnet#2</c>); treat <c>bbs-2023</c> as experimental — it is
-/// pinned to a Candidate Recommendation <em>draft</em> (PRD §12.3). The honest create → derive →
-/// verify lifecycle is otherwise correct (BBS proves the revealed messages were issuer-signed).
+/// <b>Mandatory-disclosure binding.</b> The W3C suite binds the mandatory group into the BBS
+/// signature <c>header</c>: <c>bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads)</c>,
+/// supplied at <see cref="IBbsCryptoProvider.Sign"/> (issuer) and
+/// <see cref="IBbsCryptoProvider.DeriveProof"/> (holder, from the value carried in the base
+/// proofValue). At verification the header is <em>recomputed</em> from the revealed mandatory
+/// messages — never taken from the holder-controlled derived proofValue — so a holder that drops
+/// or alters a mandatory statement produces a header that no longer matches the one committed by
+/// the proof, and verification fails. This makes mandatory disclosure cryptographically enforced
+/// (requires NetCrypto's BBS <c>header</c> parameter, ≥ 1.0.0-preview.2).
 /// </para>
 /// <para>
-/// As a further consequence, the suite's <c>proofValue</c> bytes are not interchangeable with
-/// W3C reference vectors generated with a non-empty BBS header (those are validated structurally
-/// in the test suite). The CBOR framing and proof-value headers match the reference wire form;
-/// the blank-node relabeling keys the HMAC on document-order-stable skolem identifiers (see the
+/// The blank-node relabeling keys the HMAC on document-order-stable skolem identifiers (see the
 /// partition note below) rather than canonical <c>c14n*</c> labels, which keeps the create →
 /// derive → verify partition exactly consistent across the lifecycle without depending on
-/// canonical-label alignment between sub-documents. Immutable and thread-safe after construction
-/// (NFR-4).
+/// canonical-label alignment between sub-documents. The CBOR framing and proof-value headers match
+/// the reference wire form; the suite is pinned to a Candidate Recommendation draft (PRD §12.3).
+/// Immutable and thread-safe after construction (NFR-4).
 /// </para>
 /// </remarks>
 public sealed class Bbs2023Cryptosuite : ICryptosuite
@@ -156,14 +151,14 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         var mandatoryHash = HashMandatory(transformed.Mandatory.Values);
         var bbsHeader = Concat(proofHash, mandatoryHash);
 
-        // BBS messages are ALL the relabeled N-Quads in canonical order. The W3C suite binds
-        // the mandatory group through the BBS header (proofHash ‖ mandatoryHash); NetCrypto's
-        // IBbsCryptoProvider v1 does not surface that header, so to keep the mandatory group
-        // cryptographically bound (tampering a mandatory statement MUST fail verification) the
-        // mandatory statements are signed as always-disclosed messages alongside the
-        // selectively-disclosable ones. (See the type's BBS-header remarks.)
+        // BBS messages are ALL the relabeled N-Quads in canonical order. The mandatory group is
+        // bound conformantly through the BBS signature header (bbs-2023 §3.4.1):
+        // bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads). The verifier recomputes
+        // this header from the revealed mandatory messages, so a holder that drops or alters a
+        // mandatory statement produces a header that no longer matches the one committed by the
+        // proof, and verification fails.
         var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
-        var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, messages);
+        var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, messages, bbsHeader);
 
         var proofValue = Bbs2023ProofValue.SerializeBaseProof(
             bbsSignature, bbsHeader, publicKey, hmacKey.Span, mandatoryPointers);
@@ -285,13 +280,36 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
             var disclosed = CreateVerifyData(unsecuredDocument, components);
 
+            // Recompute the BBS signature header the issuer bound (bbs-2023 §3.4.8):
+            // bbsHeader = SHA-256(proofConfig) ‖ SHA-256(revealed mandatory N-Quads). The
+            // mandatory N-Quads are the revealed messages whose full-list index is in the derived
+            // proof's mandatory index set, in ascending-index order (disclosed.Messages[k] sits at
+            // disclosed.RevealedIndexes[k] because both lists are ascending over the sorted
+            // canonical N-Quads). A malicious holder that drops or alters a mandatory statement
+            // changes this recomputed header, so it no longer equals the header committed by the
+            // proof and BBS verification fails — this is what enforces mandatory disclosure. The
+            // header is recomputed here, NOT taken from the holder-controlled derived proofValue.
+            var proofHash = HashProofConfig(proofConfig);
+            var mandatorySet = new HashSet<int>(components.MandatoryIndexes);
+            var mandatoryMessages = new List<string>();
+            for (var k = 0; k < disclosed.RevealedIndexes.Count; k++)
+            {
+                if (mandatorySet.Contains(disclosed.RevealedIndexes[k]))
+                {
+                    mandatoryMessages.Add(disclosed.Messages[k]);
+                }
+            }
+
+            var bbsHeader = Concat(proofHash, HashMandatory(mandatoryMessages));
+
             var revealedMessages = disclosed.Messages.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
             var verified = _bbs.VerifyProof(
                 publicKey.KeyBytes.Span,
                 components.BbsProof,
                 revealedMessages,
                 disclosed.RevealedIndexes,
-                components.PresentationHeader);
+                components.PresentationHeader,
+                bbsHeader);
 
             return verified
                 ? ProofVerificationResult.Success(proof)
@@ -404,8 +422,12 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         // Reveal the mandatory group AND the selected statements (ascending full-list order).
         var revealedIndexes = transformed.Mandatory.Indexes.Concat(selectiveIndexes).Distinct().OrderBy(x => x).ToList();
         var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        // The derived proof commits to the same BBS header the issuer bound at sign time
+        // (bbsHeader = proofHash ‖ mandatoryHash, carried in the base proofValue); the verifier
+        // recomputes it from the revealed mandatory messages (bbs-2023 §3.4.6).
         var bbsProof = _bbs.DeriveProof(
-            baseComponents.PublicKey, baseComponents.BbsSignature, messages, revealedIndexes, presentationHeader);
+            baseComponents.PublicKey, baseComponents.BbsSignature, messages, revealedIndexes,
+            presentationHeader, baseComponents.BbsHeader);
 
         // Select the reveal document on the SKOLEMIZED document so it carries the stable
         // urn:bnid ids; the verifier deskolemizes + relabels with the same labelMap.

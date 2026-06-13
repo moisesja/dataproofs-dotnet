@@ -16,10 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **`bbs-2023` mandatory disclosure is not yet cryptographically enforced (experimental).** The
-  W3C `bbs-2023` cryptosuite binds the mandatory-disclosure group into the BBS signature
-  `header`; NetCrypto v1's BBS provider does not expose that parameter, so a holder can present a
-  derived proof omitting a mandatory statement and it still verifies. Tracked in
-  `docs/dependencies/netcrypto-bbs-header.md` (upstream moisesja/crypto-dotnet#2); the conformant
-  binding lands once NetCrypto ships the `header` parameter. The other four cryptosuites and all
-  enveloping proofs are unaffected.
+- **`bbs-2023` mandatory disclosure is now cryptographically enforced.** The mandatory-disclosure
+  group is bound into the BBS signature `header` (`SHA-256(proofConfig) ‖ SHA-256(mandatory
+  N-Quads)`) at sign and derive, and the header is recomputed at verify from the revealed
+  mandatory messages — so a holder that drops or alters a mandatory statement produces a header
+  that no longer matches the one the proof commits to, and verification fails. Closes the
+  adversarial-review finding that a holder could omit a mandatory claim and still verify. Requires
+  NetCrypto ≥ 1.0.0-preview.2 (the BBS `header` parameter, upstream moisesja/crypto-dotnet#2);
+  regression test `Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed`.

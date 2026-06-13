@@ -1,10 +1,24 @@
 # Tracked dependency: NetCrypto BBS `header` parameter
 
-**Status:** OPEN — blocked on upstream NetCrypto release
-**Upstream issue:** [moisesja/crypto-dotnet#2](https://github.com/moisesja/crypto-dotnet/issues/2)
+**Status:** ✅ RESOLVED (2026-06-13) — fixed upstream in NetCrypto 1.0.0-preview.2 and applied here.
+**Upstream issue:** [moisesja/crypto-dotnet#2](https://github.com/moisesja/crypto-dotnet/issues/2) (shipped in 1.0.0-preview.2)
 **Affects:** `DataProofsDotnet.Rdfc` — `bbs-2023` cryptosuite (FR-12)
-**Severity:** Critical (security guarantee not enforced until resolved)
-**Filed:** 2026-06-13
+**Severity:** Critical (security guarantee — now enforced)
+**Filed:** 2026-06-13 · **Resolved:** 2026-06-13
+
+## Resolution
+
+NetCrypto 1.0.0-preview.2 added the BBS `header` parameter to `IBbsCryptoProvider`
+(`Sign`/`Verify`/`DeriveProof`/`VerifyProof`). `Bbs2023Cryptosuite` now binds
+`bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads)` at sign and derive, and
+**recomputes it at verify from the revealed mandatory messages** (never from the holder-controlled
+derived proofValue). A holder that drops or alters a mandatory statement changes the recomputed
+header, so it no longer matches the one the proof commits to and verification fails — the
+mandatory-disclosure guarantee is cryptographically enforced. Regression test:
+`Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed`. The original tracking content is
+retained below for history.
+
+---
 
 ## What
 

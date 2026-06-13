@@ -25,18 +25,6 @@ What to expect:
 - A remediation plan within 7 days
 - Credit in the advisory and CHANGELOG if desired
 
-## Known limitations
-
-- **`bbs-2023` mandatory disclosure is not yet cryptographically enforced.** The W3C `bbs-2023`
-  cryptosuite binds the mandatory-disclosure group into the BBS signature `header`. NetCrypto v1's
-  BBS provider does not expose that `header` parameter, so a holder can currently present a derived
-  proof that omits an issuer-designated mandatory statement and it will still verify. Treat
-  `bbs-2023` as **experimental** (it is pinned to a Candidate Recommendation *draft*) and do not
-  rely on its mandatory-disclosure guarantee until this is resolved. Tracked in
-  [`docs/dependencies/netcrypto-bbs-header.md`](docs/dependencies/netcrypto-bbs-header.md)
-  (upstream: moisesja/crypto-dotnet#2). The other four cryptosuites and all enveloping proofs are
-  unaffected.
-
 ## Scope
 
 In scope: anything in `src/` — proof creation/verification logic, canonicalization, envelope

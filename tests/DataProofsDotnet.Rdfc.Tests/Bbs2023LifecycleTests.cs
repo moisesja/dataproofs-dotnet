@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Rdfc.DataIntegrity;
+using DataProofsDotnet.Rdfc.Internal;
 using DataProofsDotnet.Rdfc.Tests.TestSupport;
 using FluentAssertions;
 using NetCrypto;
@@ -14,15 +15,19 @@ namespace DataProofsDotnet.Rdfc.Tests;
 /// vendored W3C <c>vc-di-bbs</c> fixtures (CRD 2026-04-07).
 /// </summary>
 /// <remarks>
-/// NetCrypto's <c>IBbsCryptoProvider</c> v1 does not surface the BBS <c>header</c> argument the
-/// W3C suite binds <c>bbsHeader</c> through, so the suite's <c>proofValue</c> bytes are not
-/// interchangeable with the reference vectors' BBS material (see
-/// <see cref="Bbs2023Cryptosuite"/> remarks). These tests therefore exercise the full live
-/// lifecycle — issuer base proof → holder derive (per selective-pointer set) → verifier
-/// verify-derived — and the documented negatives, while the proofValue framing
-/// (multibase + CBOR headers) is checked against the fixtures structurally. The BBS native
-/// library is present on CI/dev here, so the live tests run; absent it, they skip and the
-/// capability-behavior test (registration succeeds, use throws) carries the contract.
+/// The mandatory group is bound conformantly through the BBS signature <c>header</c>
+/// (<c>bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads)</c>, NetCrypto ≥
+/// 1.0.0-preview.2), recomputed at verify from the revealed mandatory messages (see
+/// <see cref="Bbs2023Cryptosuite"/> remarks and
+/// <see cref="Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed"/>). The suite's
+/// <c>proofValue</c> bytes remain not byte-interchangeable with the W3C reference vectors because
+/// the blank-node relabeling keys the HMAC on document-order-stable skolem ids rather than
+/// canonical <c>c14n*</c> labels, so these tests exercise the full live lifecycle — issuer base
+/// proof → holder derive (per selective-pointer set) → verifier verify-derived — plus the
+/// documented negatives, while the proofValue framing (multibase + CBOR headers) is checked
+/// against the fixtures structurally. The BBS native library is present on CI/dev here, so the
+/// live tests run; absent it, they skip and the capability-behavior test (registration succeeds,
+/// use throws) carries the contract.
 /// </remarks>
 public sealed class Bbs2023LifecycleTests
 {
@@ -119,6 +124,48 @@ public sealed class Bbs2023LifecycleTests
         var tamperedUnsecured = Fx.Mutate(tampered, o => o.Remove("proof"));
 
         var result = suite.VerifyProof(tamperedUnsecured, derivedProof, pk);
+        result.Verified.Should().BeFalse();
+        result.Problems.Should().Contain(p => p.Code == ProofProblemCodes.ProofVerificationError);
+    }
+
+    [BbsFact]
+    public async Task Verify_MandatoryStatementReclassifiedAsSelective_FailsClosed()
+    {
+        // Regression for the adversarial-review Critical finding (NetCrypto#2): a malicious holder
+        // must not be able to shrink the issuer-designated mandatory group. The fix binds
+        // bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads) into the BBS signature and
+        // RECOMPUTES it at verify from the revealed mandatory messages.
+        //
+        // This isolates that binding: starting from an honest derived proof, we re-pack the derived
+        // proofValue moving one index from the mandatory set into the selective set. The BBS revealed
+        // set (mandatory ∪ selective) is UNCHANGED, so the BBS proof layer is still satisfied — only
+        // the recomputed mandatory header differs. Before the header binding this verified true (the
+        // mandatory partition was unenforced); now the recomputed header no longer matches the one
+        // the proof commits to, so verification fails.
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var secured = await CreateSecuredBaseAsync(suite, sk, hmacKey, WindMandatory());
+        var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
+
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var honestProof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
+        var unsecured = Fx.Mutate(reveal, o => o.Remove("proof"));
+
+        // Sanity: the honest derived proof verifies (guards against a vacuous negative).
+        suite.VerifyProof(unsecured, honestProof, pk).Verified.Should().BeTrue();
+
+        // Malicious re-pack: demote the first mandatory index to the selective set.
+        var components = Bbs2023ProofValue.ParseDerivedProof(honestProof.ProofValue!);
+        components.MandatoryIndexes.Should().NotBeEmpty();
+        var demoted = components.MandatoryIndexes[0];
+        var shrunkMandatory = components.MandatoryIndexes.Skip(1).ToList();
+        var grownSelective = components.SelectiveIndexes.Append(demoted).OrderBy(x => x).ToList();
+
+        var forgedValue = Bbs2023ProofValue.SerializeDerivedProof(
+            components.BbsProof, components.LabelMap, shrunkMandatory, grownSelective, components.PresentationHeader);
+        var forgedProof = honestProof with { ProofValue = forgedValue };
+
+        var result = suite.VerifyProof(unsecured, forgedProof, pk);
         result.Verified.Should().BeFalse();
         result.Problems.Should().Contain(p => p.Code == ProofProblemCodes.ProofVerificationError);
     }
