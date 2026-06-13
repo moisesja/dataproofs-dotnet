@@ -14,6 +14,10 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="coverlet.collector" />
+    <!-- Test-side only: structurally inspecting the bbs-2023 CBOR proofValue framing in
+         negative/parse theories. The AC-7 ban on System.Formats.Cbor applies to src/ public
+         API surfaces, not to test tooling (mirrors the sibling Cose test project). -->
+    <PackageReference Include="System.Formats.Cbor" />
   </ItemGroup>
 
   <ItemGroup>

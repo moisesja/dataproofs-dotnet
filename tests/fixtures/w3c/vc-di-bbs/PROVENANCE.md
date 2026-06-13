@@ -136,6 +136,15 @@ All 103 `.json` fixture files parse as valid JSON (verified 2026-06-11);
 the remaining 7 fixture files are `.txt` (5 × `addProofConfigCanon.txt`
 N-Quads, 2 × blank-node-stability canonical N-Quads).
 
+## CRD pin re-verification (Phase E, FR-12)
+
+- **Re-checked:** 2026-06-12, fetching `https://www.w3.org/TR/vc-di-bbs/`.
+- **Result:** the live `/TR/vc-di-bbs/` page still reads **"W3C Candidate
+  Recommendation Draft 07 April 2026"** with "This version"
+  `https://www.w3.org/TR/2026/CRD-vc-di-bbs-20260407/`. **The CRD has NOT
+  advanced past the PRD §12.3 pin (2026-04-07).** No re-pin performed; the
+  `bbs-2023` implementation and these fixtures remain bound to CRD 2026-04-07.
+
 ## Retrieval date
 
 2026-06-11
