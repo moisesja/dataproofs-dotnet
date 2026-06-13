@@ -14,8 +14,12 @@
 // --offline skips the network and runs only the local PackageId assertion (step 3), documenting
 // that the registration/ownership/prefix checks run in CI.
 //
-// Exit codes: 0 = all IDs claimable-or-owned + prefix reserved + IDs exact;
-//             1 = a gate failed (foreign-owned ID, PackageId mismatch, prefix not reserved);
+// --prerelease relaxes ONLY the prefix-reservation check to a warning (a prerelease cannot precede
+// the published ID that makes reservation grantable); a stable publish omits it so the prefix is a
+// hard gate. ID claimable-or-owned and PackageId exactness stay hard gates in both modes.
+//
+// Exit codes: 0 = all IDs claimable-or-owned + prefix reserved (or warned under --prerelease) + IDs exact;
+//             1 = a gate failed (foreign-owned ID, PackageId mismatch, prefix not reserved [stable]);
 //             2 = usage / environment error.
 
 using System.Text.Json;
@@ -38,6 +42,7 @@ const string IdPrefix = "DataProofsDotnet";
 string? owner = null;
 string? srcRootArg = null;
 bool offline = false;
+bool prerelease = false;
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -53,11 +58,16 @@ for (int i = 0; i < args.Length; i++)
         case "--offline":
             offline = true;
             break;
+        case "--prerelease":
+            prerelease = true;
+            break;
         case "-h":
         case "--help":
-            Console.WriteLine("Usage: PackageIdentity --owner <nugetAccount> [--src-root <dir>] [--offline]");
+            Console.WriteLine("Usage: PackageIdentity --owner <nugetAccount> [--src-root <dir>] [--offline] [--prerelease]");
             Console.WriteLine("  Checks the five DataProofsDotnet.* IDs are claimable-or-owned, the prefix is reserved,");
             Console.WriteLine("  and each src csproj PackageId is exact (AC-11). Exit 0 ok / 1 gate fail / 2 usage.");
+            Console.WriteLine("  --prerelease: an unreserved ID prefix is a WARNING (not a failure) for a prerelease");
+            Console.WriteLine("                publish; it stays a HARD failure for a stable release.");
             return ExitClean;
         default:
             Console.Error.WriteLine($"ERROR: unknown argument '{args[i]}'. Use --help.");
@@ -186,6 +196,18 @@ else
     {
         Console.WriteLine($"  '{IdPrefix}' prefix appears RESERVED to '{owner}' (a registered {IdPrefix}.* ID reports verified=true).");
     }
+    else if (prerelease)
+    {
+        // Prefix reservation cannot precede the first published ID (the search service has nothing
+        // to mark verified until a DataProofsDotnet.* package exists). For a PRERELEASE publish this
+        // is a WARNING, not a gate failure: every ID is asserted claimable-or-owned above (so the
+        // prerelease cannot squat a foreign ID), and publishing the prerelease is what makes prefix
+        // reservation grantable. The stable release re-runs this gate WITHOUT --prerelease, where an
+        // unreserved prefix is a hard failure.
+        Console.WriteLine($"  '{IdPrefix}' prefix NOT reserved — WARNING (prerelease): request reservation at");
+        Console.WriteLine("    https://learn.microsoft.com/nuget/nuget-org/id-prefix-reservation once the");
+        Console.WriteLine("    prerelease packages are published; the stable release will hard-gate on it.");
+    }
     else
     {
         // Per AC-11, prefix reservation is a one-time OWNER action and cannot be automated. If no
@@ -194,7 +216,7 @@ else
         failures.Add(
             $"[prefix] The '{IdPrefix}' ID prefix is not yet reserved to '{owner}'. Prefix reservation is a "
             + "one-time OWNER action (request it via the NuGet account: https://learn.microsoft.com/nuget/nuget-org/id-prefix-reservation) "
-            + "— it cannot be automated. Reserve it before first publish so the family cannot be squatted between releases.");
+            + "— it cannot be automated. Reserve it before a stable publish so the family cannot be squatted between releases.");
         Console.WriteLine($"  '{IdPrefix}' prefix NOT reserved (owner action required — see failure detail).");
     }
     Console.WriteLine();

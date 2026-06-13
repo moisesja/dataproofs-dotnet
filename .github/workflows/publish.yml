@@ -40,7 +40,13 @@ jobs:
       - name: Derive version from tag
         id: version
         # Strip the leading 'v': refs/tags/v1.0.0 -> GITHUB_REF_NAME=v1.0.0 -> 1.0.0.
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        # A hyphen in the SemVer (e.g. 0.1.0-preview.1) marks a prerelease, which relaxes ONLY the
+        # ac-11 prefix-reservation check to a warning (the prefix can't be reserved before the first
+        # package exists); a stable tag hard-gates on prefix reservation.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT";; *) echo "prerelease=" >> "$GITHUB_OUTPUT";; esac
 
       - name: Restore
         run: dotnet restore DataProofsDotnet.sln
@@ -54,7 +60,7 @@ jobs:
       # ac-11 — package identity & publish readiness (PRD §9). Publishing is blocked on it.
       # The tasks/package-identity tool lands in Phase F; until then this step fails closed.
       - name: ac-11 package identity gate
-        run: dotnet run --project tasks/package-identity --configuration Release -- --owner moisesja
+        run: dotnet run --project tasks/package-identity --configuration Release -- --owner moisesja ${{ steps.version.outputs.prerelease }}
 
       - name: Pack
         run: dotnet pack DataProofsDotnet.sln --configuration Release --no-build -p:DataProofsVersion=${{ steps.version.outputs.version }} --output artifacts
