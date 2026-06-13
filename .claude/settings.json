@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(cp /Users/moises/Projects/didcomm-dotnet/.gitignore /Users/moises/Projects/didcomm-dotnet/.editorconfig /Users/moises/Projects/didcomm-dotnet/LICENSE /Users/moises/Projects/dataproofs-dotnet/)",
-      "Bash(sed -n '1,10p' /Users/moises/Projects/didcomm-dotnet/NOTICE)"
+      "Bash(sed -n '1,10p' /Users/moises/Projects/didcomm-dotnet/NOTICE)",
+      "Bash(awk '{s+=$2} END {print \"TOTAL PASSED: \" s}')",
+      "Bash(awk '/Failed/{f+=$2} /Passed/{p+=$2} END {print \"PASSED=\"p\"  FAILED=\"f}')",
+      "Bash(awk '/Failed/{f+=$2} /Passed/{p+=$2} /Skipped/{s+=$2} END {print \"PASSED=\"p\"  FAILED=\"f\"  SKIPPED=\"s}')"
     ]
   }
 }
