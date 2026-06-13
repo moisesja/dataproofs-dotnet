@@ -151,6 +151,95 @@ DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm.get -> string!
 DataProofsDotnet.Jose.Signing.JwsSigner.JwsSigner(NetCrypto.ISigner! signer, string? kid = null) -> void
 DataProofsDotnet.Jose.Signing.JwsSigner.Kid.get -> string?
 DataProofsDotnet.Jose.Signing.JwsSigner.Signer.get -> NetCrypto.ISigner!
+DataProofsDotnet.Jose.SdJwt.Disclosure
+DataProofsDotnet.Jose.SdJwt.Disclosure.ClaimName.get -> string?
+DataProofsDotnet.Jose.SdJwt.Disclosure.ClaimValue.get -> System.Text.Json.Nodes.JsonNode?
+DataProofsDotnet.Jose.SdJwt.Disclosure.ComputeDigest(string! sdAlg) -> string!
+DataProofsDotnet.Jose.SdJwt.Disclosure.Encoded.get -> string!
+DataProofsDotnet.Jose.SdJwt.Disclosure.IsArrayElement.get -> bool
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.Disclose(string! claimName) -> DataProofsDotnet.Jose.SdJwt.DisclosureFrame!
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DisclosureFrame() -> void
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseArrayElements(string! claimName, params int[]! indices) -> DataProofsDotnet.Jose.SdJwt.DisclosureFrame!
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseObject(string! claimName, DataProofsDotnet.Jose.SdJwt.DisclosureFrame! nested) -> DataProofsDotnet.Jose.SdJwt.DisclosureFrame!
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseObjectProperties(string! claimName, params string![]! discloseSubClaims) -> DataProofsDotnet.Jose.SdJwt.DisclosureFrame!
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseRecursively(string! claimName, params string![]! discloseSubClaims) -> DataProofsDotnet.Jose.SdJwt.DisclosureFrame!
+DataProofsDotnet.Jose.SdJwt.DisclosureFrame.DiscloseRecursiveObject(string! claimName, DataProofsDotnet.Jose.SdJwt.DisclosureFrame! nested) -> DataProofsDotnet.Jose.SdJwt.DisclosureFrame!
+DataProofsDotnet.Jose.SdJwt.KeyBindingJwt
+DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm
+DataProofsDotnet.Jose.SdJwt.SdJwtComponents
+DataProofsDotnet.Jose.SdJwt.SdJwtComponents.Disclosures.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Disclosure!>!
+DataProofsDotnet.Jose.SdJwt.SdJwtComponents.HasKeyBinding.get -> bool
+DataProofsDotnet.Jose.SdJwt.SdJwtComponents.IssuerJwt.get -> string!
+DataProofsDotnet.Jose.SdJwt.SdJwtComponents.KeyBindingJwt.get -> string?
+DataProofsDotnet.Jose.SdJwt.SdJwtComponents.SdJwtWithoutKeyBinding.get -> string!
+DataProofsDotnet.Jose.SdJwt.SdJwtHolder
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.Disclosures.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Disclosure!>!
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.Disclosures.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.Issuance.get -> string!
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.Issuance.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.IssuerJwt.get -> string!
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.IssuerJwt.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result.Result(string! Issuance, string! IssuerJwt, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Disclosure!>! Disclosures) -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.DecoyDigestCount.get -> int
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.DecoyDigestCount.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.HashAlgorithm.get -> string!
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.HashAlgorithm.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.HolderConfirmationKey.get -> DataProofsDotnet.Jose.Jwk?
+DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions.HolderConfirmationKey.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ClockSkew.get -> System.TimeSpan
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ClockSkew.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.CurrentTime.get -> System.DateTimeOffset?
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.CurrentTime.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ExpectedAudience.get -> string?
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ExpectedAudience.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ExpectedNonce.get -> string?
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.ExpectedNonce.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.MaxKeyBindingAge.get -> System.TimeSpan?
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.MaxKeyBindingAge.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.RequireKeyBinding.get -> bool
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions.RequireKeyBinding.init -> void
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.DisclosedPayload.get -> System.Text.Json.Nodes.JsonObject?
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.Errors.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.IsValid.get -> bool
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.KeyBindingVerified.get -> bool
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.SignatureAlgorithm.get -> string?
+DataProofsDotnet.Jose.SdJwt.SdJwtVerifier
+DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver
+DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver.ResolveAsync(string! vct, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.Nodes.JsonObject?>!
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver.LocalCacheTypeMetadataResolver() -> void
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver.LocalCacheTypeMetadataResolver(System.Collections.Generic.IReadOnlyDictionary<string!, System.Text.Json.Nodes.JsonObject!>! documents) -> void
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver.ResolveAsync(string! vct, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.Nodes.JsonObject?>!
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.DisclosedPayload.get -> System.Text.Json.Nodes.JsonObject?
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Errors.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.IsValid.get -> bool
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.KeyBindingVerified.get -> bool
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadata.get -> System.Text.Json.Nodes.JsonObject?
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Vct.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier
+DataProofsDotnet.Jose.VcJose
+const DataProofsDotnet.Jose.SdJwt.KeyBindingJwt.Type = "kb+jwt" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MediaType = "dc+sd-jwt" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.StatusClaim = "status" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.TransitionalMediaType = "vc+sd-jwt" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctClaim = "vct" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctIntegrityClaim = "vct#integrity" -> string!
+const DataProofsDotnet.Jose.VcJose.CredentialContentType = "vc" -> string!
+const DataProofsDotnet.Jose.VcJose.EnvelopeType = "vc+jwt" -> string!
+const DataProofsDotnet.Jose.VcJose.MediaType = "application/vc+jwt" -> string!
+const DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Default = "sha-256" -> string!
+const DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Sha256 = "sha-256" -> string!
+const DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Sha384 = "sha-384" -> string!
+const DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.Sha512 = "sha-512" -> string!
 static DataProofsDotnet.Jose.Base64Url.Decode(string! value) -> byte[]!
 static DataProofsDotnet.Jose.Base64Url.DecodeUtf8(string! value) -> string!
 static DataProofsDotnet.Jose.Base64Url.Encode(System.ReadOnlySpan<byte> bytes) -> string!
@@ -188,3 +277,20 @@ static DataProofsDotnet.Jose.Signing.JwsParser.Parse(string! packed, System.Func
 static DataProofsDotnet.Jose.Signing.JwsParser.Parse(string! packed, System.ReadOnlySpan<byte> detachedPayload, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
 static DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact(string! compact, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
 static DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact(string! compact, System.ReadOnlySpan<byte> detachedPayload, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
+static DataProofsDotnet.Jose.SdJwt.Disclosure.ForArrayElement(string! salt, System.Text.Json.Nodes.JsonNode? claimValue) -> DataProofsDotnet.Jose.SdJwt.Disclosure!
+static DataProofsDotnet.Jose.SdJwt.Disclosure.ForObjectProperty(string! salt, string! claimName, System.Text.Json.Nodes.JsonNode? claimValue) -> DataProofsDotnet.Jose.SdJwt.Disclosure!
+static DataProofsDotnet.Jose.SdJwt.Disclosure.Parse(string! encoded) -> DataProofsDotnet.Jose.SdJwt.Disclosure!
+static DataProofsDotnet.Jose.SdJwt.KeyBindingJwt.IssueAsync(string! sdJwtWithoutKeyBinding, string! sdAlg, string! nonce, string! audience, System.DateTimeOffset issuedAt, DataProofsDotnet.Jose.Signing.JwsSigner! holderSigner, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+static DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.ComputeDigest(string! sdAlg, string! encodedDisclosure) -> string!
+static DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.ComputeSdHash(string! sdAlg, string! sdJwtWithTrailingTilde) -> string!
+static DataProofsDotnet.Jose.SdJwt.SdHashAlgorithm.IsSupported(string? sdAlg) -> bool
+static DataProofsDotnet.Jose.SdJwt.SdJwtComponents.Parse(string! compact) -> DataProofsDotnet.Jose.SdJwt.SdJwtComponents!
+static DataProofsDotnet.Jose.SdJwt.SdJwtHolder.CreatePresentation(string! issuedSdJwt, System.Collections.Generic.IEnumerable<string!>! disclosuresToReveal) -> string!
+static DataProofsDotnet.Jose.SdJwt.SdJwtHolder.CreatePresentationWithKeyBindingAsync(string! issuedSdJwt, System.Collections.Generic.IEnumerable<string!>! disclosuresToReveal, DataProofsDotnet.Jose.Signing.JwsSigner! holderSigner, string! audience, string! nonce, System.DateTimeOffset? issuedAt = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+static DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.IssueAsync(System.Text.Json.Nodes.JsonObject! claims, DataProofsDotnet.Jose.SdJwt.DisclosureFrame! frame, DataProofsDotnet.Jose.Signing.JwsSigner! signer, DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions? options = null, string? typ = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result!>!
+static DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.Verify(string! presentation, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveIssuerPublicJwk, DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions? options = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null) -> DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult!
+static readonly DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MustNotBeSelectivelyDisclosed -> System.Collections.Generic.IReadOnlyList<string!>!
+static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer.IssueAsync(System.Text.Json.Nodes.JsonObject! claims, DataProofsDotnet.Jose.SdJwt.DisclosureFrame! frame, DataProofsDotnet.Jose.Signing.JwsSigner! signer, DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result!>!
+static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyAsync(string! presentation, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveIssuerPublicJwk, DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions? options = null, DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver? typeMetadataResolver = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult!>!
+static DataProofsDotnet.Jose.VcJose.EnvelopeCredentialAsync(System.ReadOnlyMemory<byte> credentialJson, DataProofsDotnet.Jose.Signing.JwsSigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+static DataProofsDotnet.Jose.VcJose.VerifyCredential(string! envelope, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null) -> byte[]!
