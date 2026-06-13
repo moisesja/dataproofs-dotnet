@@ -29,7 +29,7 @@ static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.AddRdfcSu
 static DataProofsDotnet.Rdfc.DataIntegrity.RdfcCryptosuiteRegistration.CreateWithRdfcSuites(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
 DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader
 DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.CachingNetworkDocumentLoader() -> void
-DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.CachingNetworkDocumentLoader(System.Net.Http.HttpClient! httpClient, DataProofsDotnet.Rdfc.IDocumentLoader? offlineLoader = null) -> void
+DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.CachingNetworkDocumentLoader(DataProofsDotnet.Rdfc.IDocumentLoader! offlineLoader) -> void
 DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Dispose() -> void
 DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Load(System.Uri! url) -> DataProofsDotnet.Rdfc.LoadedContextDocument!
 DataProofsDotnet.Rdfc.IDocumentLoader

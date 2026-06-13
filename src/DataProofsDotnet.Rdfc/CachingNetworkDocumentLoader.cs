@@ -39,12 +39,29 @@ public sealed class CachingNetworkDocumentLoader : IDocumentLoader, IDisposable
     }
 
     /// <summary>
+    /// Creates a caching network loader over a dedicated <see cref="HttpClient"/> and a
+    /// caller-supplied offline loader consulted first for the bundled set.
+    /// </summary>
+    /// <param name="offlineLoader">The loader consulted before any network fetch.</param>
+    public CachingNetworkDocumentLoader(IDocumentLoader offlineLoader)
+        : this(new HttpClient(), ownsHttpClient: true, offlineLoader)
+    {
+    }
+
+    /// <summary>
     /// Creates a caching network loader over a caller-supplied <see cref="HttpClient"/>
     /// (not disposed by this loader) and an optional offline loader for the bundled set.
     /// </summary>
+    /// <remarks>
+    /// Internal by design: <c>System.Net.Http.HttpClient</c> is not on the public-API
+    /// allowlist (AC-7), so the network transport is not surfaced. A consumer needing full
+    /// control over HTTP retrieval implements the public <see cref="IDocumentLoader"/>
+    /// interface instead; this overload exists for in-assembly tests to inject a controlled
+    /// handler.
+    /// </remarks>
     /// <param name="httpClient">The HTTP client used for network fetches.</param>
     /// <param name="offlineLoader">The loader consulted first; defaults to the offline loader.</param>
-    public CachingNetworkDocumentLoader(HttpClient httpClient, IDocumentLoader? offlineLoader = null)
+    internal CachingNetworkDocumentLoader(HttpClient httpClient, IDocumentLoader? offlineLoader = null)
         : this(httpClient, ownsHttpClient: false, offlineLoader ?? OfflineDocumentLoader.Instance)
     {
     }
