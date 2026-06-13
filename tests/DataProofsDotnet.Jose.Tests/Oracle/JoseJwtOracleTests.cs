@@ -7,7 +7,6 @@ using FluentAssertions;
 using NetCrypto;
 using Xunit;
 using OracleJoseException = global::Jose.JoseException;
-using OracleJweAlgorithm = global::Jose.JweAlgorithm;
 using OracleJwt = global::Jose.JWT;
 using OracleSettings = global::Jose.JwtSettings;
 
@@ -29,21 +28,28 @@ public sealed class JoseJwtOracleTests
     private static readonly OracleSettings _oracle = OracleJwt.DefaultSettings;
     private const string Payload = """{"hello":"oracle"}""";
 
+    // jose-jwt's registry is keyed by the JOSE header string itself (e.g. "ES256",
+    // "ECDH-ES+A256KW"); the *AlgorithmFromHeader methods take that header string and return the
+    // registered implementation, throwing Jose.InvalidAlgorithmException (a JoseException subtype)
+    // when no handler is registered. So a non-null return is the programmatic proof that the
+    // oracle's published surface supports the algorithm — exactly the AC-3 step-3 intersection
+    // probe, interrogated through the registry rather than hard-coded.
+
     private static bool OracleSupportsJws(string headerValue)
     {
-        try { return _oracle.Jws(_oracle.JwsAlgorithmFromHeader(headerValue)) is not null; }
+        try { return _oracle.JwsAlgorithmFromHeader(headerValue) is not null; }
         catch (Exception ex) when (ex is OracleJoseException or ArgumentException or InvalidOperationException) { return false; }
     }
 
     private static bool OracleSupportsKeyManagement(string headerValue)
     {
-        try { return _oracle.Jwa(_oracle.JwaAlgorithmFromHeader(headerValue)) is not null; }
+        try { return _oracle.JwaAlgorithmFromHeader(headerValue) is not null; }
         catch (Exception ex) when (ex is OracleJoseException or ArgumentException or InvalidOperationException) { return false; }
     }
 
     private static bool OracleSupportsEncryption(string headerValue)
     {
-        try { return _oracle.Jwe(_oracle.JweAlgorithmFromHeader(headerValue)) is not null; }
+        try { return _oracle.JweAlgorithmFromHeader(headerValue) is not null; }
         catch (Exception ex) when (ex is OracleJoseException or ArgumentException or InvalidOperationException) { return false; }
     }
 
@@ -110,15 +116,25 @@ public sealed class JoseJwtOracleTests
     private static async Task CrossCheckJws(string alg, KeyType keyType)
     {
         var km = TestKeyMaterial.Generate(keyType, $"oracle-{alg}");
-        var oracleAlg = _oracle.JwsAlgorithmFromHeader(alg);
+
+        // jose-jwt's string-keyed Encode/Decode overloads take the JOSE header value directly
+        // (e.g. "ES256"), which is exactly the algorithm name our library uses — so the cross-check
+        // drives both libraries with the same `alg` string, no enum mapping required.
 
         // (a) produced by DataProofsDotnet.Jose → verifies in jose-jwt
         var ours = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes(Payload), km.Signer);
-        var decodedByOracle = OracleJwt.Decode(ours, ToOracleEcdsa(km.PublicJwk, includePrivate: false), oracleAlg);
-        decodedByOracle.Should().Be(Payload, because: $"a {alg} JWS we produce must verify in jose-jwt");
+        using (var verifier = ToOracleEcdsa(km.PublicJwk, includePrivate: false))
+        {
+            var decodedByOracle = OracleJwt.Decode(ours, verifier, alg);
+            decodedByOracle.Should().Be(Payload, because: $"a {alg} JWS we produce must verify in jose-jwt");
+        }
 
         // (b) produced by jose-jwt → verifies here
-        var theirs = OracleJwt.Encode(Payload, ToOracleEcdsa(km.PrivateJwk, includePrivate: true), oracleAlg);
+        string theirs;
+        using (var signer = ToOracleEcdsa(km.PrivateJwk, includePrivate: true))
+        {
+            theirs = OracleJwt.Encode(Payload, signer, alg);
+        }
         var result = JwsParser.ParseCompact(theirs, _ => km.PublicJwk, _crypto);
         result.SignatureAlgorithm.Should().Be(alg);
         Encoding.UTF8.GetString(result.PayloadBytes).Should().Be(Payload, because: $"a {alg} JWS jose-jwt produces must verify here");
@@ -128,15 +144,14 @@ public sealed class JoseJwtOracleTests
     {
         var kekBytes = RandomNumberGenerator.GetBytes(32);
         var kekJwk = new Jwk { Kty = "oct", K = Base64Url.Encode(kekBytes), Kid = "oracle-kek" };
-        var oracleEnc = _oracle.JweAlgorithmFromHeader(enc);
 
         // (a) ours → oracle
         var ours = JweBuilder.BuildCompactA256Kw(Encoding.UTF8.GetBytes(Payload), kekJwk, enc, _crypto);
-        OracleJwt.Decode(ours, kekBytes, OracleJweAlgorithm.A256KW, oracleEnc)
+        OracleJwt.Decode(ours, kekBytes, JoseAlgorithms.A256Kw, enc)
             .Should().Be(Payload, because: $"an A256KW/{enc} JWE we produce must decrypt in jose-jwt");
 
         // (b) oracle → ours
-        var theirs = OracleJwt.Encode(Payload, kekBytes, OracleJweAlgorithm.A256KW, oracleEnc);
+        var theirs = OracleJwt.Encode(Payload, kekBytes, JoseAlgorithms.A256Kw, enc);
         var result = JweParser.ParseCompact(theirs, kekJwk, null, _crypto);
         result.Algorithm.Should().Be("A256KW");
         result.ContentEncryption.Should().Be(enc);
@@ -146,13 +161,12 @@ public sealed class JoseJwtOracleTests
     private static void CrossCheckEcdhEsA256Kw(string enc)
     {
         var km = TestKeyMaterial.Generate(KeyType.P256, "oracle-ecdh");
-        var oracleEnc = _oracle.JweAlgorithmFromHeader(enc);
 
         // (a) ours → oracle
         var ours = JweBuilder.BuildCompactEcdhEsA256Kw(Encoding.UTF8.GetBytes(Payload), km.PublicJwk, enc, _crypto);
         using (var recipient = ToOracleEcdh(km.PrivateJwk, includePrivate: true))
         {
-            OracleJwt.Decode(ours, recipient, OracleJweAlgorithm.ECDH_ES_A256KW, oracleEnc)
+            OracleJwt.Decode(ours, recipient, JoseAlgorithms.EcdhEsA256Kw, enc)
                 .Should().Be(Payload, because: $"an ECDH-ES+A256KW/{enc} JWE we produce must decrypt in jose-jwt");
         }
 
@@ -160,7 +174,7 @@ public sealed class JoseJwtOracleTests
         string theirs;
         using (var recipientPublic = ToOracleEcdh(km.PublicJwk, includePrivate: false))
         {
-            theirs = OracleJwt.Encode(Payload, recipientPublic, OracleJweAlgorithm.ECDH_ES_A256KW, oracleEnc);
+            theirs = OracleJwt.Encode(Payload, recipientPublic, JoseAlgorithms.EcdhEsA256Kw, enc);
         }
         var result = JweParser.ParseCompact(theirs, km.PrivateJwk, null, _crypto);
         result.Algorithm.Should().Be("ECDH-ES+A256KW");

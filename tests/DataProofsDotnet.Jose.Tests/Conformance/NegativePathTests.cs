@@ -89,8 +89,18 @@ public sealed class NegativePathTests
     [Fact]
     public async Task Tampered_compact_jws_payload_is_rejected()
     {
-        var key = TestKeyMaterial.Generate(KeyType.ES(out var _), "k")!;
-        await Task.CompletedTask;
+        // ECDSA (ES256) tamper path — complements the Ed25519 per-segment test below by exercising
+        // the P-256 verify route (DER↔P1363 transcode + curve binding). A flipped payload must fail
+        // signature verification with the documented JoseCryptoException, never an unhandled throw.
+        var key = TestKeyMaterial.Generate(KeyType.P256, "es256-tamper");
+        var jws = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("""{"amount":1}"""), key.Signer);
+        var segments = jws.Split('.');
+
+        var tampered = $"{segments[0]}.{Base64Url.EncodeUtf8("""{"amount":1000000}""")}.{segments[2]}";
+        Action act = () => JwsParser.ParseCompact(tampered, _ => key.PublicJwk, _crypto);
+
+        act.Should().Throw<JoseCryptoException>().WithMessage("*did not verify*",
+            because: "a tampered ES256 payload must be rejected as a cryptographic failure (AC-3 step 7)");
     }
 
     [Fact]
@@ -170,6 +180,8 @@ public sealed class NegativePathTests
 
         Action act = () => JwsParser.Parse(duplicated, _ => key.PublicJwk, _crypto);
 
-        act.Should().Throw<Exception>().Match(e => e is MalformedJoseException || e is System.Text.Json.JsonException);
+        act.Should().Throw<Exception>().Where(e => e is MalformedJoseException || e is System.Text.Json.JsonException,
+            because: "the strict document options (AllowDuplicateProperties=false) must fail closed — "
+                + "either as a structural MalformedJoseException or the underlying JsonException — never silently last-wins");
     }
 }
