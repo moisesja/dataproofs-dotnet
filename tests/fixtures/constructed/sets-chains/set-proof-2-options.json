@@ -1,0 +1,7 @@
+{
+  "type": "DataIntegrityProof",
+  "cryptosuite": "eddsa-jcs-2022",
+  "created": "2026-01-03T00:00:00Z",
+  "verificationMethod": "did:example:signer-2#key-2",
+  "proofPurpose": "assertionMethod"
+}

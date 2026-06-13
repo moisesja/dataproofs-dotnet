@@ -1,0 +1,27 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/cid/v1"
+  ],
+  "id": "did:example:controller-alpha",
+  "verificationMethod": [
+    {
+      "id": "did:example:controller-alpha#key-a",
+      "type": "Multikey",
+      "controller": "did:example:controller-alpha",
+      "publicKeyMultibase": "z6Mkon3Necd6NkkyfoGoHxid2znGc59LU3K7mubaRcFbLfLX"
+    },
+    {
+      "id": "did:example:controller-alpha#key-b",
+      "type": "Multikey",
+      "controller": "did:example:controller-alpha",
+      "publicKeyMultibase": "z6Mko9hTggMwjSTEaJaPUfE6tqcy2xvU6BnNq3e3o8qVBiyH"
+    }
+  ],
+  "assertionMethod": [
+    "did:example:controller-alpha#key-a"
+  ],
+  "authentication": [
+    "did:example:controller-alpha#key-a",
+    "did:example:controller-alpha#key-b"
+  ]
+}

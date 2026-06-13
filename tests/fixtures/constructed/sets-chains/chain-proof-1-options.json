@@ -1,0 +1,8 @@
+{
+  "id": "urn:uuid:b3b09d11-4751-4dbb-9d8c-f86a9af0d1a7",
+  "type": "DataIntegrityProof",
+  "cryptosuite": "eddsa-jcs-2022",
+  "created": "2026-01-02T00:00:00Z",
+  "verificationMethod": "did:example:signer-1#key-1",
+  "proofPurpose": "assertionMethod"
+}

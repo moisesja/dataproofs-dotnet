@@ -1,1 +1,146 @@
 #nullable enable
+const DataProofsDotnet.DataIntegrity.DataIntegrityProof.DataIntegrityProofType = "DataIntegrityProof" -> string!
+const DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.CryptosuiteName = "ecdsa-jcs-2019" -> string!
+const DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.CryptosuiteName = "eddsa-jcs-2022" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidChallengeError = "INVALID_CHALLENGE_ERROR" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidDomainError = "INVALID_DOMAIN_ERROR" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidVerificationMethod = "INVALID_VERIFICATION_METHOD" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.ProofGenerationError = "PROOF_GENERATION_ERROR" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.ProofTransformationError = "PROOF_TRANSFORMATION_ERROR" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.ProofVerificationError = "PROOF_VERIFICATION_ERROR" -> string!
+const DataProofsDotnet.DataIntegrity.ProofPurposes.AssertionMethod = "assertionMethod" -> string!
+const DataProofsDotnet.DataIntegrity.ProofPurposes.Authentication = "authentication" -> string!
+const DataProofsDotnet.DataIntegrity.ProofPurposes.CapabilityDelegation = "capabilityDelegation" -> string!
+const DataProofsDotnet.DataIntegrity.ProofPurposes.CapabilityInvocation = "capabilityInvocation" -> string!
+const DataProofsDotnet.DataIntegrity.ProofPurposes.KeyAgreement = "keyAgreement" -> string!
+DataProofsDotnet.DataIntegrity.CryptosuiteRegistry
+DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.CryptosuiteRegistry() -> void
+DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.GetByName(string? name) -> DataProofsDotnet.DataIntegrity.ICryptosuite?
+DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.Register(DataProofsDotnet.DataIntegrity.ICryptosuite! suite) -> void
+DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.RegisteredNames.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+DataProofsDotnet.DataIntegrity.DataIntegrityProof
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.AdditionalProperties.get -> System.Collections.Generic.IDictionary<string!, System.Text.Json.JsonElement>?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.AdditionalProperties.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Challenge.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Challenge.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Context.get -> System.Text.Json.JsonElement?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Context.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Created.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Created.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Cryptosuite.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Cryptosuite.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Domain.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Domain.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Expires.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Expires.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Id.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Id.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Nonce.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Nonce.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.PreviousProof.get -> DataProofsDotnet.DataIntegrity.PreviousProofReference?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.PreviousProof.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofPurpose.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofPurpose.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofValue.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofValue.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Type.get -> string!
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Type.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.VerificationMethod.get -> string?
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.VerificationMethod.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.AddProofAsync(System.Text.Json.JsonElement document, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Text.Json.JsonElement>!
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.DataIntegrityProofPipeline() -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.DataIntegrityProofPipeline(DataProofsDotnet.DataIntegrity.CryptosuiteRegistry! registry) -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.Suites.get -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.Verify(System.Text.Json.JsonElement securedDocument, DataProofsDotnet.PublicKeyMaterial! publicKey, DataProofsDotnet.DataIntegrity.ProofVerificationOptions? options = null) -> DataProofsDotnet.DataIntegrity.DocumentVerificationResult!
+DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline.VerifyAsync(System.Text.Json.JsonElement securedDocument, DataProofsDotnet.DataIntegrity.IVerificationMethodResolver! resolver, DataProofsDotnet.DataIntegrity.ProofVerificationOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DocumentVerificationResult!>!
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult.Problems.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.DataIntegrity.ProofProblem!>!
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult.Problems.init -> void
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult.ProofResults.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.DataIntegrity.ProofVerificationResult!>!
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult.ProofResults.init -> void
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult.Verified.get -> bool
+DataProofsDotnet.DataIntegrity.DocumentVerificationResult.Verified.init -> void
+DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite
+DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.EcdsaJcs2019Cryptosuite() -> void
+DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.Name.get -> string!
+DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite
+DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.EddsaJcs2022Cryptosuite() -> void
+DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.Name.get -> string!
+DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.DataIntegrity.ICryptosuite
+DataProofsDotnet.DataIntegrity.ICryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.DataIntegrity.ICryptosuite.Name.get -> string!
+DataProofsDotnet.DataIntegrity.ICryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.DataIntegrity.IVerificationMethodResolver
+DataProofsDotnet.DataIntegrity.IVerificationMethodResolver.ResolveAsync(string! verificationMethodUrl, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod?>!
+DataProofsDotnet.DataIntegrity.PreviousProofReference
+DataProofsDotnet.DataIntegrity.PreviousProofReference.Equals(DataProofsDotnet.DataIntegrity.PreviousProofReference? other) -> bool
+DataProofsDotnet.DataIntegrity.PreviousProofReference.IsArrayForm.get -> bool
+DataProofsDotnet.DataIntegrity.PreviousProofReference.Values.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.DataIntegrity.ProofProblem
+DataProofsDotnet.DataIntegrity.ProofProblem.Code.get -> string!
+DataProofsDotnet.DataIntegrity.ProofProblem.Code.init -> void
+DataProofsDotnet.DataIntegrity.ProofProblem.Message.get -> string?
+DataProofsDotnet.DataIntegrity.ProofProblem.Message.init -> void
+DataProofsDotnet.DataIntegrity.ProofProblemCodes
+DataProofsDotnet.DataIntegrity.ProofPurposes
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedChallenge.get -> string?
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedChallenge.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedDomain.get -> string?
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedDomain.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedProofPurpose.get -> string?
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedProofPurpose.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.VerificationTime.get -> System.DateTimeOffset?
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.VerificationTime.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationResult
+DataProofsDotnet.DataIntegrity.ProofVerificationResult.Problems.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.DataIntegrity.ProofProblem!>!
+DataProofsDotnet.DataIntegrity.ProofVerificationResult.Problems.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationResult.Proof.get -> DataProofsDotnet.DataIntegrity.DataIntegrityProof?
+DataProofsDotnet.DataIntegrity.ProofVerificationResult.Proof.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationResult.Verified.get -> bool
+DataProofsDotnet.DataIntegrity.ProofVerificationResult.Verified.init -> void
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Controller.get -> string!
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Controller.init -> void
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.ControllerControlsMethod.get -> bool
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.ControllerControlsMethod.init -> void
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Id.get -> string!
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Id.init -> void
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.PublicKey.get -> DataProofsDotnet.PublicKeyMaterial!
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.PublicKey.init -> void
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Relationships.get -> System.Collections.Generic.IReadOnlySet<string!>!
+DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod.Relationships.init -> void
+DataProofsDotnet.DataIntegrity.StaticVerificationMethodResolver
+DataProofsDotnet.DataIntegrity.StaticVerificationMethodResolver.ResolveAsync(string! verificationMethodUrl, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod?>!
+DataProofsDotnet.DataIntegrity.StaticVerificationMethodResolver.StaticVerificationMethodResolver(System.Collections.Generic.IEnumerable<DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod!>! methods) -> void
+DataProofsDotnet.DataProofsException
+DataProofsDotnet.DataProofsException.DataProofsException() -> void
+DataProofsDotnet.DataProofsException.DataProofsException(string! message) -> void
+DataProofsDotnet.DataProofsException.DataProofsException(string! message, System.Exception? innerException) -> void
+DataProofsDotnet.DataProofsJsonOptions
+DataProofsDotnet.ProofGenerationException
+DataProofsDotnet.ProofGenerationException.ProofGenerationException() -> void
+DataProofsDotnet.ProofGenerationException.ProofGenerationException(string! message) -> void
+DataProofsDotnet.ProofGenerationException.ProofGenerationException(string! message, System.Exception? innerException) -> void
+DataProofsDotnet.PublicKeyMaterial
+DataProofsDotnet.PublicKeyMaterial.KeyBytes.get -> System.ReadOnlyMemory<byte>
+DataProofsDotnet.PublicKeyMaterial.KeyType.get -> NetCrypto.KeyType
+DataProofsDotnet.PublicKeyMaterial.ToJsonWebKey() -> Microsoft.IdentityModel.Tokens.JsonWebKey!
+DataProofsDotnet.PublicKeyMaterial.ToMultikey() -> string!
+override DataProofsDotnet.DataIntegrity.PreviousProofReference.Equals(object? obj) -> bool
+override DataProofsDotnet.DataIntegrity.PreviousProofReference.GetHashCode() -> int
+static DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.CreateDefault() -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
+static DataProofsDotnet.DataIntegrity.PreviousProofReference.FromSingle(string! proofId) -> DataProofsDotnet.DataIntegrity.PreviousProofReference!
+static DataProofsDotnet.DataIntegrity.PreviousProofReference.FromValues(System.Collections.Generic.IEnumerable<string!>! proofIds) -> DataProofsDotnet.DataIntegrity.PreviousProofReference!
+static DataProofsDotnet.DataIntegrity.PreviousProofReference.implicit operator DataProofsDotnet.DataIntegrity.PreviousProofReference!(string! proofId) -> DataProofsDotnet.DataIntegrity.PreviousProofReference!
+static DataProofsDotnet.DataIntegrity.ProofVerificationResult.Failure(string! code, string? message = null, DataProofsDotnet.DataIntegrity.DataIntegrityProof? proof = null) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+static DataProofsDotnet.DataIntegrity.ProofVerificationResult.Success(DataProofsDotnet.DataIntegrity.DataIntegrityProof? proof = null) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+static DataProofsDotnet.DataProofsJsonOptions.Default.get -> System.Text.Json.JsonSerializerOptions!
+static DataProofsDotnet.PublicKeyMaterial.FromJsonWebKey(Microsoft.IdentityModel.Tokens.JsonWebKey! publicKeyJwk) -> DataProofsDotnet.PublicKeyMaterial!
+static DataProofsDotnet.PublicKeyMaterial.FromMultikey(string! publicKeyMultibase) -> DataProofsDotnet.PublicKeyMaterial!
+static DataProofsDotnet.PublicKeyMaterial.FromRaw(NetCrypto.KeyType keyType, System.ReadOnlySpan<byte> keyBytes) -> DataProofsDotnet.PublicKeyMaterial!

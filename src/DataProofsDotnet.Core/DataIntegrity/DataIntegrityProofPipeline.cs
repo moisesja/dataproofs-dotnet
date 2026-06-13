@@ -327,7 +327,11 @@ public sealed class DataIntegrityProofPipeline
         }
 
         // Spec §4.4 step: type, verificationMethod, and proofPurpose are mandatory.
-        if (string.IsNullOrEmpty(proof.Type)
+        // The type member must be present on the wire — the model defaults it, so the
+        // raw element is checked too (a defaulted member would also desynchronize the
+        // canonical bytes from what was signed).
+        if (!proofElement.TryGetProperty("type", out _)
+            || string.IsNullOrEmpty(proof.Type)
             || string.IsNullOrEmpty(proof.VerificationMethod)
             || string.IsNullOrEmpty(proof.ProofPurpose))
         {
@@ -419,15 +423,26 @@ public sealed class DataIntegrityProofPipeline
             };
         }
 
-        var inputDocument = JsonObject.Create(securedDocument)!;
-        inputDocument.Remove(ProofMemberName);
-        if (matchingProofs is not null)
+        try
         {
-            inputDocument[ProofMemberName] = matchingProofs;
-        }
+            var inputDocument = JsonObject.Create(securedDocument)!;
+            inputDocument.Remove(ProofMemberName);
+            if (matchingProofs is not null)
+            {
+                inputDocument[ProofMemberName] = matchingProofs;
+            }
 
-        var inputElement = JsonSerializer.SerializeToElement(inputDocument, DataProofsJsonOptions.Default);
-        return suite.VerifyProof(inputElement, proof, publicKey);
+            var inputElement = JsonSerializer.SerializeToElement(inputDocument, DataProofsJsonOptions.Default);
+            return suite.VerifyProof(inputElement, proof, publicKey);
+        }
+        catch (JsonException ex)
+        {
+            // FR-3: hostile or oversized documents (e.g. nesting beyond the serializer's
+            // depth limit) fail the transformation step as a result, never as an exception.
+            return ProofVerificationResult.Failure(
+                ProofProblemCodes.ProofTransformationError,
+                $"The secured document could not be transformed for verification: {ex.Message}", proof);
+        }
     }
 
     private static List<JsonElement> ReadExistingProofs(JsonElement document)

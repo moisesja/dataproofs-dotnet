@@ -29,7 +29,10 @@ public static class DataProofsJsonOptions
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };
-        options.MakeReadOnly();
+        // populateMissingResolver: the default reflection resolver is attached before
+        // freezing — without it, MakeReadOnly() throws on options that never resolved
+        // a TypeInfoResolver, breaking every consumer at first use.
+        options.MakeReadOnly(populateMissingResolver: true);
         return options;
     }
 }

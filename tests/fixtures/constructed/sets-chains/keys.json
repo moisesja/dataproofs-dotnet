@@ -1,0 +1,12 @@
+{
+  "key-1": {
+    "seedHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "publicKeyMultibase": "z6MktULudTtAsAhRegYPiZ6631RV3viv12qd4GQF8z1xB22S",
+    "verificationMethodId": "did:example:signer-1#key-1"
+  },
+  "key-2": {
+    "seedHex": "1212121212121212121212121212121212121212121212121212121212121212",
+    "publicKeyMultibase": "z6Mkgd9vC5PoQn4fiePDTQAsha3eT6LgF6tUPzf28iwXLgde",
+    "verificationMethodId": "did:example:signer-2#key-2"
+  }
+}
