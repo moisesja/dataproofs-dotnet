@@ -167,13 +167,22 @@ public static class KeyBindingJwt
             ? v.GetValue<string>()
             : null;
 
+    // DateTimeOffset.FromUnixTimeSeconds accepts only this inclusive epoch-second range; a value
+    // outside it throws ArgumentOutOfRangeException. A hostile KB-JWT 'iat' must NOT crash the
+    // verifier (FR-3/FR-23) — an out-of-range value is treated as an absent/invalid numeric date
+    // and surfaces as a structured failure, never an exception.
+    private const long MinUnixSeconds = -62135596800L; // DateTimeOffset.MinValue
+    private const long MaxUnixSeconds = 253402300799L; // DateTimeOffset.MaxValue
+
     private static DateTimeOffset? GetNumericDateClaim(JsonObject payload, string name)
     {
         if (!payload.TryGetPropertyValue(name, out var node) || node is not JsonValue v)
             return null;
         if (v.TryGetValue<long>(out var seconds))
-            return DateTimeOffset.FromUnixTimeSeconds(seconds);
-        if (v.TryGetValue<double>(out var fractional) && !double.IsNaN(fractional) && !double.IsInfinity(fractional))
+            return seconds is >= MinUnixSeconds and <= MaxUnixSeconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null;
+        // Range-check the double BEFORE casting: (long)1e308 saturates to long.MaxValue and would throw.
+        if (v.TryGetValue<double>(out var fractional) && !double.IsNaN(fractional) && !double.IsInfinity(fractional)
+            && fractional >= MinUnixSeconds && fractional <= MaxUnixSeconds)
             return DateTimeOffset.FromUnixTimeSeconds((long)fractional);
         return null;
     }

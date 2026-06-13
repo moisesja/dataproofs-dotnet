@@ -353,6 +353,99 @@ public sealed class SdJwtNegativePathTests
         result.Errors.Should().ContainSingle().Which.Should().StartWith("MALFORMED");
     }
 
+    // ---- KB-JWT with an out-of-range 'iat' (FR-23 fail-closed) ----
+
+    /// <summary>
+    /// Hand-builds a KB-JWT (typ kb+jwt) over <paramref name="sdJwtWithoutKeyBinding"/> with a
+    /// caller-controlled raw <c>iat</c> JSON token, signed by <paramref name="signer"/>. Used to
+    /// inject an out-of-range NumericDate that <see cref="KeyBindingJwt.IssueAsync"/> (which takes
+    /// a DateTimeOffset) cannot produce. The <c>sd_hash</c> is computed correctly so the only
+    /// hostile element is the iat.
+    /// </summary>
+    private static Task<string> ForgeKbJwtWithRawIatAsync(
+        string sdJwtWithoutKeyBinding, string nonce, string aud, string rawIatJsonToken, JwsSigner signer)
+    {
+        var sdHash = SdHashAlgorithm.ComputeSdHash(SdHashAlgorithm.Sha256, sdJwtWithoutKeyBinding);
+        var payloadJson = $$"""{"nonce":"{{nonce}}","aud":"{{aud}}","iat":{{rawIatJsonToken}},"sd_hash":"{{sdHash}}"}""";
+        return JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes(payloadJson), signer, typ: KeyBindingJwt.Type);
+    }
+
+    /// <summary>
+    /// FR-23 regression. <see cref="KeyBindingJwt"/>.GetNumericDateClaim now range-checks before
+    /// <c>DateTimeOffset.FromUnixTimeSeconds</c>. A KB-JWT carrying an out-of-range <c>iat</c>
+    /// verified with a freshness bound (MaxKeyBindingAge) must NOT throw — the out-of-range iat is
+    /// treated as an invalid/absent numeric date and surfaces as a structured failure. This covers
+    /// the AUTHENTICATED case (KB-JWT correctly signed by the cnf holder key, correct sd_hash) so
+    /// the iat parse is genuinely reached. Run against the unfixed GetNumericDateClaim this throws
+    /// ArgumentOutOfRangeException.
+    /// </summary>
+    [Theory]
+    [InlineData("99999999999999999")]   // integer past DateTimeOffset.MaxValue epoch seconds
+    [InlineData("1e308")]               // double that saturates to long.MaxValue on cast
+    [InlineData("-99999999999999999")]  // integer before DateTimeOffset.MinValue
+    public async Task Authenticated_kb_jwt_with_out_of_range_iat_fails_closed_and_never_throws(string rawIat)
+    {
+        var holder = TestKeyMaterial.Generate(KeyType.P256, "holder");
+        var (issuer, issued) = await IssueSampleAsync(new SdJwtIssuerOptions { HolderConfirmationKey = holder.PublicJwk });
+
+        const string aud = "https://verifier.example.org";
+        const string nonce = "n1";
+        var sdJwtPresentation = SdJwtHolder.CreatePresentation(issued.Issuance, issued.Disclosures.Select(d => d.Encoded));
+        // Signed by the genuine holder (cnf) key with a correct sd_hash — only the iat is hostile.
+        var kbJwt = await ForgeKbJwtWithRawIatAsync(sdJwtPresentation, nonce, aud, rawIat, holder.Signer);
+        var presentation = sdJwtPresentation + kbJwt;
+
+        SdJwtVerificationResult? result = null;
+        Action act = () => result = SdJwtVerifier.Verify(presentation, _ => issuer.PublicJwk, new SdJwtVerificationOptions
+        {
+            ExpectedAudience = aud,
+            ExpectedNonce = nonce,
+            MaxKeyBindingAge = TimeSpan.FromMinutes(5), // forces the iat freshness parse
+        });
+
+        act.Should().NotThrow("an out-of-range KB-JWT 'iat' must fail closed, never crash the verifier (FR-23)");
+        result!.IsValid.Should().BeFalse();
+        // The out-of-range iat is treated as absent → KB_JWT_IAT_MISSING under the freshness bound.
+        string.Join(" ", result.Errors).Should().Contain("KB_JWT_IAT_MISSING");
+    }
+
+    /// <summary>
+    /// FR-23 regression, UNAUTHENTICATED case: a KB-JWT with an out-of-range <c>iat</c> that is
+    /// also signed by the WRONG key (not the cnf holder) and carries a WRONG sd_hash must still
+    /// return a structured failure, never throw — the hostile iat parse must be safe regardless of
+    /// whether the KB-JWT authenticates.
+    /// </summary>
+    [Fact]
+    public async Task Unauthenticated_kb_jwt_with_out_of_range_iat_fails_closed_and_never_throws()
+    {
+        var holder = TestKeyMaterial.Generate(KeyType.P256, "holder");
+        var attacker = TestKeyMaterial.Generate(KeyType.P256, "attacker");
+        var (issuer, issued) = await IssueSampleAsync(new SdJwtIssuerOptions { HolderConfirmationKey = holder.PublicJwk });
+
+        const string aud = "https://verifier.example.org";
+        const string nonce = "n1";
+        var sdJwtPresentation = SdJwtHolder.CreatePresentation(issued.Issuance, issued.Disclosures.Select(d => d.Encoded));
+
+        // Wrong sd_hash (over a different string) AND signed by the attacker, with an out-of-range iat.
+        var wrongSdHash = SdHashAlgorithm.ComputeSdHash(SdHashAlgorithm.Sha256, "different-presentation~");
+        var payloadJson = $$"""{"nonce":"{{nonce}}","aud":"{{aud}}","iat":99999999999999999,"sd_hash":"{{wrongSdHash}}"}""";
+        var kbJwt = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes(payloadJson), attacker.Signer, typ: KeyBindingJwt.Type);
+        var presentation = sdJwtPresentation + kbJwt;
+
+        SdJwtVerificationResult? result = null;
+        Action act = () => result = SdJwtVerifier.Verify(presentation, _ => issuer.PublicJwk, new SdJwtVerificationOptions
+        {
+            ExpectedAudience = aud,
+            ExpectedNonce = nonce,
+            MaxKeyBindingAge = TimeSpan.FromMinutes(5),
+        });
+
+        act.Should().NotThrow("an out-of-range iat on an unauthenticated KB-JWT must still fail closed (FR-23)");
+        result!.IsValid.Should().BeFalse();
+        // The signature fails AND the iat is absent/invalid — both surface as structured failures.
+        string.Join(" ", result.Errors).Should().Contain("KB_JWT_SIGNATURE_INVALID");
+    }
+
     [Fact]
     public async Task Duplicate_digest_in_two_disclosures_is_rejected()
     {

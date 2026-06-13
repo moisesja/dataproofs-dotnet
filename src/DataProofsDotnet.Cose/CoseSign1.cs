@@ -119,6 +119,18 @@ public static class CoseSign1
                 message);
         }
 
+        if (message.MissingCriticalHeaderLabels.Count > 0)
+        {
+            // RFC 9052 §3.1: a label named in crit (2) MUST also be present as a parameter in the
+            // protected bucket. A crit label we understand but that has no matching protected
+            // parameter is a malformed message and must be rejected before any signature math.
+            // (Unknown crit labels are caught above regardless of presence.)
+            return CoseSign1VerificationResult.Fail(
+                CoseVerificationErrorCode.MalformedMessage,
+                $"The crit (2) header lists labels that are absent from the protected header bucket: {string.Join(", ", message.MissingCriticalHeaderLabels)} (RFC 9052 §3.1).",
+                message);
+        }
+
         if (message.AlgorithmText is not null || message.AlgorithmValueInvalid)
         {
             return CoseSign1VerificationResult.Fail(
@@ -181,7 +193,25 @@ public static class CoseSign1
             externalData.Span,
             payload);
 
-        return CoseCryptography.Verify(keyType, publicKey.Span, signatureInput, message.SignatureBytes)
+        // Fail closed (FR-23): a malformed/wrong-length public key makes the NetCrypto import
+        // throw (FormatException, ArgumentException, CryptographicException, …). Verification
+        // must return a structured failure for any attacker-controlled input, never throw — the
+        // same narrow catch the Core/Rdfc Data Integrity suites use. OperationCanceledException
+        // is deliberately excluded so cooperative cancellation still propagates.
+        bool verified;
+        try
+        {
+            verified = CoseCryptography.Verify(keyType, publicKey.Span, signatureInput, message.SignatureBytes);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return CoseSign1VerificationResult.Fail(
+                CoseVerificationErrorCode.InvalidSignature,
+                "The supplied public key could not be used to verify the signature (the key is malformed or has the wrong length for the message algorithm).",
+                message);
+        }
+
+        return verified
             ? CoseSign1VerificationResult.Success(message)
             : CoseSign1VerificationResult.Fail(CoseVerificationErrorCode.InvalidSignature, "Signature verification failed.", message);
     }

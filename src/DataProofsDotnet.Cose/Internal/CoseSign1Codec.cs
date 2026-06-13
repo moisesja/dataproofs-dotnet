@@ -215,6 +215,11 @@ internal static class CoseSign1Codec
                         throw new CborContentException($"Duplicate COSE header label {label} (labels must be unique across the protected and unprotected buckets, RFC 9052 §3).");
                     }
 
+                    if (isProtected)
+                    {
+                        bag.NoteProtectedLabel(label);
+                    }
+
                     ReadHeaderValue(reader, bag, label, isProtected);
                     break;
 
@@ -223,6 +228,11 @@ internal static class CoseSign1Codec
                     if (!bag.TryClaimLabel(textLabel))
                     {
                         throw new CborContentException($"Duplicate COSE header label \"{textLabel}\".");
+                    }
+
+                    if (isProtected)
+                    {
+                        bag.NoteProtectedLabel(textLabel);
                     }
 
                     reader.SkipValue(); // unknown application-defined text label: ignored unless listed in crit
@@ -328,6 +338,7 @@ internal static class CoseSign1Codec
                 case CborReaderState.NegativeInteger:
                     long label = reader.ReadInt64();
                     entries++;
+                    bag.CriticalIntLabels.Add(label);
                     if (Array.IndexOf(UnderstoodLabels, label) < 0)
                     {
                         bag.UnknownCriticalLabels.Add(label.ToString(CultureInfo.InvariantCulture));
@@ -337,7 +348,9 @@ internal static class CoseSign1Codec
 
                 case CborReaderState.TextString:
                     // This implementation understands no application-defined text labels.
-                    bag.UnknownCriticalLabels.Add($"\"{reader.ReadTextString()}\"");
+                    string critTextLabel = reader.ReadTextString();
+                    bag.CriticalTextLabels.Add(critTextLabel);
+                    bag.UnknownCriticalLabels.Add($"\"{critTextLabel}\"");
                     entries++;
                     break;
 
@@ -460,6 +473,8 @@ internal sealed class HeaderBag
 {
     private readonly HashSet<long> _intLabels = [];
     private readonly HashSet<string> _textLabels = [];
+    private readonly HashSet<long> _protectedIntLabels = [];
+    private readonly HashSet<string> _protectedTextLabels = [];
 
     internal long? AlgorithmId { get; set; }
 
@@ -481,7 +496,23 @@ internal sealed class HeaderBag
 
     internal List<string> UnknownCriticalLabels { get; } = [];
 
+    /// <summary>Integer labels named in the crit (2) array (RFC 9052 §3.1), in declaration order.</summary>
+    internal List<long> CriticalIntLabels { get; } = [];
+
+    /// <summary>Text labels named in the crit (2) array (RFC 9052 §3.1), in declaration order.</summary>
+    internal List<string> CriticalTextLabels { get; } = [];
+
     internal bool TryClaimLabel(long label) => _intLabels.Add(label);
 
     internal bool TryClaimLabel(string label) => _textLabels.Add(label);
+
+    /// <summary>Records that <paramref name="label"/> appeared as a key in the protected header map.</summary>
+    internal void NoteProtectedLabel(long label) => _protectedIntLabels.Add(label);
+
+    /// <summary>Records that <paramref name="label"/> appeared as a key in the protected header map.</summary>
+    internal void NoteProtectedLabel(string label) => _protectedTextLabels.Add(label);
+
+    internal bool IsProtectedLabelPresent(long label) => _protectedIntLabels.Contains(label);
+
+    internal bool IsProtectedLabelPresent(string label) => _protectedTextLabels.Contains(label);
 }

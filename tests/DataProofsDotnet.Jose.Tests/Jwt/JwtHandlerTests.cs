@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.Jose.Jwt;
+using DataProofsDotnet.Jose.Signing;
 using DataProofsDotnet.Jose.Tests.Envelopes;
 using FluentAssertions;
 using NetCrypto;
@@ -188,6 +189,48 @@ public sealed class JwtHandlerTests
 
         Action mixedAud = () => JwtClaims.Parse("{\"aud\":[\"ok\",7]}"u8);
         mixedAud.Should().Throw<MalformedJoseException>().WithMessage("*aud*");
+    }
+
+    /// <summary>
+    /// FR-23 regression. <c>JwtClaims.RequireNumericDate</c> now range-checks before calling
+    /// <c>DateTimeOffset.FromUnixTimeSeconds</c>. An out-of-range NumericDate (a huge integer, a
+    /// huge double that would saturate on cast, or a hugely negative integer) must surface as the
+    /// documented <see cref="MalformedJoseException"/> — never an unhandled
+    /// <see cref="ArgumentOutOfRangeException"/> leaking from the framework. Run against the
+    /// unfixed RequireNumericDate (no range check) these throw ArgumentOutOfRangeException.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"exp\":99999999999999999}")]   // integer past DateTimeOffset.MaxValue epoch seconds
+    [InlineData("{\"exp\":1e308}")]                // double that saturates to long.MaxValue on cast
+    [InlineData("{\"exp\":-99999999999999999}")]   // integer before DateTimeOffset.MinValue
+    [InlineData("{\"nbf\":99999999999999999}")]
+    [InlineData("{\"iat\":1e308}")]
+    public void Out_of_range_numeric_date_is_MalformedJoseException_not_ArgumentOutOfRange(string json)
+    {
+        Action act = () => JwtClaims.Parse(Encoding.UTF8.GetBytes(json));
+
+        act.Should().Throw<MalformedJoseException>("an out-of-range NumericDate is malformed input, not a framework crash")
+            .Which.Should().NotBeOfType<ArgumentOutOfRangeException>();
+    }
+
+    /// <summary>
+    /// FR-23 regression through the full JWT verify path: a signed JWT whose payload carries an
+    /// out-of-range <c>exp</c> must return a structured MALFORMED failure and never throw. The
+    /// payload is hand-built (JwtClaims cannot construct an out-of-range exp) and signed normally.
+    /// </summary>
+    [Fact]
+    public async Task Jwt_with_out_of_range_exp_returns_structured_failure_and_never_throws()
+    {
+        var key = NewKey();
+        var jwt = await JwsBuilder.BuildCompactAsync(
+            Encoding.UTF8.GetBytes("""{"iss":"i","exp":99999999999999999}"""), key.Signer, typ: "JWT");
+
+        JwtVerificationResult? result = null;
+        Action act = () => result = JwtHandler.Verify(jwt, _ => key.PublicJwk, new JwtValidationOptions { CurrentTime = Now });
+
+        act.Should().NotThrow("an out-of-range exp must produce a structured result, never an unhandled exception (FR-23)");
+        result!.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.StartsWith("MALFORMED"));
     }
 
     [Fact]

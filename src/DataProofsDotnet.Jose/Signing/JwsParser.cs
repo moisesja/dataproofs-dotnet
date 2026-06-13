@@ -260,6 +260,17 @@ public static class JwsParser
                 // failure rather than leaking the dispatch exception (AC-3 negative path).
                 lastFailure = new JoseCryptoException($"JWS algorithm is not supported: {ex.Message}", ex);
             }
+            catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException or ArgumentException)
+            {
+                // Fail closed (FR-23): an attacker-controlled verifier JWK can be off-curve /
+                // point-at-infinity (CryptographicException from the EC invalid-curve defense in
+                // JwkConversion.ExtractPublicKey / crypto.Verify) or carry a malformed kty/crv
+                // (ArgumentException). These must not escape the parser — treat them as "this
+                // signature did not verify" and fall through to the next signature, exactly as
+                // the JoseCryptoException path does. OperationCanceledException is excluded by the
+                // type filter so cooperative cancellation still propagates.
+                lastFailure = new JoseCryptoException($"JWS signature did not verify for kid '{sig.Kid}': {ex.Message}", ex);
+            }
         }
 
         if (lastFailure is null)

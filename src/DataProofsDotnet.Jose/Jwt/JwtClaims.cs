@@ -153,18 +153,26 @@ public sealed class JwtClaims
             ? s
             : throw new MalformedJoseException($"JWT '{name}' must be a JSON string.");
 
+    // DateTimeOffset.FromUnixTimeSeconds accepts only this inclusive epoch-second range; outside
+    // it throws ArgumentOutOfRangeException. A malformed (out-of-range) NumericDate must surface
+    // as the documented MalformedJoseException, never an unhandled framework exception (FR-23).
+    private const long MinUnixSeconds = -62135596800L; // DateTimeOffset.MinValue
+    private const long MaxUnixSeconds = 253402300799L; // DateTimeOffset.MaxValue
+
     private static DateTimeOffset RequireNumericDate(JsonNode? value, string name)
     {
         // RFC 7519 NumericDate is a JSON number of seconds; fractional seconds are permitted by
         // the spec but truncated here (whole-second resolution).
         if (value is JsonValue v)
         {
-            if (v.TryGetValue<long>(out var seconds))
+            if (v.TryGetValue<long>(out var seconds) && seconds is >= MinUnixSeconds and <= MaxUnixSeconds)
                 return DateTimeOffset.FromUnixTimeSeconds(seconds);
-            if (v.TryGetValue<double>(out var fractional) && !double.IsNaN(fractional) && !double.IsInfinity(fractional))
+            // Range-check the double BEFORE casting: (long)1e308 saturates to long.MaxValue and would throw.
+            if (v.TryGetValue<double>(out var fractional) && !double.IsNaN(fractional) && !double.IsInfinity(fractional)
+                && fractional >= MinUnixSeconds && fractional <= MaxUnixSeconds)
                 return DateTimeOffset.FromUnixTimeSeconds((long)fractional);
         }
-        throw new MalformedJoseException($"JWT '{name}' must be a NumericDate (JSON number of epoch seconds).");
+        throw new MalformedJoseException($"JWT '{name}' must be a NumericDate (JSON number of epoch seconds within the representable range).");
     }
 
     private static DateTimeOffset? Truncate(DateTimeOffset? value)

@@ -31,6 +31,34 @@ public sealed class CoseSign1Message
         Type = headers.Type;
         TypeIsProtected = headers.TypeIsProtected;
         UnknownCriticalHeaderLabels = headers.UnknownCriticalLabels;
+        MissingCriticalHeaderLabels = ComputeMissingCriticalLabels(headers);
+    }
+
+    /// <summary>
+    /// RFC 9052 §3.1: every label named in the crit (2) array MUST also appear as a parameter in
+    /// the protected header bucket. Returns the crit labels that have no matching protected
+    /// parameter — a non-empty list means the message must be rejected.
+    /// </summary>
+    private static IReadOnlyList<string> ComputeMissingCriticalLabels(HeaderBag headers)
+    {
+        List<string>? missing = null;
+        foreach (long label in headers.CriticalIntLabels)
+        {
+            if (!headers.IsProtectedLabelPresent(label))
+            {
+                (missing ??= []).Add(label.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        foreach (string label in headers.CriticalTextLabels)
+        {
+            if (!headers.IsProtectedLabelPresent(label))
+            {
+                (missing ??= []).Add($"\"{label}\"");
+            }
+        }
+
+        return missing ?? (IReadOnlyList<string>)Array.Empty<string>();
     }
 
     /// <summary>Whether the message carried the COSE_Sign1 CBOR tag (18).</summary>
@@ -78,6 +106,12 @@ public sealed class CoseSign1Message
     internal bool TypeIsProtected { get; }
 
     internal IReadOnlyList<string> UnknownCriticalHeaderLabels { get; }
+
+    /// <summary>
+    /// crit (2) labels with no matching parameter in the protected header bucket (RFC 9052 §3.1).
+    /// Non-empty ⇒ the message must not verify.
+    /// </summary>
+    internal IReadOnlyList<string> MissingCriticalHeaderLabels { get; }
 
     internal byte[]? PayloadBytes => _payload;
 

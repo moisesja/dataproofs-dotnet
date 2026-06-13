@@ -435,10 +435,13 @@ public sealed class DataIntegrityProofPipeline
             var inputElement = JsonSerializer.SerializeToElement(inputDocument, DataProofsJsonOptions.Default);
             return suite.VerifyProof(inputElement, proof, publicKey);
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or ArgumentException)
         {
-            // FR-3: hostile or oversized documents (e.g. nesting beyond the serializer's
-            // depth limit) fail the transformation step as a result, never as an exception.
+            // FR-3: hostile documents fail the transformation step as a result, never as an
+            // exception. JsonException covers oversized/over-nested input; ArgumentException covers
+            // a duplicate top-level member name, which surfaces from JsonObject.Create(...).Remove(...)
+            // when its backing dictionary is materialized (a verifier must fail closed on this,
+            // not crash — it is attacker-controlled input).
             return ProofVerificationResult.Failure(
                 ProofProblemCodes.ProofTransformationError,
                 $"The secured document could not be transformed for verification: {ex.Message}", proof);

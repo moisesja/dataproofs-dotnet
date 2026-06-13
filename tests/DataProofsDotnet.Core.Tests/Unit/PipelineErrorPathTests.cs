@@ -26,6 +26,13 @@ public class PipelineErrorPathTests
     private static JsonElement Doc(string json) =>
         JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 256 }).RootElement.Clone();
 
+    // A duplicate-tolerant parse: JsonDocument's default rejects duplicate member names, so a
+    // duplicate-key document would fail in the test helper before reaching the pipeline. Setting
+    // AllowDuplicateProperties=true lets the duplicate survive into the JsonElement so the
+    // pipeline's OWN materialization (JsonObject.Create(...).Remove(...)) is what must fail closed.
+    private static JsonElement DocAllowingDuplicateKeys(string json) =>
+        JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 256, AllowDuplicateProperties = true }).RootElement.Clone();
+
     private static DataIntegrityProof ValidOptions() => new()
     {
         Cryptosuite = EddsaJcs2022Cryptosuite.CryptosuiteName,
@@ -287,6 +294,35 @@ public class PipelineErrorPathTests
             ((JsonArray)n["@context"]!).Add("https://example.org/extra-context/v1"));
 
         Pipeline.Verify(extended, Ed25519Key).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Verify_DuplicateTopLevelMember_FailsWithTransformationError_NotThrow()
+    {
+        // FR-3/FR-23 regression. A secured document with a DUPLICATE top-level member is hostile
+        // input: when the pipeline materializes it via JsonObject.Create(securedDocument).Remove(...)
+        // the backing dictionary build throws ArgumentException on the duplicate key. Before the
+        // fix that exception escaped Verify (it only caught JsonException) and crashed the verifier.
+        // Now ArgumentException is caught → PROOF_TRANSFORMATION_ERROR. This test exercises the
+        // pipeline's OWN parse path: the duplicate is preserved into the JsonElement (the test
+        // helper tolerates duplicates at parse), so the pipeline — not the helper — is what fails.
+        // Run against the unfixed Verify (catch covering only JsonException) this throws
+        // ArgumentException instead of returning a result.
+        var signed = await SignedWith(ValidOptions());
+
+        // Re-serialize the signed document and splice in a duplicate top-level member ("v":"a"/"v":"b").
+        var asJson = JsonSerializer.Serialize(signed);
+        asJson.Should().StartWith("{");
+        var withDuplicate = "{\"v\":\"a\",\"v\":\"b\"," + asJson[1..];
+        var hostile = DocAllowingDuplicateKeys(withDuplicate);
+
+        DocumentVerificationResult? result = null;
+        Action act = () => result = Pipeline.Verify(hostile, Ed25519Key);
+
+        act.Should().NotThrow("a duplicate top-level member is attacker-controlled input and must fail closed (FR-23)");
+        result!.Verified.Should().BeFalse();
+        result.ProofResults.Single().Problems.Single().Code
+            .Should().Be(ProofProblemCodes.ProofTransformationError);
     }
 
     [Fact]

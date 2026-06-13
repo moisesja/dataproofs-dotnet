@@ -170,6 +170,86 @@ public sealed class NegativePathTests
         act.Should().Throw<JoseCryptoException>().WithMessage("*Unsupported JWE 'alg'*");
     }
 
+    // ----- off-curve / point-at-infinity verifier JWK (JOSE B1, FR-23 fail-closed) -----
+
+    /// <summary>
+    /// Builds an off-curve P-256 JWK: the point (x=1, y=1) is NOT on the P-256 curve, so the
+    /// NetCrypto invalid-curve defense (RFC 7518 §6.2.2) throws a
+    /// <see cref="System.Security.Cryptography.CryptographicException"/> when the bytes are
+    /// imported inside <c>JwkConversion.ExtractPublicKey</c>. The crv is kept P-256 so the
+    /// alg↔curve binding check passes and execution actually reaches the key import.
+    /// </summary>
+    private static Jwk OffCurveP256Jwk(string kid)
+    {
+        var one = new byte[32];
+        one[^1] = 0x01; // big-endian 1, field-width 32 bytes for P-256
+        return new Jwk { Kty = "EC", Crv = "P-256", X = Base64Url.Encode(one), Y = Base64Url.Encode(one), Kid = kid };
+    }
+
+    /// <summary>
+    /// JOSE B1 regression. A valid ES256 JWS verified against an off-curve verifier JWK makes
+    /// <c>JwkConversion.ExtractPublicKey</c> throw a <see cref="System.Security.Cryptography.CryptographicException"/>.
+    /// Before the fix JwsParser.VerifySignatures only caught JoseCryptoException /
+    /// MalformedJoseException / NotSupportedException, so that exception escaped JwsParser
+    /// entirely — an unhandled crash on attacker-controlled input (violating FR-3/FR-23). After
+    /// the fix it is converted to a clean JoseCryptoException "did not verify". Run against the
+    /// unfixed catch block this test fails with an unhandled CryptographicException instead of
+    /// the asserted JoseCryptoException.
+    /// </summary>
+    [Fact]
+    public async Task Jws_with_off_curve_verifier_jwk_fails_closed_as_crypto_failure()
+    {
+        var key = TestKeyMaterial.Generate(KeyType.P256, "off-curve-kid");
+        var jws = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("""{"v":1}"""), key.Signer);
+        var offCurve = OffCurveP256Jwk("off-curve-kid");
+
+        Action act = () => JwsParser.ParseCompact(jws, _ => offCurve, _crypto);
+
+        act.Should().Throw<JoseCryptoException>("an off-curve verifier JWK must fail closed as a crypto failure, never an unhandled CryptographicException")
+            .Which.Should().NotBeOfType<System.Security.Cryptography.CryptographicException>();
+    }
+
+    /// <summary>
+    /// JOSE B1 regression through the JWT path. <see cref="JwtHandler.Verify"/> only catches
+    /// MalformedJoseException / JoseCryptoException from JwsParser, so before the fix the
+    /// escaping CryptographicException crashed the verifier. It must now return a structured
+    /// SIGNATURE_INVALID failure and never throw.
+    /// </summary>
+    [Fact]
+    public async Task Jwt_with_off_curve_verifier_jwk_returns_structured_failure_and_never_throws()
+    {
+        var key = TestKeyMaterial.Generate(KeyType.P256, "off-curve-kid");
+        var jwt = await JwtHandler.SignAsync(new JwtClaims(issuer: "i"), key.Signer);
+        var offCurve = OffCurveP256Jwk("off-curve-kid");
+
+        JwtVerificationResult? result = null;
+        Action act = () => result = JwtHandler.Verify(jwt, _ => offCurve, new JwtValidationOptions { AllowedAlgorithms = [JoseAlgorithms.ES256] });
+
+        act.Should().NotThrow("invalid verifier keys produce structured results, never unhandled exceptions (FR-23)");
+        result!.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.StartsWith("SIGNATURE_INVALID"));
+    }
+
+    /// <summary>
+    /// JOSE B1 regression, malformed-kty variant: a JWK whose kty/crv combination cannot be
+    /// resolved makes <c>JwkConversion.ExtractPublicKey</c> throw an <see cref="ArgumentException"/>.
+    /// The broadened catch must convert this to a clean crypto failure as well, never let it
+    /// escape the parser.
+    /// </summary>
+    [Fact]
+    public async Task Jws_with_malformed_kty_verifier_jwk_fails_closed_as_crypto_failure()
+    {
+        var key = TestKeyMaterial.Generate(KeyType.P256, "bad-kty-kid");
+        var jws = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("""{"v":1}"""), key.Signer);
+        // crv P-256 satisfies the alg-binding check (alg ES256), but kty "EC" with no usable
+        // coordinates / mismatched material drives the converter to throw ArgumentException.
+        var malformed = new Jwk { Kty = "EC", Crv = "P-256", X = Base64Url.Encode([0x01, 0x02]), Y = Base64Url.Encode([0x03]), Kid = "bad-kty-kid" };
+
+        Action act = () => JwsParser.ParseCompact(jws, _ => malformed, _crypto);
+
+        act.Should().Throw<JoseCryptoException>("a malformed verifier JWK must fail closed, never crash the parser");
+    }
+
     [Fact]
     public void Duplicate_header_members_are_rejected_fail_closed()
     {
