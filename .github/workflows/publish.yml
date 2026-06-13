@@ -7,7 +7,8 @@ name: Publish to NuGet
 # as a preview (e.g. v0.1.0-preview.1) — see RELEASING.md.
 #
 # Prerequisites (one-time owner actions, see RELEASING.md):
-#  - repository secret NUGET_API_KEY scoped to the nuget-release environment
+#  - a NuGet Trusted Publishing policy on nuget.org for owner=moisesja,
+#    repo=moisesja/dataproofs-dotnet, workflow=publish.yml (no stored API key)
 #  - the DataProofsDotnet ID prefix reserved on nuget.org (ac-11 fails closed until then)
 on:
   push:
@@ -21,6 +22,9 @@ jobs:
   pack-and-publish:
     name: pack + publish to NuGet
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # request the GitHub OIDC token for NuGet Trusted Publishing
     # Gate the irreversible publish: add "Required reviewers" to the `nuget-release`
     # environment (repo Settings > Environments) so each tag push waits for approval.
     environment: nuget-release
@@ -62,6 +66,16 @@ jobs:
           path: artifacts/*.*nupkg
           if-no-files-found: error
 
+      # NuGet Trusted Publishing (OIDC): exchange the GitHub OIDC token for a short-lived
+      # (~1-hour) NuGet API key — no long-lived secret stored in the repo. Requires a Trusted
+      # Publishing policy on nuget.org for owner=moisesja, repo=moisesja/dataproofs-dotnet,
+      # workflow=publish.yml. Run immediately before the push so the temporary key does not expire.
+      - name: NuGet login (OIDC → short-lived API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: moisesja   # nuget.org account/profile name (public package owner), not an email
+
       - name: Push to NuGet.org
         # Pushes the .nupkg files; the matching .snupkg symbol packages ride along automatically.
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate

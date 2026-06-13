@@ -15,13 +15,20 @@ binding has landed — see `docs/dependencies/netcrypto-bbs-header.md`).
    `DataProofsDotnet.*` IDs claimable-or-owned on nuget.org, ID prefix reserved, `PackageId`s
    exact) → pack → push to NuGet.org.
 5. The publish job runs in the `nuget-release` environment — add required reviewers in repo
-   Settings → Environments so each tag waits for approval. Scope the `NUGET_API_KEY` secret to
-   that environment.
+   Settings → Environments so each tag waits for approval.
+
+Publishing uses **NuGet Trusted Publishing (OIDC)** — no long-lived API key is stored. The
+publish job requests a GitHub OIDC token (`id-token: write`), `NuGet/login@v1` exchanges it for a
+short-lived (~1-hour) key against the nuget.org Trusted Publishing policy, and the push uses that
+temporary key.
 
 One-time owner actions (cannot be automated):
 
 - Reserve the `DataProofsDotnet` ID prefix on nuget.org (AC-11 fails closed until done).
-- Create the `nuget-release` environment with required reviewers and the `NUGET_API_KEY` secret.
+- Create the `nuget-release` environment with required reviewers (no secret needed).
+- Create a **Trusted Publishing policy** on nuget.org (account → Trusted Publishing) for
+  owner `moisesja`, repository `moisesja/dataproofs-dotnet`, workflow `publish.yml`, environment
+  `nuget-release`.
 
 The package version is derived from the tag (`v0.1.0-preview.1` → `0.1.0-preview.1`; `v1.0.0` →
 `1.0.0`), overriding the dev-default `DataProofsVersion` in `Directory.Build.props` via
