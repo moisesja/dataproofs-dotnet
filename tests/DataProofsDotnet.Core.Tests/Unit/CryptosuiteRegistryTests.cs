@@ -67,9 +67,89 @@ public class CryptosuiteRegistryTests
         registry.GetByName("EDDSA-JCS-2022").Should().BeNull("matching is ordinal, not case-insensitive");
     }
 
-    private sealed class FakeSuite(string name) : ICryptosuite
+    [Fact]
+    public void GetByProofType_ResolvesLegacySuiteByDeclaredType()
+    {
+        var registry = new CryptosuiteRegistry();
+        var legacy = new FakeSuite("Ed25519Signature2020", proofTypes: ["Ed25519Signature2020"]);
+
+        registry.Register(legacy);
+
+        registry.GetByProofType("Ed25519Signature2020").Should().BeSameAs(legacy);
+    }
+
+    [Fact]
+    public void GetByProofType_ReturnsNull_ForDefaultTypeNullEmptyAndUnknown()
+    {
+        // Default-type suites (the JCS suites) are dispatched by cryptosuite name, never by
+        // type, so they are deliberately absent from the type index.
+        var registry = CryptosuiteRegistry.CreateDefault();
+        registry.Register(new FakeSuite("Ed25519Signature2020", proofTypes: ["Ed25519Signature2020"]));
+
+        registry.GetByProofType(DataIntegrityProof.DataIntegrityProofType).Should().BeNull();
+        registry.GetByProofType(null).Should().BeNull();
+        registry.GetByProofType("").Should().BeNull();
+        registry.GetByProofType("Ed25519Signature2018").Should().BeNull("no suite declares this type");
+    }
+
+    [Fact]
+    public void GetByProofType_IsCaseSensitive_Ordinal()
+    {
+        var registry = new CryptosuiteRegistry();
+        registry.Register(new FakeSuite("Ed25519Signature2020", proofTypes: ["Ed25519Signature2020"]));
+
+        registry.GetByProofType("ED25519SIGNATURE2020").Should().BeNull("matching is ordinal, not case-insensitive");
+    }
+
+    [Fact]
+    public void Register_IndexesSuiteUnderEachDeclaredNonDefaultType()
+    {
+        var registry = new CryptosuiteRegistry();
+        var multi = new FakeSuite(
+            "multi",
+            proofTypes: [DataIntegrityProof.DataIntegrityProofType, "Ed25519Signature2020", "Ed25519Signature2018"]);
+
+        registry.Register(multi);
+
+        registry.GetByProofType("Ed25519Signature2020").Should().BeSameAs(multi);
+        registry.GetByProofType("Ed25519Signature2018").Should().BeSameAs(multi);
+        registry.GetByProofType(DataIntegrityProof.DataIntegrityProofType)
+            .Should().BeNull("the default type is never indexed, even when a suite also declares it");
+    }
+
+    [Fact]
+    public void Register_ReplacingLegacySuite_RemovesItsStaleTypeIndexEntries()
+    {
+        var registry = new CryptosuiteRegistry();
+        registry.Register(new FakeSuite("legacy", proofTypes: ["Ed25519Signature2020"]));
+
+        // Replace the same name with a default-type suite: the old type→suite mapping must go.
+        var replacement = new FakeSuite("legacy");
+        registry.Register(replacement);
+
+        registry.GetByName("legacy").Should().BeSameAs(replacement);
+        registry.GetByProofType("Ed25519Signature2020")
+            .Should().BeNull("the replaced suite no longer claims the legacy type");
+    }
+
+    [Fact]
+    public void Register_ReplacingLegacySuite_RepointsTypeIndexToTheNewSuite()
+    {
+        var registry = new CryptosuiteRegistry();
+        registry.Register(new FakeSuite("legacy", proofTypes: ["Ed25519Signature2020"]));
+
+        var replacement = new FakeSuite("legacy", proofTypes: ["Ed25519Signature2020"]);
+        registry.Register(replacement);
+
+        registry.GetByProofType("Ed25519Signature2020").Should().BeSameAs(replacement);
+    }
+
+    private sealed class FakeSuite(string name, IReadOnlyCollection<string>? proofTypes = null) : ICryptosuite
     {
         public string Name => name;
+
+        public IReadOnlyCollection<string> SupportedProofTypes
+            => proofTypes ?? [DataIntegrityProof.DataIntegrityProofType];
 
         public Task<DataIntegrityProof> CreateProofAsync(
             JsonElement unsecuredDocument, DataIntegrityProof proofOptions, ISigner signer,
