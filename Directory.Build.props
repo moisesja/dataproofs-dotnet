@@ -8,7 +8,7 @@
     <!-- Preview line: the hyphenated SemVer suffix marks every build as a NuGet prerelease.
          The first nuget-release ships as a preview (owner decision), not v1.0.0. Release CI
          overrides this from the git tag (e.g. v0.1.0-preview.1 -> 0.1.0-preview.1). -->
-    <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">0.1.0-preview.1</DataProofsVersion>
+    <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">0.1.0-preview.2</DataProofsVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Deterministic>true</Deterministic>

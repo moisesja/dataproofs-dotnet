@@ -16,6 +16,7 @@ const DataProofsDotnet.DataIntegrity.ProofPurposes.KeyAgreement = "keyAgreement"
 DataProofsDotnet.DataIntegrity.CryptosuiteRegistry
 DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.CryptosuiteRegistry() -> void
 DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.GetByName(string? name) -> DataProofsDotnet.DataIntegrity.ICryptosuite?
+DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.GetByProofType(string? type) -> DataProofsDotnet.DataIntegrity.ICryptosuite?
 DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.Register(DataProofsDotnet.DataIntegrity.ICryptosuite! suite) -> void
 DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.RegisteredNames.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 DataProofsDotnet.DataIntegrity.DataIntegrityProof
@@ -74,6 +75,7 @@ DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.VerifyProof(System.Text.J
 DataProofsDotnet.DataIntegrity.ICryptosuite
 DataProofsDotnet.DataIntegrity.ICryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
 DataProofsDotnet.DataIntegrity.ICryptosuite.Name.get -> string!
+DataProofsDotnet.DataIntegrity.ICryptosuite.SupportedProofTypes.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 DataProofsDotnet.DataIntegrity.ICryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
 DataProofsDotnet.DataIntegrity.IVerificationMethodResolver
 DataProofsDotnet.DataIntegrity.IVerificationMethodResolver.ResolveAsync(string! verificationMethodUrl, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.ResolvedVerificationMethod?>!

@@ -381,8 +381,14 @@ public sealed class DataIntegrityProofPipeline
             }
         }
 
-        var suite = _registry.GetByName(proof.Cryptosuite);
-        if (suite is null || !string.Equals(proof.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal))
+        // Suite dispatch (FR-4): the on-wire cryptosuite name always wins (the 2022/2019
+        // generation), falling back to the proof type for legacy Linked-Data-Signature
+        // proofs that name their algorithm by type and carry no cryptosuite. The suite must
+        // claim the type; it then re-validates type/cryptosuite/key/encoding/signature
+        // itself, so this gate only confirms the dispatch target is willing to handle it.
+        var suite = _registry.GetByName(proof.Cryptosuite)
+            ?? _registry.GetByProofType(proof.Type);
+        if (suite is null || !(suite.SupportedProofTypes ?? []).Contains(proof.Type))
         {
             return ProofVerificationResult.Failure(
                 ProofProblemCodes.ProofVerificationError,

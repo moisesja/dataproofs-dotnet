@@ -19,6 +19,24 @@ public interface ICryptosuite
     string Name { get; }
 
     /// <summary>
+    /// The proof <c>type</c> values this suite verifies. Defaults to the Data Integrity
+    /// generation's single type (<see cref="DataIntegrityProof.DataIntegrityProofType"/>),
+    /// so existing suites continue to be dispatched by <c>cryptosuite</c> name exactly as
+    /// today. A legacy Linked-Data-Signature suite (e.g. <c>Ed25519Signature2020</c>,
+    /// <c>EcdsaSecp256r1Signature2019</c>) overrides this to its <c>type</c> string and
+    /// leaves its proofs' <c>cryptosuite</c> null — the verify pipeline then dispatches such
+    /// proofs to it by <c>type</c>. The suite itself remains responsible for fully validating
+    /// the proof's <c>type</c>/<c>cryptosuite</c>/key/encoding inside
+    /// <see cref="VerifyProof"/>; this collection only declares which types it claims.
+    /// </summary>
+    IReadOnlyCollection<string> SupportedProofTypes => DefaultSupportedProofTypes;
+
+    /// <summary>The default <see cref="SupportedProofTypes"/> value — the single
+    /// Data Integrity proof type — shared so the common case allocates nothing per call.</summary>
+    private static readonly IReadOnlyCollection<string> DefaultSupportedProofTypes =
+        [DataIntegrityProof.DataIntegrityProofType];
+
+    /// <summary>
     /// Creates a proof over <paramref name="unsecuredDocument"/> per this suite's
     /// transform → hash → serialize pipeline. For proof chains the pipeline passes a
     /// document that already embeds the matching previous proofs.
