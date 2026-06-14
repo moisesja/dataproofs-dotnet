@@ -144,6 +144,53 @@ public class CryptosuiteRegistryTests
         registry.GetByProofType("Ed25519Signature2020").Should().BeSameAs(replacement);
     }
 
+    [Fact]
+    public void Register_SameTypeUnderDifferentNames_IsLastRegistrationWins()
+    {
+        // Two differently named suites declaring the same legacy type: the type index is
+        // last-registration-wins, mirroring the name index. (Benign — both claim the type
+        // and each re-validates in VerifyProof.)
+        var registry = new CryptosuiteRegistry();
+        var first = new FakeSuite("suite-a", proofTypes: ["Ed25519Signature2020"]);
+        var second = new FakeSuite("suite-b", proofTypes: ["Ed25519Signature2020"]);
+
+        registry.Register(first);
+        registry.Register(second);
+
+        registry.GetByName("suite-a").Should().BeSameAs(first, "both names remain registered");
+        registry.GetByName("suite-b").Should().BeSameAs(second);
+        registry.GetByProofType("Ed25519Signature2020").Should().BeSameAs(second, "last registration wins");
+    }
+
+    [Fact]
+    public void Register_ReplacingASuite_DoesNotStealAnotherNamesTypeEntry()
+    {
+        // suite-b currently owns the type. Replacing the unrelated suite-a (which also once
+        // declared the type) must NOT remove suite-b's entry — the prune is value-matched.
+        var registry = new CryptosuiteRegistry();
+        registry.Register(new FakeSuite("suite-a", proofTypes: ["Ed25519Signature2020"]));
+        var owner = new FakeSuite("suite-b", proofTypes: ["Ed25519Signature2020"]);
+        registry.Register(owner);   // type -> suite-b
+
+        // Replace suite-a with a default-type suite: it no longer claims the legacy type.
+        registry.Register(new FakeSuite("suite-a"));
+
+        registry.GetByProofType("Ed25519Signature2020")
+            .Should().BeSameAs(owner, "the value-matched prune leaves the other name's entry intact");
+    }
+
+    [Fact]
+    public void Register_SameInstanceTwice_IsIdempotent()
+    {
+        var registry = new CryptosuiteRegistry();
+        var suite = new FakeSuite("legacy", proofTypes: ["Ed25519Signature2020"]);
+
+        registry.Register(suite);
+        registry.Register(suite);
+
+        registry.GetByProofType("Ed25519Signature2020").Should().BeSameAs(suite);
+    }
+
     private sealed class FakeSuite(string name, IReadOnlyCollection<string>? proofTypes = null) : ICryptosuite
     {
         public string Name => name;

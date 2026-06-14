@@ -15,6 +15,13 @@ namespace DataProofsDotnet.DataIntegrity;
 /// type (<see cref="DataIntegrityProof.DataIntegrityProofType"/>) is deliberately excluded
 /// from this index: the shipped 2022/2019 suites all share that single type and are always
 /// disambiguated by <c>cryptosuite</c> name, never by type.
+/// <para>
+/// If two suites registered under <em>different</em> names both declare the same non-default
+/// proof <c>type</c>, the type index is last-registration-wins (mirroring the name index).
+/// This is benign: both suites claim the type and each fully re-validates the proof in its
+/// own <see cref="ICryptosuite.VerifyProof"/>, so a "wrong" selection fails closed rather than
+/// accepting. Shipping suites that overlap on a legacy type is therefore discouraged.
+/// </para>
 /// </remarks>
 public sealed class CryptosuiteRegistry
 {
@@ -49,26 +56,36 @@ public sealed class CryptosuiteRegistry
         ArgumentNullException.ThrowIfNull(suite);
         ArgumentException.ThrowIfNullOrEmpty(suite.Name);
 
+        var newTypes = NonDefaultProofTypes(suite).ToHashSet(StringComparer.Ordinal);
+
         lock (_registrationLock)
         {
-            // Replace semantics: drop the previous suite's type-index entries first, so a
-            // suite that no longer claims a legacy type — or one replaced by a default-type
-            // suite of the same name — leaves no stale type→suite mapping behind. Each entry
-            // is removed only if it still points at the suite being replaced.
-            if (_suites.TryGetValue(suite.Name, out var previous))
+            _suites.TryGetValue(suite.Name, out var previous);
+
+            // Publish the new suite's type entries BEFORE pruning the old ones, so a type
+            // claimed by both the replaced and the replacing suite is repointed atomically —
+            // a concurrent GetByProofType never observes it transiently absent.
+            foreach (var type in newTypes)
             {
-                foreach (var type in NonDefaultProofTypes(previous))
-                {
-                    ((ICollection<KeyValuePair<string, ICryptosuite>>)_suitesByProofType)
-                        .Remove(new KeyValuePair<string, ICryptosuite>(type, previous));
-                }
+                _suitesByProofType[type] = suite;
             }
 
             _suites[suite.Name] = suite;
 
-            foreach (var type in NonDefaultProofTypes(suite))
+            // Prune the previous suite's type entries that the new suite no longer claims.
+            // Value-matched so a different-named suite that owns the same type is left intact
+            // (last-registration-wins; see the class remarks), and re-registering a suite that
+            // still claims the type stays idempotent.
+            if (previous is not null)
             {
-                _suitesByProofType[type] = suite;
+                foreach (var type in NonDefaultProofTypes(previous))
+                {
+                    if (!newTypes.Contains(type))
+                    {
+                        ((ICollection<KeyValuePair<string, ICryptosuite>>)_suitesByProofType)
+                            .Remove(new KeyValuePair<string, ICryptosuite>(type, previous));
+                    }
+                }
             }
         }
     }
@@ -83,7 +100,9 @@ public sealed class CryptosuiteRegistry
     /// legacy/type-named suites: the default Data Integrity type
     /// (<see cref="DataIntegrityProof.DataIntegrityProofType"/>), <c>null</c>, and empty
     /// always return <c>null</c>, because those proofs are dispatched by <c>cryptosuite</c>
-    /// name (<see cref="GetByName"/>), never by type.
+    /// name (<see cref="GetByName"/>), never by type. When two differently named suites
+    /// declare the same type, the most recently registered one is returned (see the class
+    /// remarks); the verify pipeline re-confirms the returned suite claims the type.
     /// </summary>
     public ICryptosuite? GetByProofType(string? type)
         => string.IsNullOrEmpty(type) ? null : _suitesByProofType.GetValueOrDefault(type);
