@@ -1,0 +1,9 @@
+# Byte-exact reference vectors and RDF Dataset Canonicalization fixtures (.nq/.nt/.json/...) MUST be
+# LF on every platform. The canonicalizer emits LF N-Quads and the conformance suite asserts
+# byte-equality (RdfCanonicalizationConformanceTests); without this, Windows `core.autocrlf` checks
+# the fixtures out as CRLF, inflating their length and failing the windows-latest CI job. All
+# fixtures are text and already stored as LF, so this only constrains checkout — it renormalizes
+# nothing.
+tests/fixtures/** text eol=lf
+*.nq text eol=lf
+*.nt text eol=lf

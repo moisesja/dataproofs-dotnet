@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no-pad requirement, but an out-of-repo caller that previously passed padded or whitespace-bearing
   input will now get a `FormatException`. **Upgraders:** scan your `Base64Url.Decode` call sites for
   non-canonical input. (Also tracked under Security below — it closes an encoding-ambiguity gap.)
+- **Bumped the `NetCrypto` dependency from 1.0.0 to 1.1.0** across all packages. The library
+  source is unaffected; consumers resolve NetCrypto ≥ 1.1.0 transitively. (1.1.0 also introduces a
+  `NetCrypto.Base64Url` type — when a consumer imports both `NetCrypto` and `DataProofsDotnet.Jose`,
+  reference `Base64Url` via a `using` alias or fully-qualified name to disambiguate it from
+  `DataProofsDotnet.Jose.Base64Url`.)
 
 ### Security
 

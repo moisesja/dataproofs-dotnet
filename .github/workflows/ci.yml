@@ -185,8 +185,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="0.1.0"
           feed="$(pwd)/local-feed"
+          # Derive the version from the packed Core nupkg so the smoke install always matches what
+          # was actually packed (e.g. the -preview suffix from $(DataProofsVersion)); never hardcode.
+          version="$(basename "$(ls "$feed"/DataProofsDotnet.Core.*.nupkg | head -1)" .nupkg | sed 's/^DataProofsDotnet\.Core\.//')"
+          echo "smoke-testing packages at version: $version"
           declare -A smoke=(
             [DataProofsDotnet.Core]=tasks/smoke/Core
             [DataProofsDotnet.Jose]=tasks/smoke/Jose
