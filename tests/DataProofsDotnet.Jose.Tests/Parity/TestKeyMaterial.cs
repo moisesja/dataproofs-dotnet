@@ -8,7 +8,7 @@ namespace DataProofsDotnet.Jose.Tests.Envelopes;
 /// Round-trip test material: generates fresh keypairs per curve and packs them into the
 /// JOSE <see cref="Jwk"/> shape the envelope layer expects. Also implements the two
 /// resolver contracts so tests can drive <c>JweParser</c> without standing up a resolver.
-/// Rewired from didcomm-dotnet's net-did keygen to NetCrypto (PARITY.md rename map); gains a
+/// Rewired from didcomm-dotnet's net-did keygen to NetCrypto (rename-adapted from the port); gains a
 /// <see cref="Signer"/> because the dataproofs <c>JwsBuilder</c> signs through NetCrypto
 /// <c>ISigner</c> instead of consuming a private JWK's 'd' (AC-8).
 /// </summary>

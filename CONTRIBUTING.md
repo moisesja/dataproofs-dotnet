@@ -26,7 +26,7 @@ dotnet test DataProofsDotnet.sln
 src/        five publishable packages (Core, Jose, Cose, Rdfc, Extensions.DependencyInjection)
 tests/      one test project per package + ApiSurface.Tests (hygiene gates) + vendored fixtures/
 samples/    narrated console samples — every public API member must appear in at least one (FR-21)
-tasks/      CI gate tooling (samples-coverage, parity-diff, dependency-hygiene, ...) and plan docs
+tasks/      CI gate tooling (samples-coverage, dependency-hygiene, api-surface-scan, ...) and plan docs
 docs/       supplementary documentation
 ```
 

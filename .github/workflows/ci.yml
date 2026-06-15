@@ -11,6 +11,7 @@ permissions:
 
 # PRD §9: one CI job per acceptance criterion, ac-1 … ac-11, each exiting 0/non-zero, all
 # required for merge to main. ac-11 (package-identity publish gate) lives in publish.yml.
+# ac-5 (didcomm behavior-parity diff) has been retired — see the note where it used to sit, below.
 #
 # The build-test job is the comprehensive gate: it builds the whole solution with
 # warnings-as-errors — which is itself the AC-6 banned-symbol scan (BannedApiAnalyzers) and the
@@ -85,9 +86,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      # All Jose conformance + oracle cross-verification + SD-JWT/VC + VcJose. (The ported
-      # didcomm parity suite is intermixed in these namespaces and runs here too; its dedicated
-      # assertion-equality gate is ac-5.)
+      # All Jose conformance + oracle cross-verification + SD-JWT/VC + VcJose, including the ported
+      # didcomm parity test suite (intermixed in these namespaces) as standard JOSE coverage.
       - name: ac-3 Jose conformance + oracle + SD-JWT(/VC) + VcJose
         run: dotnet test tests/DataProofsDotnet.Jose.Tests/DataProofsDotnet.Jose.Tests.csproj --configuration Release
 
@@ -102,27 +102,10 @@ jobs:
       - name: ac-4 Cose suite
         run: dotnet test tests/DataProofsDotnet.Cose.Tests/DataProofsDotnet.Cose.Tests.csproj --configuration Release
 
-  ac-5:
-    name: ac-5 didcomm JWS/JWE behavior parity
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-      # AC-5 = the ported parity suite passes AND parity-diff finds zero assertion differences.
-      # The parity tests live intermixed in the Jose test namespaces, so run the whole suite.
-      - name: ac-5 parity suite passes
-        run: dotnet test tests/DataProofsDotnet.Jose.Tests/DataProofsDotnet.Jose.Tests.csproj --configuration Release
-      # parity-diff needs the didcomm source at the SHA recorded in PARITY.md.
-      - name: Checkout didcomm-dotnet (parity source)
-        uses: actions/checkout@v4
-        with:
-          repository: moisesja/didcomm-dotnet
-          path: .parity-src/didcomm-dotnet
-          fetch-depth: 0
-      - name: ac-5 parity-diff (zero assertion differences)
-        run: dotnet run --project tasks/parity-diff --configuration Release -- --didcomm-repo .parity-src/didcomm-dotnet
+  # ac-5 (didcomm JWS/JWE behavior-parity diff) was retired: it pinned the ported JOSE tests to a
+  # didcomm-dotnet source SHA, which becomes meaningless once didcomm-dotnet is refactored. The
+  # ported parity TEST suite is kept and still runs under ac-3 (and build-test) as standard JOSE
+  # coverage; only the source-diff gate and its tooling were removed.
 
   ac-6:
     name: ac-6 dependency hygiene + NetCrypto-only crypto

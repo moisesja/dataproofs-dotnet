@@ -2,7 +2,7 @@ using NetCrypto;
 
 namespace DataProofsDotnet.Jose.Tests.Crypto.Aead;
 
-// Parity shims (PARITY.md rename map): didcomm-dotnet implemented IAead instance classes
+// Parity shims (rename-adapted from the didcomm-dotnet port): didcomm-dotnet implemented IAead instance classes
 // locally; dataproofs deletes them per AC-6 (every AEAD is a NetCrypto static). These shims
 // preserve the porting source's instance call shape — (key, iv, aad, plaintext) order and the
 // Name/KeySizeBytes/IvSizeBytes/TagSizeBytes metadata — while delegating every cryptographic
