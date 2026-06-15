@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DataProofsDotnet.Legacy</RootNamespace>
+    <AssemblyName>DataProofsDotnet.Legacy</AssemblyName>
+    <PackageId>DataProofsDotnet.Legacy</PackageId>
+    <Version>$(DataProofsVersion)</Version>
+    <Description>Legacy Linked-Data-Signature cryptosuites for W3C Data Integrity: Ed25519Signature2020 and EcdsaSecp256r1Signature2019, JCS (default) and RDFC-1.0 variants, byte-compatible with zcap-dotnet's 2020-era JCS-nested wire convention. All cryptography via NetCrypto; multiformats/JCS via NetCid; RDFC via DataProofsDotnet.Rdfc.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <ProjectReference Include="../DataProofsDotnet.Rdfc/DataProofsDotnet.Rdfc.csproj" />
+    <!-- All cryptography (hash, sign, verify) routes through NetCrypto — PRD §2.2 -->
+    <PackageReference Include="NetCrypto" />
+    <!-- Multibase/multicodec + JCS canonicalization — owned by NetCid stack-wide -->
+    <PackageReference Include="NetCid" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="All" />
+    <!-- AC-6 banned-symbol scan: no direct System.Security.Cryptography primitives in src/ -->
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <!-- Shared repo-root banned-symbol list (AC-6); $(MSBuildThisFileDirectory) is this csproj's dir -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DataProofsDotnet.Legacy.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+{
+  "@context": "https://w3id.org/zcap/v1",
+  "id": "urn:uuid:00000000-0000-0000-0000-0000000000de",
+  "parentCapability": "urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi%2Fresource",
+  "controller": "did:key:z6MkneMkZqwqRiU5mJzSG3kDwzt9P8C59N4NGTfBLfSGE7c7",
+  "invocationTarget": "https://example.com/api/resource",
+  "expires": "2027-01-01T00:00:00.000000Z",
+  "allowedAction": ["read"],
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2026-06-13T00:00:00.000000Z",
+    "proofPurpose": "capabilityDelegation",
+    "verificationMethod": "did:key:z6MkneMkZqwqRiU5mJzSG3kDwzt9P8C59N4NGTfBLfSGE7c7#z6MkneMkZqwqRiU5mJzSG3kDwzt9P8C59N4NGTfBLfSGE7c7",
+    "capabilityChain": ["urn:zcap:root:https%3A%2F%2Fexample.com%2Fapi%2Fresource"],
+    "proofValue": "z5vKNNJVDziWyjoSSxFCNXJ6ZL4FSfrA7TbWDwhkBmkHCgN4448kTMJTUoK3pW35dNrGbyWP1moBSCb4nsYAc5fx8"
+  }
+}

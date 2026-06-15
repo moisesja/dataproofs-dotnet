@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>DataProofsDotnet.Legacy.Tests</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The legacy suites under test, plus Core (pipeline/registry/models) and Rdfc
+         (the RDFC-1.0 canonicalizer the RDFC variant and verify fallback exercise). -->
+    <ProjectReference Include="../../src/DataProofsDotnet.Legacy/DataProofsDotnet.Legacy.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Rdfc/DataProofsDotnet.Rdfc.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored cross-stack golden vectors (zcap-dotnet LD-Signatures), copied beside the
+         test binaries (PRD §9 conventions). Scoped to the legacy fixture tree this project owns. -->
+    <Content Include="../fixtures/legacy/**/*" LinkBase="fixtures/legacy" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
