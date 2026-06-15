@@ -20,7 +20,7 @@ For each package the CI job does, in a clean temp directory:
 dotnet pack <package> -o ./local-feed              # all five packed to a local folder feed
 dotnet new console -n SmokeApp && cd SmokeApp
 dotnet add package <package-id> --source ../local-feed   # plus the documented prerequisite only
-# replace the generated Program.cs with this folder's Program.cs (and, for Rdfc, the bundled .jsonld)
+# replace the generated Program.cs with this folder's Program.cs (each smoke is self-contained — one file)
 dotnet run                                          # must print "OK — … smoke passed." and exit 0
 ```
 

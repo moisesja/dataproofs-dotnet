@@ -72,6 +72,12 @@ public static class JwtHandler
         if (!options.AllowedAlgorithms.Contains(parsed.SignatureAlgorithm, StringComparer.Ordinal))
             errors.Add($"ALGORITHM_NOT_ALLOWED: JWS alg '{parsed.SignatureAlgorithm}' is not in the allowed set.");
 
+        // RFC 8725 §3.11 explicit typing (opt-in): when a type is expected, the protected 'typ'
+        // header must match it (case-insensitive, 'application/' prefix tolerated). Defends against
+        // cross-context token confusion — a token minted for a different purpose under the same key.
+        if (options.ExpectedType is { } expectedType && !TypeMatches(parsed.Typ, expectedType))
+            errors.Add($"TYPE_MISMATCH: expected typ '{expectedType}', got '{parsed.Typ ?? "(absent)"}'.");
+
         var now = options.CurrentTime ?? DateTimeOffset.UtcNow;
         var skew = options.ClockSkew;
 
@@ -103,5 +109,25 @@ public static class JwtHandler
         return errors.Count == 0
             ? JwtVerificationResult.Success(claims, parsed.SignatureAlgorithm, parsed.SignerKid)
             : JwtVerificationResult.Failure(errors, claims, parsed.SignatureAlgorithm, parsed.SignerKid);
+    }
+
+    /// <summary>
+    /// RFC 8725 §3.11 <c>typ</c> comparison: case-insensitive, tolerating an optional
+    /// <c>application/</c> media-type prefix on either side. Absent <c>typ</c> never matches.
+    /// </summary>
+    private static bool TypeMatches(string? actual, string expected)
+    {
+        if (actual is null)
+            return false;
+
+        static string Normalize(string value)
+        {
+            const string prefix = "application/";
+            return value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? value[prefix.Length..]
+                : value;
+        }
+
+        return string.Equals(Normalize(actual), Normalize(expected), StringComparison.OrdinalIgnoreCase);
     }
 }

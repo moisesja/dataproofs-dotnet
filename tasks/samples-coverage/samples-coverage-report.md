@@ -1,11 +1,11 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **528**
-- Covered by at least one sample: **528**
+- Public members across 6 packages: **530**
+- Covered by at least one sample: **530**
 - Allowlisted (excused, with justification): **0**
 - Uncovered: **0**
 
-Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowlist: `/Users/moises/Projects/dataproofs-dotnet/tasks/samples-coverage/allowlist.txt`
+Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt`
 
 ## Covered members
 
@@ -328,6 +328,7 @@ Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowli
 - `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedAudience`
 - `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedIssuer`
 - `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedSubject`
+- `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedType`
 - `DataProofsDotnet.Jose.Jwt.JwtValidationOptions.RequireExpirationTime`
 - `DataProofsDotnet.Jose.Jwt.JwtVerificationResult (type)`
 - `DataProofsDotnet.Jose.Jwt.JwtVerificationResult.Claims`
@@ -436,6 +437,7 @@ Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowli
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.PayloadBytes`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult.Typ`
 - `DataProofsDotnet.Jose.Signing.JwsParser (type)`
 - `DataProofsDotnet.Jose.Signing.JwsParser.Parse`
 - `DataProofsDotnet.Jose.Signing.JwsParser.Parse`

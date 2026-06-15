@@ -5,6 +5,8 @@ using DataProofsDotnet.Jose;
 using DataProofsDotnet.Jose.Jwt;
 using DataProofsDotnet.Jose.Signing;
 using NetCrypto;
+// NetCrypto 1.1.0 also ships a Base64Url; alias the one this sample showcases.
+using Base64Url = DataProofsDotnet.Jose.Base64Url;
 
 // ============================================================
 // DataProofsDotnet Samples — JWT and JWK
@@ -57,6 +59,10 @@ var strict = new JwtValidationOptions
     RequireExpirationTime = true,
     ClockSkew = TimeSpan.FromSeconds(30),
     AllowedAlgorithms = [JoseAlgorithms.EdDSA],
+    // RFC 8725 §3.11 explicit typing (opt-in): pin the protected 'typ' header so a token minted
+    // for a different purpose under the same key cannot be replayed as this JWT. The 'application/'
+    // prefix is tolerated, so "JWT" matches a header typ of "JWT" or "application/JWT".
+    ExpectedType = "JWT",
 };
 JwtVerificationResult ok = JwtHandler.Verify(jwt, _ => issuerPublicJwk, strict, joseCrypto);
 Console.WriteLine($"  valid: {ok.IsValid}, alg={ok.SignatureAlgorithm}, signerKid={ok.SignerKid}");
@@ -80,6 +86,12 @@ Check(!mismatch.IsValid, "mismatched expectations fail");
 Check(mismatch.Errors.Any(e => e.StartsWith("ISSUER")), "issuer mismatch is reported");
 Check(mismatch.Errors.Any(e => e.StartsWith("AUDIENCE")), "audience mismatch is reported");
 Check(mismatch.Errors.Any(e => e.StartsWith("SUBJECT")), "subject mismatch is reported");
+
+// Explicit typing: a token whose 'typ' is not the expected one is rejected (RFC 8725 §3.11).
+JwtVerificationResult wrongType = JwtHandler.Verify(
+    jwt, _ => issuerPublicJwk, new JwtValidationOptions { CurrentTime = now, ExpectedType = "kb+jwt" });
+Check(!wrongType.IsValid, "a JWT whose typ is not the expected type fails");
+Check(wrongType.Errors.Any(e => e.StartsWith("TYPE_MISMATCH")), "the typ mismatch is reported");
 
 // Expiry: past the skew it fails; inside the skew it passes.
 var expiring = new JwtClaims(expiresAt: now);

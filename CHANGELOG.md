@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-06-14
 
 ### Added
 
@@ -24,15 +24,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `proofValue`). Unmodeled proof members (e.g. `capabilityChain`) ride through
   `DataIntegrityProof.AdditionalProperties` into the JCS signing input. This unblocks
   zcap-dotnet's proof-pipeline delegation and legacy-VC verification in credentials-dotnet.
-  - **Use legacy suites only for interop with existing corpora; prefer the 2022/2019 Data
-    Integrity suites for new proofs.**
-  - **Documented limitations** (verified by adversarial review): the JCS variant has no
-    representation for a W3C proof chain and **fails closed** if asked to secure/verify a
-    document that already carries a `proof` member (use the RDFC variant or a 2022/2019 suite
-    for chains); the RDFC variant binds only terms defined in the active JSON-LD `@context`
-    (members it does not define are dropped by RDF expansion — inherent to JSON-LD/RDFC, shared
-    with the conformant `rdfc-*` suites); and `EcdsaSecp256r1Signature2019` does not enforce
-    low-`s`, so ECDSA `proofValue`s are malleable and must not be used as unique identifiers.
+    - **Use legacy suites only for interop with existing corpora; prefer the 2022/2019 Data
+      Integrity suites for new proofs.**
+    - **Documented limitations** (verified by adversarial review): the JCS variant has no
+      representation for a W3C proof chain and **fails closed** if asked to secure/verify a
+      document that already carries a `proof` member (use the RDFC variant or a 2022/2019 suite
+      for chains); the RDFC variant binds only terms defined in the active JSON-LD `@context`
+      (members it does not define are dropped by RDF expansion — inherent to JSON-LD/RDFC, shared
+      with the conformant `rdfc-*` suites); and `EcdsaSecp256r1Signature2019` does not enforce
+      low-`s`, so ECDSA `proofValue`s are malleable and must not be used as unique identifiers.
+- **JOSE explicit typing (RFC 8725 §3.11).** `JwtValidationOptions.ExpectedType` (opt-in) pins the
+  JWS protected `typ` header on `JwtHandler.Verify` (case-insensitive, `application/`-prefix
+  tolerant), rejecting cross-context token confusion; default behavior is unchanged. The verified
+  `typ` is now surfaced on `JwsParseResult.Typ`.
+
+### Changed
+
+- **`Base64Url.Decode` is now strict (behavioral change).** It rejects any input outside the
+  base64url-no-pad alphabet — including interior/surrounding ASCII whitespace, `=` padding, and the
+  standard-base64 `+`/`/` — by throwing `FormatException`, where the previous implementation
+  silently tolerated them. This matches the documented "valid base64url" contract and the JOSE
+  no-pad requirement, but an out-of-repo caller that previously passed padded or whitespace-bearing
+  input will now get a `FormatException`. **Upgraders:** scan your `Base64Url.Decode` call sites for
+  non-canonical input. (Also tracked under Security below — it closes an encoding-ambiguity gap.)
+- **Bumped the `NetCrypto` dependency from 1.0.0 to 1.1.0** across all packages. The library
+  source is unaffected; consumers resolve NetCrypto ≥ 1.1.0 transitively. (1.1.0 also introduces a
+  `NetCrypto.Base64Url` type — when a consumer imports both `NetCrypto` and `DataProofsDotnet.Jose`,
+  reference `Base64Url` via a `using` alias or fully-qualified name to disambiguate it from
+  `DataProofsDotnet.Jose.Base64Url`.)
+
+### Security
+
+- **JOSE hardening pass (issue #6).** An adversarial multi-agent review of the entire
+  `DataProofsDotnet.Jose` surface (JWS/JWE/ECDH-1PU/JWK/SD-JWT/JWT/encoding), with every finding
+  put through independent majority-vote verification, produced these fixes (each pinned by a
+  regression test in `Hardening/HardeningRegressionTests.cs`):
+    - **SD-JWT reconstruction now fails closed on a deep recursive-disclosure chain.**
+      `SdJwtReconstructor` walked the disclosed payload by unbounded mutual recursion; a chained
+      recursive-disclosure presentation (RFC 9901 §6.3) rooted in an issuer-signed `_sd` digest could
+      drive it into an **uncatchable `StackOverflowException` that terminates the host process**,
+      defeating the verifier's fail-closed contract. Reconstruction is now depth-bounded (64, matching
+      the JSON parse depth) and raises a `MalformedJoseException` (surfaced as `DISCLOSURE_INVALID`).
+    - **A malformed/unsupported `cnf` (or issuer) key no longer crashes SD-JWT verification.**
+      `CompactJwt.Verify` mapped an unsupported curve / off-curve key point to an uncaught
+      `NotSupportedException`/crypto exception (reachable through an attacker-influenced `cnf` on the
+      Key Binding path); it now fails closed as `MalformedJoseException`, which both call sites handle.
+    - **JWS reports the verified signer only from integrity-protected material.** `JwsParseResult
+.SignerKid` is now sourced solely from the protected header; a `kid` carried only in the
+      unauthenticated unprotected header is treated as a routing hint and never surfaced as the
+      verified identity. Verification of valid JWS (including `kid`-in-unprotected) is unchanged.
+    - **`Base64Url.Decode` is now strict** — it rejects interior/surrounding whitespace, `=` padding,
+      and standard-base64 `+`/`/`, matching the documented base64url-no-pad contract.
 
 ## [0.1.0-preview.2] - 2026-06-13
 
@@ -57,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   present (`cryptosuite`-named suites still always win), closing the create→verify inconsistency
   and honoring the FR-4 "registering a new suite requires no pipeline changes" contract. The
   library still **creates** only conformant 2022/2019 proofs; this is verification-only and
-  non-breaking. Suite selection only *routes* — each suite still fully validates
+  non-breaking. Suite selection only _routes_ — each suite still fully validates
   `type`/`cryptosuite`/key/encoding/signature. Regression tests in
   `LegacyProofTypeVerificationTests` and `CryptosuiteRegistryTests`.
 
@@ -77,7 +119,7 @@ First preview release of all five packages (`Core`, `Jose`, `Cose`, `Rdfc`,
 
 - **`bbs-2023` mandatory disclosure is now cryptographically enforced.** The mandatory-disclosure
   group is bound into the BBS signature `header` (`SHA-256(proofConfig) ‖ SHA-256(mandatory
-  N-Quads)`) at sign and derive, and the header is recomputed at verify from the revealed
+N-Quads)`) at sign and derive, and the header is recomputed at verify from the revealed
   mandatory messages — so a holder that drops or alters a mandatory statement produces a header
   that no longer matches the one the proof commits to, and verification fails. Closes the
   adversarial-review finding that a holder could omit a mandatory claim and still verify. Requires

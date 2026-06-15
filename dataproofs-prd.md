@@ -231,11 +231,16 @@ These criteria are written for autonomous execution by coding agents. Convention
 *Procedure:* verify-direction theories for all fixtures through `Cose` public APIs; creation round-trips for each v1 algorithm; CWT claims validation against the Appendix A claim sets including expiry handling. *VC-JOSE-COSE, COSE half (FR-19):* envelope a VCDM 2.0 payload as a `COSE_Sign1` and assert the spec's content type (`application/vc+cose`) and required COSE header parameters are produced and validated on the round trip; assert a wrong/absent content type is rejected.
 *Pass:* job `ac-4` green.
 
-**AC-5 — didcomm JWS/JWE behavior parity.**
-*Setup contract (Phase B):* the porting agent copies the JWS/JWE test files from `didcomm-dotnet` at a recorded commit SHA into `tests/DataProofsDotnet.Jose.Tests/Parity/`, and writes `tests/.../Parity/PARITY.md` mapping every ported test file to its source path and SHA.
-*Allowed modifications, exhaustively:* namespace/using statements, type and member renames required by the new public API, test-framework attribute namespaces. **Assertion content (expected values, asserted properties, fixture bytes) MUST NOT change.**
-*Mechanical check:* a `tasks/parity-diff` tool that, for each `PARITY.md` pair, extracts assertion statements (lines containing the test framework's assertion invocations) from both files, normalizes identifiers per the recorded rename map, and fails on any difference in literals or asserted structure.
-*Pass:* job `ac-5` green = parity suite passes **and** `parity-diff` reports zero assertion differences.
+**AC-5 — didcomm JWS/JWE behavior parity. _(RETIRED.)_**
+This was a one-time port-fidelity gate: it pinned the ported JWS/JWE tests to a `didcomm-dotnet`
+source commit SHA (via `tests/.../Parity/PARITY.md`) and a `tasks/parity-diff` tool that failed on
+any assertion drift from that source. Because `didcomm-dotnet` is being refactored, the pinned SHA
+(and therefore the diff) is no longer meaningful, so the gate, its `PARITY.md` manifest, and the
+`tasks/parity-diff` tool have been removed. **The ported parity test suite under
+`tests/DataProofsDotnet.Jose.Tests/Parity/` is kept** — it is real JWS/JWE/JWK/KDF/AEAD coverage
+and runs as part of the standard Jose test suite (job `ac-3` and `build-test`). JOSE conformance is
+now guaranteed by AC-3 (RFC vectors + oracle cross-verification), not by source-diff against
+didcomm.
 
 **AC-6 — Dependency hygiene and NetCrypto-only crypto.**
 *Procedure:* a `tasks/dependency-hygiene` tool run in CI:
@@ -284,7 +289,7 @@ These criteria are written for autonomous execution by coding agents. Convention
 ## 10. Phases
 
 - **Phase A — Core.** Repo scaffold (conventions copied from siblings), FR-1–FR-8: models, pipeline, registry, JCS suites, resolver abstraction. Exit: AC-1 green for the JCS suites **plus the controller-authorization (FR-3/FR-7) and proof-set/chain (FR-6) steps**.
-- **Phase B — Jose foundation.** FR-13–FR-15: didcomm JWS/JWE port + parity suite, JWT/JWK. Exit: AC-3 green for the JWS/JWE and JWK-thumbprint portions **and the FR-14 ↔ NetCrypto primitive-backing checkpoint** (NetCrypto's surface is already verified — FR-14; the check is the standing CI guard that no `Jose` algorithm bypasses it), AC-5 green.
+- **Phase B — Jose foundation.** FR-13–FR-15: didcomm JWS/JWE port + parity suite, JWT/JWK. Exit: AC-3 green for the JWS/JWE and JWK-thumbprint portions **and the FR-14 ↔ NetCrypto primitive-backing checkpoint** (NetCrypto's surface is already verified — FR-14; the check is the standing CI guard that no `Jose` algorithm bypasses it). (AC-5, the source-diff parity gate, has since been retired — see §9; the ported parity tests remain under AC-3.)
 - **Phase C — Selective disclosure (JSON).** FR-16–FR-17: SD-JWT, KB-JWT, SD-JWT VC. Exit: AC-3 green for the SD-JWT **and SD-JWT VC profile** portions.
 - **Phase D — CBOR side and binding.** FR-19, FR-18: COSE_Sign1, CWT, VC-JOSE-COSE both halves. Exit: AC-4 green (incl. the VC-JOSE-COSE COSE half) **and** the AC-3 VC-JOSE-COSE JOSE-half step green.
 - **Phase E — Rdfc.** FR-9–FR-11 first (loader, canonicalizer, RDFC suites), then FR-12 (`bbs-2023`) last — the long pole rides on a proven pipeline. Exit: AC-1 (full), AC-2 green.

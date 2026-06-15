@@ -210,7 +210,10 @@ void WriteReport()
     sb.AppendLine($"- Allowlisted (excused, with justification): **{allowlisted.Count}**");
     sb.AppendLine($"- Uncovered: **{uncovered.Count}**");
     sb.AppendLine();
-    sb.AppendLine($"Samples directory: `{samplesDir}` · Allowlist: `{allowlistPath}`");
+    // Emit repo-relative paths so the committed report is machine-independent (no absolute local
+    // path leaks into version control when regenerated on a different machine or in CI).
+    static string Rel(string root, string path) => Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+    sb.AppendLine($"Samples directory: `{Rel(repoRoot, samplesDir)}` · Allowlist: `{Rel(repoRoot, allowlistPath)}`");
     sb.AppendLine();
 
     if (uncovered.Count > 0)

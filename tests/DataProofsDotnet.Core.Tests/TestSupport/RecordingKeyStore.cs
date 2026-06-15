@@ -44,6 +44,12 @@ internal sealed class RecordingKeyStore : IKeyStore
         return _inner.SignAsync(alias, data, ct);
     }
 
+    public Task<byte[]> DeriveSharedSecretAsync(string alias, ReadOnlyMemory<byte> peerPublicKey, CancellationToken ct = default)
+    {
+        _calls.Add(nameof(DeriveSharedSecretAsync));
+        return _inner.DeriveSharedSecretAsync(alias, peerPublicKey, ct);
+    }
+
     public async Task<ISigner> CreateSignerAsync(string alias, CancellationToken ct = default)
     {
         _calls.Add(nameof(CreateSignerAsync));

@@ -11,6 +11,7 @@ permissions:
 
 # PRD §9: one CI job per acceptance criterion, ac-1 … ac-11, each exiting 0/non-zero, all
 # required for merge to main. ac-11 (package-identity publish gate) lives in publish.yml.
+# ac-5 (didcomm behavior-parity diff) has been retired — see the note where it used to sit, below.
 #
 # The build-test job is the comprehensive gate: it builds the whole solution with
 # warnings-as-errors — which is itself the AC-6 banned-symbol scan (BannedApiAnalyzers) and the
@@ -85,9 +86,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      # All Jose conformance + oracle cross-verification + SD-JWT/VC + VcJose. (The ported
-      # didcomm parity suite is intermixed in these namespaces and runs here too; its dedicated
-      # assertion-equality gate is ac-5.)
+      # All Jose conformance + oracle cross-verification + SD-JWT/VC + VcJose, including the ported
+      # didcomm parity test suite (intermixed in these namespaces) as standard JOSE coverage.
       - name: ac-3 Jose conformance + oracle + SD-JWT(/VC) + VcJose
         run: dotnet test tests/DataProofsDotnet.Jose.Tests/DataProofsDotnet.Jose.Tests.csproj --configuration Release
 
@@ -102,27 +102,10 @@ jobs:
       - name: ac-4 Cose suite
         run: dotnet test tests/DataProofsDotnet.Cose.Tests/DataProofsDotnet.Cose.Tests.csproj --configuration Release
 
-  ac-5:
-    name: ac-5 didcomm JWS/JWE behavior parity
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-      # AC-5 = the ported parity suite passes AND parity-diff finds zero assertion differences.
-      # The parity tests live intermixed in the Jose test namespaces, so run the whole suite.
-      - name: ac-5 parity suite passes
-        run: dotnet test tests/DataProofsDotnet.Jose.Tests/DataProofsDotnet.Jose.Tests.csproj --configuration Release
-      # parity-diff needs the didcomm source at the SHA recorded in PARITY.md.
-      - name: Checkout didcomm-dotnet (parity source)
-        uses: actions/checkout@v4
-        with:
-          repository: moisesja/didcomm-dotnet
-          path: .parity-src/didcomm-dotnet
-          fetch-depth: 0
-      - name: ac-5 parity-diff (zero assertion differences)
-        run: dotnet run --project tasks/parity-diff --configuration Release -- --didcomm-repo .parity-src/didcomm-dotnet
+  # ac-5 (didcomm JWS/JWE behavior-parity diff) was retired: it pinned the ported JOSE tests to a
+  # didcomm-dotnet source SHA, which becomes meaningless once didcomm-dotnet is refactored. The
+  # ported parity TEST suite is kept and still runs under ac-3 (and build-test) as standard JOSE
+  # coverage; only the source-diff gate and its tooling were removed.
 
   ac-6:
     name: ac-6 dependency hygiene + NetCrypto-only crypto
@@ -202,8 +185,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="0.1.0"
           feed="$(pwd)/local-feed"
+          # Derive the version from the packed Core nupkg so the smoke install always matches what
+          # was actually packed (e.g. the -preview suffix from $(DataProofsVersion)); never hardcode.
+          version="$(basename "$(ls "$feed"/DataProofsDotnet.Core.*.nupkg | head -1)" .nupkg | sed 's/^DataProofsDotnet\.Core\.//')"
+          echo "smoke-testing packages at version: $version"
+          # Register the local pack feed once in the user NuGet config (shared by every iteration's
+          # restore). Adding it inside the loop would fail on the 2nd package with "source
+          # 'local-feed' already exists".
+          dotnet nuget add source "$feed" --name local-feed
           declare -A smoke=(
             [DataProofsDotnet.Core]=tasks/smoke/Core
             [DataProofsDotnet.Jose]=tasks/smoke/Jose
@@ -211,14 +201,21 @@ jobs:
             [DataProofsDotnet.Rdfc]=tasks/smoke/Rdfc
             [DataProofsDotnet.Extensions.DependencyInjection]=tasks/smoke/DependencyInjection
           )
+          # Documented per-package prerequisite (tasks/smoke/README.md): the only extra package a
+          # clean-room install may add. The NetCrypto signer substrate flows transitively, so only
+          # the DI smoke needs one — the concrete Microsoft.Extensions.DependencyInjection container
+          # (the package surfaces only its Abstractions). Pinned to the abstractions' version.
+          declare -A prereq=(
+            [DataProofsDotnet.Extensions.DependencyInjection]="Microsoft.Extensions.DependencyInjection:10.0.8"
+          )
           for id in "${!smoke[@]}"; do
             echo "=== clean-room install + smoke: ${id} ==="
             tmp="$(mktemp -d)"
             ( cd "$tmp" && dotnet new console -n SmokeApp >/dev/null )
             cp "${smoke[$id]}/Program.cs" "$tmp/SmokeApp/Program.cs"
             ( cd "$tmp/SmokeApp" \
-              && dotnet nuget add source "$feed" --name local-feed \
               && dotnet add package "$id" --version "$version" --source "$feed" \
+              && { [ -z "${prereq[$id]:-}" ] || dotnet add package "${prereq[$id]%%:*}" --version "${prereq[$id]##*:}"; } \
               && dotnet run -c Release )
           done
 

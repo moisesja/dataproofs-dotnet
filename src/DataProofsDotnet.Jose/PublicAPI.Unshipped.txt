@@ -124,6 +124,8 @@ DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedIssuer.get -> string?
 DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedIssuer.init -> void
 DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedSubject.get -> string?
 DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedSubject.init -> void
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedType.get -> string?
+DataProofsDotnet.Jose.Jwt.JwtValidationOptions.ExpectedType.init -> void
 DataProofsDotnet.Jose.Jwt.JwtValidationOptions.JwtValidationOptions() -> void
 DataProofsDotnet.Jose.Jwt.JwtValidationOptions.RequireExpirationTime.get -> bool
 DataProofsDotnet.Jose.Jwt.JwtValidationOptions.RequireExpirationTime.init -> void
@@ -146,6 +148,8 @@ DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm.get -> string!
 DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm.init -> void
 DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid.get -> string!
 DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid.init -> void
+DataProofsDotnet.Jose.Signing.JwsParseResult.Typ.get -> string?
+DataProofsDotnet.Jose.Signing.JwsParseResult.Typ.init -> void
 DataProofsDotnet.Jose.Signing.JwsSigner
 DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm.get -> string!
 DataProofsDotnet.Jose.Signing.JwsSigner.JwsSigner(NetCrypto.ISigner! signer, string? kid = null) -> void

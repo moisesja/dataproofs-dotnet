@@ -11,7 +11,7 @@ public sealed class JwsRoundTripTests
 {
     private static readonly JoseDefaultCryptoProvider _crypto = new();
 
-    // Ported payload adaptation (PARITY.md): the porting source signed a DIDComm Message built
+    // Ported payload adaptation (from the didcomm-dotnet port): the porting source signed a DIDComm Message built
     // via MessageBuilder; dataproofs signs arbitrary bytes, so the same logical content travels
     // as a JSON payload and the Message.Id / Message.From assertions read the payload JSON.
     private static byte[] Payload(string from = "did:example:alice", string? to = "did:example:bob") =>

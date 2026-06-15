@@ -2,6 +2,8 @@ using System.Text;
 using DataProofsDotnet.Jose;
 using DataProofsDotnet.Jose.Encryption;
 using NetCrypto;
+// NetCrypto 1.1.0 also ships a Base64Url; alias the one this sample showcases.
+using Base64Url = DataProofsDotnet.Jose.Base64Url;
 
 // ============================================================
 // DataProofsDotnet Samples — JWE (JSON Web Encryption)

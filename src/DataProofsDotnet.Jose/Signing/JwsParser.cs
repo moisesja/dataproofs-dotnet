@@ -248,7 +248,12 @@ public static class JwsParser
                     continue;
                 }
 
-                return new JwsParseResult(header.Alg, sig.Kid, payloadBytes);
+                // Surface ONLY the integrity-protected kid as the verified signer identity. RFC 7515
+                // permits 'kid' in the unprotected header (a routing hint we still use to resolve the
+                // key, above), but that value is unauthenticated — never report it as the verified
+                // signer, or a caller could authorize against an attacker-chosen kid on a JWS whose
+                // protected header carried none. Empty when the protected header has no kid.
+                return new JwsParseResult(header.Alg, header.Kid ?? string.Empty, payloadBytes) { Typ = header.Typ };
             }
             catch (Exception ex) when (ex is JoseCryptoException or MalformedJoseException)
             {
@@ -339,6 +344,17 @@ public static class JwsParser
 
 /// <summary>Outcome of a successful JWS parse: payload bytes plus verified signer metadata.</summary>
 /// <param name="SignatureAlgorithm">JOSE <c>alg</c> of the verified signature (e.g. <c>"EdDSA"</c>).</param>
-/// <param name="SignerKid">The verified signer key identifier (empty when the JWS carried none).</param>
+/// <param name="SignerKid">The verified signer key identifier, sourced ONLY from the
+/// integrity-protected header (empty when the protected header carried no <c>kid</c>); an
+/// unprotected-header <c>kid</c> is treated as an unauthenticated routing hint and is never
+/// reported here.</param>
 /// <param name="PayloadBytes">Raw decoded payload bytes.</param>
-public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid, byte[] PayloadBytes);
+public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid, byte[] PayloadBytes)
+{
+    /// <summary>
+    /// The integrity-protected <c>typ</c> header parameter (RFC 7515 §4.1.9), or <c>null</c> when
+    /// the protected header carried none. Useful for explicit-typing checks (RFC 8725 §3.11) to
+    /// prevent cross-context token confusion.
+    /// </summary>
+    public string? Typ { get; init; }
+}
