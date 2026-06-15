@@ -35,6 +35,19 @@ public static class Base64Url
     public static byte[] Decode(string value)
     {
         ArgumentException.ThrowIfNullOrEmpty(value);
+
+        // Strict base64url-no-pad alphabet (RFC 4648 §5): A–Z a–z 0–9 '-' '_'. The BCL decoder
+        // silently tolerates interior/surrounding ASCII whitespace and '=' padding, and accepts the
+        // standard-base64 '+'/'/' — none of which are valid base64url. JOSE boundaries are always
+        // strict no-pad, so reject anything outside the alphabet rather than decode it leniently
+        // (the documented "valid base64url" contract; avoids encoding ambiguity).
+        foreach (char c in value)
+        {
+            var ok = c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_';
+            if (!ok)
+                throw new FormatException("Value is not valid base64url (no padding or whitespace permitted).");
+        }
+
         return SystemBase64Url.DecodeFromChars(value.AsSpan());
     }
 

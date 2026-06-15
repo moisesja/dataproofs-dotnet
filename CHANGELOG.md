@@ -33,6 +33,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (members it does not define are dropped by RDF expansion — inherent to JSON-LD/RDFC, shared
     with the conformant `rdfc-*` suites); and `EcdsaSecp256r1Signature2019` does not enforce
     low-`s`, so ECDSA `proofValue`s are malleable and must not be used as unique identifiers.
+- **JOSE explicit typing (RFC 8725 §3.11).** `JwtValidationOptions.ExpectedType` (opt-in) pins the
+  JWS protected `typ` header on `JwtHandler.Verify` (case-insensitive, `application/`-prefix
+  tolerant), rejecting cross-context token confusion; default behavior is unchanged. The verified
+  `typ` is now surfaced on `JwsParseResult.Typ`.
+
+### Security
+
+- **JOSE hardening pass (issue #6).** An adversarial multi-agent review of the entire
+  `DataProofsDotnet.Jose` surface (JWS/JWE/ECDH-1PU/JWK/SD-JWT/JWT/encoding), with every finding
+  put through independent majority-vote verification, produced these fixes (each pinned by a
+  regression test in `Hardening/HardeningRegressionTests.cs`):
+  - **SD-JWT reconstruction now fails closed on a deep recursive-disclosure chain.**
+    `SdJwtReconstructor` walked the disclosed payload by unbounded mutual recursion; a chained
+    recursive-disclosure presentation (RFC 9901 §6.3) rooted in an issuer-signed `_sd` digest could
+    drive it into an **uncatchable `StackOverflowException` that terminates the host process**,
+    defeating the verifier's fail-closed contract. Reconstruction is now depth-bounded (64, matching
+    the JSON parse depth) and raises a `MalformedJoseException` (surfaced as `DISCLOSURE_INVALID`).
+  - **A malformed/unsupported `cnf` (or issuer) key no longer crashes SD-JWT verification.**
+    `CompactJwt.Verify` mapped an unsupported curve / off-curve key point to an uncaught
+    `NotSupportedException`/crypto exception (reachable through an attacker-influenced `cnf` on the
+    Key Binding path); it now fails closed as `MalformedJoseException`, which both call sites handle.
+  - **JWS reports the verified signer only from integrity-protected material.** `JwsParseResult
+    .SignerKid` is now sourced solely from the protected header; a `kid` carried only in the
+    unauthenticated unprotected header is treated as a routing hint and never surfaced as the
+    verified identity. Verification of valid JWS (including `kid`-in-unprotected) is unchanged.
+  - **`Base64Url.Decode` is now strict** — it rejects interior/surrounding whitespace, `=` padding,
+    and standard-base64 `+`/`/`, matching the documented base64url-no-pad contract.
 
 ## [0.1.0-preview.2] - 2026-06-13
 

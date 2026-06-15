@@ -22,6 +22,17 @@ public sealed class JwtValidationOptions
     /// <summary>When set, the token's <c>sub</c> must equal this value exactly.</summary>
     public string? ExpectedSubject { get; init; }
 
+    /// <summary>
+    /// When set, enforces explicit typing (RFC 8725 §3.11): the JWS protected <c>typ</c> header
+    /// must equal this value, compared case-insensitively and tolerating an optional
+    /// <c>application/</c> media-type prefix on either side (so <c>"JWT"</c> matches
+    /// <c>"application/jwt"</c>). A token whose <c>typ</c> is absent or different is rejected,
+    /// closing cross-service token-confusion where a token minted for another purpose under the
+    /// same key/issuer is replayed as a JWT. Left <c>null</c> (the default), <c>typ</c> is not
+    /// checked — unchanged behavior.
+    /// </summary>
+    public string? ExpectedType { get; init; }
+
     /// <summary>When <c>true</c>, a token without an <c>exp</c> claim is rejected.</summary>
     public bool RequireExpirationTime { get; init; }
 

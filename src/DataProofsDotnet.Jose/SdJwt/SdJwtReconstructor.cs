@@ -13,6 +13,19 @@ namespace DataProofsDotnet.Jose.SdJwt;
 internal static class SdJwtReconstructor
 {
     /// <summary>
+    /// Maximum payload/disclosure nesting depth resolved during reconstruction. RFC 9901 §6.3
+    /// recursive disclosures let a presentation chain one extra frame per link, bounded only by
+    /// input size — so an attacker-rooted chain (a malicious/compromised Issuer, or any deployment
+    /// whose Issuer-key resolver can return an attacker-controlled key) would otherwise drive the
+    /// mutual recursion below into an uncatchable <c>StackOverflowException</c> that terminates the
+    /// host process, defeating the verifier's fail-closed contract (PRD FR-3/FR-23). We bound it
+    /// and fail closed as a normal <see cref="MalformedJoseException"/>. The limit matches the
+    /// per-document JSON parse depth (<c>JsonNode.Parse</c> default <c>MaxDepth</c> = 64) and is far
+    /// above any legitimate SD-JWT nesting.
+    /// </summary>
+    private const int MaxReconstructionDepth = 64;
+
+    /// <summary>
     /// Reconstruct the disclosed payload. The input payload and Disclosures are consumed
     /// read-only; a fresh <see cref="JsonObject"/> is returned.
     /// </summary>
@@ -41,7 +54,7 @@ internal static class SdJwtReconstructor
         }
 
         var used = new HashSet<string>(StringComparer.Ordinal);
-        var result = (JsonObject)ProcessNode(payload.DeepClone(), byDigest, used)!;
+        var result = (JsonObject)ProcessNode(payload.DeepClone(), byDigest, used, depth: 0)!;
 
         // RFC 9901 §7.1 step 4.3.4: every presented Disclosure MUST be referenced exactly once by
         // a digest found in the payload. A leftover Disclosure means the Holder sent something the
@@ -56,20 +69,27 @@ internal static class SdJwtReconstructor
         return result;
     }
 
-    private static JsonNode? ProcessNode(JsonNode? node, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used)
+    private static JsonNode? ProcessNode(JsonNode? node, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used, int depth)
     {
+        // Bound the recursion. A chained recursive-disclosure presentation (RFC 9901 §6.3) adds one
+        // frame per link; without this guard a deep chain overflows the stack and crashes the host
+        // (uncatchable StackOverflowException) instead of failing closed.
+        if (depth > MaxReconstructionDepth)
+            throw new MalformedJoseException(
+                $"SD-JWT reconstruction exceeded the maximum nesting depth of {MaxReconstructionDepth} (RFC 9901 §7.1); the presentation is malformed.");
+
         switch (node)
         {
             case JsonObject obj:
-                return ProcessObject(obj, byDigest, used);
+                return ProcessObject(obj, byDigest, used, depth);
             case JsonArray arr:
-                return ProcessArray(arr, byDigest, used);
+                return ProcessArray(arr, byDigest, used, depth);
             default:
                 return node;
         }
     }
 
-    private static JsonObject ProcessObject(JsonObject obj, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used)
+    private static JsonObject ProcessObject(JsonObject obj, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used, int depth)
     {
         var output = new JsonObject();
 
@@ -78,7 +98,7 @@ internal static class SdJwtReconstructor
         {
             if (key is "_sd" or "_sd_alg")
                 continue;
-            output[key] = ProcessNode(value?.DeepClone(), byDigest, used);
+            output[key] = ProcessNode(value?.DeepClone(), byDigest, used, depth + 1);
         }
 
         // Then resolve the _sd digest array into disclosed object properties.
@@ -114,14 +134,14 @@ internal static class SdJwtReconstructor
                     throw new MalformedJoseException(
                         $"Disclosed SD-JWT claim '{name}' collides with a claim already present in the object (RFC 9901 §7.1).");
 
-                output[name] = ProcessNode(disclosure.ClaimValueNode?.DeepClone(), byDigest, used);
+                output[name] = ProcessNode(disclosure.ClaimValueNode?.DeepClone(), byDigest, used, depth + 1);
             }
         }
 
         return output;
     }
 
-    private static JsonArray ProcessArray(JsonArray arr, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used)
+    private static JsonArray ProcessArray(JsonArray arr, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used, int depth)
     {
         var output = new JsonArray();
         foreach (var element in arr)
@@ -138,11 +158,11 @@ internal static class SdJwtReconstructor
                 if (!used.Add(digest!))
                     throw new MalformedJoseException("An SD-JWT Disclosure is referenced by more than one digest (RFC 9901 §7.1).");
 
-                output.Add(ProcessNode(disclosure.ClaimValueNode?.DeepClone(), byDigest, used));
+                output.Add(ProcessNode(disclosure.ClaimValueNode?.DeepClone(), byDigest, used, depth + 1));
             }
             else
             {
-                output.Add(ProcessNode(element?.DeepClone(), byDigest, used));
+                output.Add(ProcessNode(element?.DeepClone(), byDigest, used, depth + 1));
             }
         }
         return output;

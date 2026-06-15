@@ -109,11 +109,28 @@ internal sealed class CompactJwt
         if (string.IsNullOrEmpty(publicJwk.Crv))
             throw new MalformedJoseException("Verifier public JWK is missing 'crv'.");
 
+        // Map the curve to its JWS algorithm and extract the public key BEFORE the crypto call.
+        // An unsupported curve (NotSupportedException from KeyTypeMapper) or an off-curve / malformed
+        // key point (the invalid-curve defense inside JwkConversion.ExtractPublicKey) must fail
+        // closed as a malformed-key condition — both call sites catch MalformedJoseException — rather
+        // than letting an unexpected exception escape the verifier and crash the host (FR-3). This is
+        // reachable through an attacker-influenced 'cnf' on the Key Binding path.
+        string expectedAlg;
+        byte[] publicKeyBytes;
+        try
+        {
+            expectedAlg = KeyTypeMapper.ToJwsAlgorithm(publicJwk.Crv);
+            (_, publicKeyBytes) = JwkConversion.ExtractPublicKey(publicJwk);
+        }
+        catch (Exception ex) when (ex is not MalformedJoseException and not OperationCanceledException)
+        {
+            throw new MalformedJoseException("Verifier public JWK is unsupported or malformed.", ex);
+        }
+
         // alg ↔ key-curve binding: the header 'alg' must be the one this curve produces.
-        if (!string.Equals(_alg, KeyTypeMapper.ToJwsAlgorithm(publicJwk.Crv), StringComparison.Ordinal))
+        if (!string.Equals(_alg, expectedAlg, StringComparison.Ordinal))
             return false;
 
-        var (_, publicKeyBytes) = JwkConversion.ExtractPublicKey(publicJwk);
         var data = Encoding.ASCII.GetBytes(_signingInput);
         try
         {
