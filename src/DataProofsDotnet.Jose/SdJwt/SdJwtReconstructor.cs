@@ -73,8 +73,9 @@ internal static class SdJwtReconstructor
     {
         // Bound the recursion. A chained recursive-disclosure presentation (RFC 9901 §6.3) adds one
         // frame per link; without this guard a deep chain overflows the stack and crashes the host
-        // (uncatchable StackOverflowException) instead of failing closed.
-        if (depth > MaxReconstructionDepth)
+        // (uncatchable StackOverflowException) instead of failing closed. `>=` so the permitted
+        // nesting matches the named bound exactly (depths 0..MaxReconstructionDepth-1).
+        if (depth >= MaxReconstructionDepth)
             throw new MalformedJoseException(
                 $"SD-JWT reconstruction exceeded the maximum nesting depth of {MaxReconstructionDepth} (RFC 9901 §7.1); the presentation is malformed.");
 

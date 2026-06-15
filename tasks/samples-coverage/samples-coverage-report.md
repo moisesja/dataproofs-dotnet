@@ -5,7 +5,7 @@
 - Allowlisted (excused, with justification): **0**
 - Uncovered: **0**
 
-Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowlist: `/Users/moises/Projects/dataproofs-dotnet/tasks/samples-coverage/allowlist.txt`
+Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt`
 
 ## Covered members
 

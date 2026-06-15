@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tolerant), rejecting cross-context token confusion; default behavior is unchanged. The verified
   `typ` is now surfaced on `JwsParseResult.Typ`.
 
+### Changed
+
+- **`Base64Url.Decode` is now strict (behavioral change).** It rejects any input outside the
+  base64url-no-pad alphabet — including interior/surrounding ASCII whitespace, `=` padding, and the
+  standard-base64 `+`/`/` — by throwing `FormatException`, where the previous implementation
+  silently tolerated them. This matches the documented "valid base64url" contract and the JOSE
+  no-pad requirement, but an out-of-repo caller that previously passed padded or whitespace-bearing
+  input will now get a `FormatException`. **Upgraders:** scan your `Base64Url.Decode` call sites for
+  non-canonical input. (Also tracked under Security below — it closes an encoding-ambiguity gap.)
+
 ### Security
 
 - **JOSE hardening pass (issue #6).** An adversarial multi-agent review of the entire
