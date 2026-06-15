@@ -1,6 +1,6 @@
 // FR-21 / AC-9 — mechanical samples-coverage gate.
 //
-// Reflects over the public API surface of ALL FIVE DataProofsDotnet.* package assemblies and
+// Reflects over the public API surface of ALL SIX DataProofsDotnet.* package assemblies and
 // verifies that every public type / method / property / constructor NAME appears in at least one
 // samples/**/*.cs source file. The check is a substring match against the concatenated sample
 // source — the established NetCrypto precedent (tasks/research/conventions.md §7.2): the goal is
@@ -89,14 +89,15 @@ string[] inheritedNames =
     "Deconstruct", "Clone", "PrintMembers", "op_Equality", "op_Inequality", // record synthesized
 ];
 
-// The five package assemblies, anchored by one exported type each.
+// The six package assemblies, anchored by one exported type each.
 Assembly[] assemblies =
 [
-    typeof(DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline).Assembly,        // Core
-    typeof(DataProofsDotnet.Jose.Signing.JwsBuilder).Assembly,                         // Jose
-    typeof(DataProofsDotnet.Cose.CoseSign1).Assembly,                                  // Cose
-    typeof(DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer).Assembly,                  // Rdfc
-    typeof(DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder).Assembly, // DI
+    typeof(DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline).Assembly,            // Core
+    typeof(DataProofsDotnet.Jose.Signing.JwsBuilder).Assembly,                             // Jose
+    typeof(DataProofsDotnet.Cose.CoseSign1).Assembly,                                      // Cose
+    typeof(DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer).Assembly,                      // Rdfc
+    typeof(DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite).Assembly, // Legacy
+    typeof(DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder).Assembly,     // DI
 ];
 
 var uncovered = new List<string>();
@@ -171,7 +172,7 @@ if (staleAllowlist.Length > 0)
 
 if (uncovered.Count == 0)
 {
-    Console.WriteLine($"Samples coverage OK: {memberCount} public member(s) across 5 packages "
+    Console.WriteLine($"Samples coverage OK: {memberCount} public member(s) across 6 packages "
         + $"({covered.Count} covered by samples, {allowlisted.Count} allowlisted). Report: {reportPath}");
     return 0;
 }
@@ -204,7 +205,7 @@ void WriteReport()
     var sb = new StringBuilder();
     sb.AppendLine("# Samples coverage report (FR-21 / AC-9)");
     sb.AppendLine();
-    sb.AppendLine($"- Public members across 5 packages: **{memberCount}**");
+    sb.AppendLine($"- Public members across 6 packages: **{memberCount}**");
     sb.AppendLine($"- Covered by at least one sample: **{covered.Count}**");
     sb.AppendLine($"- Allowlisted (excused, with justification): **{allowlisted.Count}**");
     sb.AppendLine($"- Uncovered: **{uncovered.Count}**");

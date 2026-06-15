@@ -39,6 +39,7 @@ A non-zero exit from any sample marks the run as failed.
 |---|---|
 | `Samples.DataIntegrityJcs` | Sign + verify with `eddsa-jcs-2022` and `ecdsa-jcs-2019` (P-256 / P-384); resolver and raw-key verification; tamper / proofPurpose negatives. |
 | `Samples.DataIntegrityRdfc` | `eddsa-rdfc-2022` / `ecdsa-rdfc-2019` over the offline document loader; the RDFC-1.0 canonicalizer directly (order-independence); the opt-in caching loader and fail-closed posture. |
+| `Samples.DataIntegrityLegacy` | Opt-in pre–Data-Integrity suites `Ed25519Signature2020` / `EcdsaSecp256r1Signature2019` (`DataProofsDotnet.Legacy`): explicit registration, `type`-based dispatch (`SupportedProofTypes` / `GetByProofType`), JCS + RDFC variants; emits `type` with no `cryptosuite`. Interop only — prefer 2022/2019 for new proofs. |
 | `Samples.ProofSetsAndChains` | Proof sets (independent co-signatures) and chains via `previousProof`, including the chain dependency property and a dangling-reference error. |
 | `Samples.BbsSelectiveDisclosure` | `bbs-2023` issuer base proof → holder derived proof (mandatory + selective JSON pointers) → verifier; runs live where BBS native binaries are present, else prints a clear note and still exits 0. |
 | `Samples.VerificationResolver` | Implementing `IVerificationMethodResolver`; full resolver-path verification with controller authorization — an authorized success and an unauthorized-method `INVALID_VERIFICATION_METHOD` failure. |
@@ -56,11 +57,12 @@ A non-zero exit from any sample marks the run as failed.
 
 1. **`Samples.DataIntegrityJcs`** — the embedded-proof pipeline at its simplest (sign → verify).
 2. **`Samples.DataIntegrityRdfc`** — the same pipeline over RDF canonicalization and the offline loader.
-3. **`Samples.VerificationResolver`** — how verification authorizes a method against a controller (FR-3/FR-7).
-4. **`Samples.ProofSetsAndChains`** — multiple proofs on one document.
-5. **`Samples.BbsSelectiveDisclosure`** — selective disclosure with BBS.
-6. **`Samples.Jws`** → **`Samples.Jwe`** → **`Samples.JwtAndJwk`** — the JOSE enveloping family.
-7. **`Samples.SdJwt`** → **`Samples.SdJwtVc`** — selective disclosure in JSON and its VC profile.
-8. **`Samples.CoseCwt`** → **`Samples.VcJoseCose`** — the CBOR side and the VC-JOSE-COSE binding.
-9. **`Samples.KeyStoreSigning`** — every family from one non-exporting key store (AC-8).
-10. **`Samples.DependencyInjection`** — assemble all of the above through `AddDataProofs`.
+3. **`Samples.DataIntegrityLegacy`** — opt-in pre–Data-Integrity LD-Signature suites and `type`-based dispatch (interop).
+4. **`Samples.VerificationResolver`** — how verification authorizes a method against a controller (FR-3/FR-7).
+5. **`Samples.ProofSetsAndChains`** — multiple proofs on one document.
+6. **`Samples.BbsSelectiveDisclosure`** — selective disclosure with BBS.
+7. **`Samples.Jws`** → **`Samples.Jwe`** → **`Samples.JwtAndJwk`** — the JOSE enveloping family.
+8. **`Samples.SdJwt`** → **`Samples.SdJwtVc`** — selective disclosure in JSON and its VC profile.
+9. **`Samples.CoseCwt`** → **`Samples.VcJoseCose`** — the CBOR side and the VC-JOSE-COSE binding.
+10. **`Samples.KeyStoreSigning`** — every family from one non-exporting key store (AC-8).
+11. **`Samples.DependencyInjection`** — assemble all of the above through `AddDataProofs`.

@@ -266,7 +266,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             var proofConfig = proof with { Cryptosuite = null, ProofValue = null };
 
             // A verifier cannot tell JCS from RDFC by the proof alone (same type, no
-            // cryptosuite). Try the construction-time variant first, then the other.
+            // cryptosuite). Try the construction-time variant first, then the other. NOTE: when the
+            // first variant does not verify, the second attempt re-canonicalizes the same document —
+            // a second canonicalization pass on the hot verify path. Construct the suite with the
+            // canonicalization its corpus actually uses so the common case verifies on the first try.
             var first = _canonicalization;
             var second = first == LegacyCanonicalization.Jcs
                 ? LegacyCanonicalization.Rdfc
