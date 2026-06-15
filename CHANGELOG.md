@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`DataProofsDotnet.Legacy`** — a new opt-in package shipping the pre–Data-Integrity
+  **Linked-Data-Signature** cryptosuites `Ed25519Signature2020` and
+  `EcdsaSecp256r1Signature2019` (issue #7, FR-4). Each implements `ICryptosuite` and supports
+  both a **JCS** variant (the back-compat default — the document with the proof nested under a
+  `proof` member, JCS-canonicalized once) and an **RDFC-1.0** variant
+  (`SHA-256(RDFC(proofOptions)) ‖ SHA-256(RDFC(document))`). The emitted proof carries
+  `type:"<suite>"`, **no `cryptosuite`**, and a base58-btc `proofValue`; it create→verify
+  round-trips through `DataIntegrityProofPipeline` (create dispatches by `cryptosuite` naming the
+  suite; verify dispatches by `type` via `GetByProofType`). The suites are **not** registered in
+  `CryptosuiteRegistry.CreateDefault()` — register them explicitly. The wire convention and
+  signing bytes are **byte-identical to zcap-dotnet**, locked by a cross-stack golden vector
+  (a zcap-issued `Ed25519Signature2020` proof verifies, and re-signing reproduces zcap's exact
+  `proofValue`). Unmodeled proof members (e.g. `capabilityChain`) ride through
+  `DataIntegrityProof.AdditionalProperties` into the JCS signing input. This unblocks
+  zcap-dotnet's proof-pipeline delegation and legacy-VC verification in credentials-dotnet.
+  - **Use legacy suites only for interop with existing corpora; prefer the 2022/2019 Data
+    Integrity suites for new proofs.**
+  - **Documented limitations** (verified by adversarial review): the JCS variant has no
+    representation for a W3C proof chain and **fails closed** if asked to secure/verify a
+    document that already carries a `proof` member (use the RDFC variant or a 2022/2019 suite
+    for chains); the RDFC variant binds only terms defined in the active JSON-LD `@context`
+    (members it does not define are dropped by RDF expansion — inherent to JSON-LD/RDFC, shared
+    with the conformant `rdfc-*` suites); and `EcdsaSecp256r1Signature2019` does not enforce
+    low-`s`, so ECDSA `proofValue`s are malleable and must not be used as unique identifiers.
+
 ## [0.1.0-preview.2] - 2026-06-13
 
 ### Added

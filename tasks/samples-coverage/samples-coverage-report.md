@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 5 packages: **511**
-- Covered by at least one sample: **511**
+- Public members across 6 packages: **528**
+- Covered by at least one sample: **528**
 - Allowlisted (excused, with justification): **0**
 - Uncovered: **0**
 
@@ -84,6 +84,7 @@ Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowli
 - `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry..ctor()`
 - `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.CreateDefault`
 - `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.GetByName`
+- `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.GetByProofType`
 - `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.Register`
 - `DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.RegisteredNames`
 - `DataProofsDotnet.DataIntegrity.DataIntegrityProof (type)`
@@ -130,6 +131,7 @@ Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowli
 - `DataProofsDotnet.DataIntegrity.ICryptosuite (type)`
 - `DataProofsDotnet.DataIntegrity.ICryptosuite.CreateProofAsync`
 - `DataProofsDotnet.DataIntegrity.ICryptosuite.Name`
+- `DataProofsDotnet.DataIntegrity.ICryptosuite.SupportedProofTypes`
 - `DataProofsDotnet.DataIntegrity.ICryptosuite.VerifyProof`
 - `DataProofsDotnet.DataIntegrity.IVerificationMethodResolver (type)`
 - `DataProofsDotnet.DataIntegrity.IVerificationMethodResolver.ResolveAsync`
@@ -450,6 +452,21 @@ Samples directory: `/Users/moises/Projects/dataproofs-dotnet/samples` · Allowli
 - `DataProofsDotnet.Jose.VcJose.EnvelopeType`
 - `DataProofsDotnet.Jose.VcJose.MediaType`
 - `DataProofsDotnet.Jose.VcJose.VerifyCredential`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite (type)`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer)`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.Name`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.ProofType`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.SupportedProofTypes`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.VerifyProof`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite (type)`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer)`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.CreateProofAsync`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.Name`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.ProofType`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.SupportedProofTypes`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.VerifyProof`
+- `DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization (type)`
 - `DataProofsDotnet.ProofGenerationException (type)`
 - `DataProofsDotnet.ProofGenerationException..ctor()`
 - `DataProofsDotnet.ProofGenerationException..ctor(String)`

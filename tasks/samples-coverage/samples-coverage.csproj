@@ -6,12 +6,13 @@
     <RootNamespace>DataProofsDotnet.Tasks.SamplesCoverage</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Anchor on all five package assemblies (FR-21 / AC-9): the coverage surface is the union
+    <!-- Anchor on all six package assemblies (FR-21 / AC-9): the coverage surface is the union
          of every package's exported public API. -->
     <ProjectReference Include="../../src/DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Jose/DataProofsDotnet.Jose.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Cose/DataProofsDotnet.Cose.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Rdfc/DataProofsDotnet.Rdfc.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Legacy/DataProofsDotnet.Legacy.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Extensions.DependencyInjection/DataProofsDotnet.Extensions.DependencyInjection.csproj" />
   </ItemGroup>
 </Project>

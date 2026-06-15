@@ -1,0 +1,18 @@
+#nullable enable
+DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite
+DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.EcdsaSecp256r1Signature2019Cryptosuite(DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization canonicalization = DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization.Jcs, DataProofsDotnet.Rdfc.IRdfCanonicalizer? rdfCanonicalizer = null) -> void
+DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.Name.get -> string!
+DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.SupportedProofTypes.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite
+DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
+DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.Ed25519Signature2020Cryptosuite(DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization canonicalization = DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization.Jcs, DataProofsDotnet.Rdfc.IRdfCanonicalizer? rdfCanonicalizer = null) -> void
+DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.Name.get -> string!
+DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.SupportedProofTypes.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
+DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization
+DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization.Jcs = 0 -> DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization
+DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization.Rdfc = 1 -> DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization
+const DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.ProofType = "EcdsaSecp256r1Signature2019" -> string!
+const DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.ProofType = "Ed25519Signature2020" -> string!
