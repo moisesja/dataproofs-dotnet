@@ -1,23 +1,34 @@
 // ============================================================
 // AC-10 smoke — DataProofsDotnet.Rdfc
 // ============================================================
-// RDFC-1.0 canonicalization of a bundled JSON-LD document through the public canonicalizer, using
-// the offline document loader (no network). Asserts non-empty, valid N-Quads output and that the
-// result is deterministic across runs. Prints OK and exits 0 on success.
+// RDFC-1.0 canonicalization of a self-contained JSON-LD document through the public canonicalizer,
+// using the offline document loader (no network). Asserts non-empty, valid N-Quads output and that
+// the result is deterministic across runs. Prints OK and exits 0 on success.
+//
+// Self-contained by design: the AC-10 clean-room copies ONLY this Program.cs into a fresh console
+// app, so the document is inlined here (its @context is in the offline loader's bundled set).
 
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using DataProofsDotnet.Rdfc;
 
 Console.WriteLine("=== DataProofsDotnet.Rdfc smoke — RDFC-1.0 canonicalization (offline) ===");
 
-// 1. Load the bundled document (embedded resource; its @context is in the offline loader's set).
-string jsonLd = ReadEmbedded("bundled-document.jsonld");
+// 1. The document to canonicalize. Its only @context (credentials/v2) is bundled in the offline
+//    loader, so canonicalization needs no network access (FR-10 fail-closed posture).
+const string jsonLd = """
+    {
+      "@context": [ "https://www.w3.org/ns/credentials/v2" ],
+      "id": "urn:uuid:11111111-2222-3333-4444-555555555555",
+      "type": [ "VerifiableCredential" ],
+      "issuer": "did:example:issuer",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "credentialSubject": { "id": "did:example:subject" }
+    }
+    """;
 using var doc = JsonDocument.Parse(jsonLd);
 
-// 2. Canonicalize through the public interface. The default ctor uses the offline loader, so no
-//    network access occurs (FR-10 fail-closed posture).
+// 2. Canonicalize through the public interface. The default ctor uses the offline loader.
 var canonicalizer = new RdfcDocumentCanonicalizer();
 byte[] canonicalBytes = canonicalizer.CanonicalizeJsonLd(doc.RootElement);
 string nquads = Encoding.UTF8.GetString(canonicalBytes);
@@ -36,16 +47,6 @@ Console.WriteLine("  determinism confirmed");
 
 Console.WriteLine("OK — DataProofsDotnet.Rdfc smoke passed.");
 return 0;
-
-static string ReadEmbedded(string fileName)
-{
-    var assembly = Assembly.GetExecutingAssembly();
-    string resource = assembly.GetManifestResourceNames()
-        .Single(n => n.EndsWith(fileName, StringComparison.Ordinal));
-    using var stream = assembly.GetManifestResourceStream(resource)!;
-    using var reader = new StreamReader(stream);
-    return reader.ReadToEnd();
-}
 
 static void Check(bool condition, string what)
 {

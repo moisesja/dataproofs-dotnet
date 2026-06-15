@@ -190,6 +190,10 @@ jobs:
           # was actually packed (e.g. the -preview suffix from $(DataProofsVersion)); never hardcode.
           version="$(basename "$(ls "$feed"/DataProofsDotnet.Core.*.nupkg | head -1)" .nupkg | sed 's/^DataProofsDotnet\.Core\.//')"
           echo "smoke-testing packages at version: $version"
+          # Register the local pack feed once in the user NuGet config (shared by every iteration's
+          # restore). Adding it inside the loop would fail on the 2nd package with "source
+          # 'local-feed' already exists".
+          dotnet nuget add source "$feed" --name local-feed
           declare -A smoke=(
             [DataProofsDotnet.Core]=tasks/smoke/Core
             [DataProofsDotnet.Jose]=tasks/smoke/Jose
@@ -197,14 +201,21 @@ jobs:
             [DataProofsDotnet.Rdfc]=tasks/smoke/Rdfc
             [DataProofsDotnet.Extensions.DependencyInjection]=tasks/smoke/DependencyInjection
           )
+          # Documented per-package prerequisite (tasks/smoke/README.md): the only extra package a
+          # clean-room install may add. The NetCrypto signer substrate flows transitively, so only
+          # the DI smoke needs one — the concrete Microsoft.Extensions.DependencyInjection container
+          # (the package surfaces only its Abstractions). Pinned to the abstractions' version.
+          declare -A prereq=(
+            [DataProofsDotnet.Extensions.DependencyInjection]="Microsoft.Extensions.DependencyInjection:10.0.8"
+          )
           for id in "${!smoke[@]}"; do
             echo "=== clean-room install + smoke: ${id} ==="
             tmp="$(mktemp -d)"
             ( cd "$tmp" && dotnet new console -n SmokeApp >/dev/null )
             cp "${smoke[$id]}/Program.cs" "$tmp/SmokeApp/Program.cs"
             ( cd "$tmp/SmokeApp" \
-              && dotnet nuget add source "$feed" --name local-feed \
               && dotnet add package "$id" --version "$version" --source "$feed" \
+              && { [ -z "${prereq[$id]:-}" ] || dotnet add package "${prereq[$id]%%:*}" --version "${prereq[$id]##*:}"; } \
               && dotnet run -c Release )
           done
 

@@ -17,10 +17,4 @@
     <PackageReference Include="DataProofsDotnet.Rdfc" Version="0.1.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- The "bundled document" AC-10 requires: a self-contained JSON-LD credential whose @context
-         is in the Rdfc offline loader's bundled set, so canonicalization needs no network. -->
-    <EmbeddedResource Include="bundled-document.jsonld" />
-  </ItemGroup>
-
 </Project>
