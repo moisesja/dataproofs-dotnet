@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-06-16
+
+### Fixed
+
+- **`JwsParser` now reports the verified signer `kid` when it is carried only in the JWS
+  unprotected header** (issue #10). The parser already resolves the verifying key from the
+  per-signature unprotected `header.kid` and verifies against it, but previously returned
+  `JwsParseResult.SignerKid == ""` whenever the integrity-protected header carried no `kid` —
+  discarding the very identity the signature proved. `SignerKid` is now the `kid` that resolved
+  the key under which the signature verified (the protected header is preferred when present;
+  otherwise the unprotected `kid` is reported). This is sound because verification has already
+  succeeded: a rewritten unprotected `kid` resolves a different key under which the signature
+  cannot verify, so a forged `kid` never reaches the result. This corrects an over-conservative
+  decision from the issue #6 hardening pass (Finding #2) and unblocks **DIDComm Messaging v2.1**
+  signed and `authcrypt(sign(...))` conformance, which places the signer `kid` in the unprotected
+  JWS header (the five Appendix C.2/C.3 interop vectors that previously failed). Unchanged:
+  a `kid` in the protected header is still reported as before, and a JWS whose protected and
+  unprotected `kid` **disagree** is still rejected (`MalformedJoseException`).
+
+## [1.0.1] - 2026-06-16
+
+### Fixed
+
+- **`JwsParser` now reports the verified signer `kid` when it is carried only in the JWS
+  unprotected header** (issue #10). The parser already resolves the verifying key from the
+  per-signature unprotected `header.kid` and verifies against it, but previously returned
+  `JwsParseResult.SignerKid == ""` whenever the integrity-protected header carried no `kid` —
+  discarding the very identity the signature proved. `SignerKid` is now the `kid` that resolved
+  the key under which the signature verified (the protected header is preferred when present;
+  otherwise the unprotected `kid` is reported). This is sound because verification has already
+  succeeded: a rewritten unprotected `kid` resolves a different key under which the signature
+  cannot verify, so a forged `kid` never reaches the result. This corrects an over-conservative
+  decision from the issue #6 hardening pass (Finding #2) and unblocks **DIDComm Messaging v2.1**
+  signed and `authcrypt(sign(...))` conformance, which places the signer `kid` in the unprotected
+  JWS header (the five Appendix C.2/C.3 interop vectors that previously failed). Unchanged:
+  a `kid` in the protected header is still reported as before, and a JWS whose protected and
+  unprotected `kid` **disagree** is still rejected (`MalformedJoseException`).
+
 ## [1.0.0] - 2026-06-14
 
 ### Added
