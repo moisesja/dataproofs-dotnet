@@ -248,12 +248,20 @@ public static class JwsParser
                     continue;
                 }
 
-                // Surface ONLY the integrity-protected kid as the verified signer identity. RFC 7515
-                // permits 'kid' in the unprotected header (a routing hint we still use to resolve the
-                // key, above), but that value is unauthenticated — never report it as the verified
-                // signer, or a caller could authorize against an attacker-chosen kid on a JWS whose
-                // protected header carried none. Empty when the protected header has no kid.
-                return new JwsParseResult(header.Alg, header.Kid ?? string.Empty, payloadBytes) { Typ = header.Typ };
+                // Surface the kid that resolved the *verifying* key as the verified signer identity,
+                // preferring the integrity-protected header when it carries one. RFC 7515 §4.1.4
+                // permits 'kid' in either header; it is a hint and is not part of the signed input.
+                // Reporting the unprotected kid here is safe BECAUSE verification has already
+                // succeeded: an attacker who rewrites the unprotected kid to K' makes us resolve K''s
+                // key, under which this signature cannot verify (they do not hold K''s private key),
+                // so a forged kid never reaches this line. The kid that produced a successful
+                // verification therefore IS the signer's. DIDComm v2.1 carries the signer kid only in
+                // the unprotected header, so dropping it (the former behavior) broke signed/authcrypt
+                // conformance (issue #10). Downstream callers re-check the kid against the resolved
+                // key material (defense in depth); the protected-vs-unprotected agreement check above
+                // still rejects a JWS whose two kids disagree. Empty only when neither header has one.
+                var verifiedKid = !string.IsNullOrEmpty(header.Kid) ? header.Kid : (sig.Kid ?? string.Empty);
+                return new JwsParseResult(header.Alg, verifiedKid, payloadBytes) { Typ = header.Typ };
             }
             catch (Exception ex) when (ex is JoseCryptoException or MalformedJoseException)
             {
@@ -344,10 +352,12 @@ public static class JwsParser
 
 /// <summary>Outcome of a successful JWS parse: payload bytes plus verified signer metadata.</summary>
 /// <param name="SignatureAlgorithm">JOSE <c>alg</c> of the verified signature (e.g. <c>"EdDSA"</c>).</param>
-/// <param name="SignerKid">The verified signer key identifier, sourced ONLY from the
-/// integrity-protected header (empty when the protected header carried no <c>kid</c>); an
-/// unprotected-header <c>kid</c> is treated as an unauthenticated routing hint and is never
-/// reported here.</param>
+/// <param name="SignerKid">The verified signer key identifier: the <c>kid</c> that resolved the
+/// key under which the signature verified. The integrity-protected header's <c>kid</c> is preferred
+/// when present; otherwise the per-signature unprotected header's <c>kid</c> is reported, which is
+/// sound because verification already succeeded under the key that kid resolved (a forged kid
+/// resolves a different key and fails to verify). Empty only when neither header carried a
+/// <c>kid</c>. DIDComm v2.1 places the signer kid in the unprotected header (issue #10).</param>
 /// <param name="PayloadBytes">Raw decoded payload bytes.</param>
 public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid, byte[] PayloadBytes)
 {

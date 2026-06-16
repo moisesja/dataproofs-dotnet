@@ -81,11 +81,14 @@ public class HardeningRegressionTests
         act.Should().Throw<MalformedJoseException>();
     }
 
-    // ── Finding #2 (LOW): the verified SignerKid must come ONLY from the integrity-protected
-    //    header. A kid that lives solely in the unauthenticated unprotected header is a routing
-    //    hint (used to resolve the key) but must never be surfaced as the verified identity.
+    // ── Finding #2 (LOW), CORRECTED by issue #10: the verified SignerKid is the kid that resolved
+    //    the *verifying* key. Issue #6 originally dropped an unprotected-only kid as "unauthenticated";
+    //    issue #10 showed that is wrong AFTER verification — a forged unprotected kid resolves a
+    //    different key under which the signature cannot verify, so a kid that produced a SUCCESSFUL
+    //    verification is authentic. DIDComm v2.1 carries the signer kid only in the unprotected
+    //    header, so this kid MUST be reported (else signed/authcrypt unpack loses the signer identity).
     [Fact]
-    public async Task JwsJson_KidOnlyInUnprotectedHeader_VerifiesButReportsNoSignerKid()
+    public async Task JwsJson_KidOnlyInUnprotectedHeader_VerifiesAndReportsTheResolvedSignerKid()
     {
         var pair = KeyGen.Generate(KeyType.Ed25519);
         var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
@@ -94,7 +97,7 @@ public class HardeningRegressionTests
         var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signerNoKid);
         var parts = compact.Split('.');
 
-        // Flattened JSON JWS with kid placed ONLY in the unprotected header.
+        // Flattened JSON JWS with kid placed ONLY in the unprotected header (the DIDComm v2.1 shape).
         var flattened = new JsonObject
         {
             ["payload"] = parts[1],
@@ -106,8 +109,68 @@ public class HardeningRegressionTests
         Func<string, Jwk?> resolver = kid => kid == "k1" ? publicJwk : null;
         var result = JwsParser.Parse(flattened, resolver, Jose);
 
-        Encoding.UTF8.GetString(result.PayloadBytes).Should().Be("hello", "the unprotected kid is still a valid resolution hint");
-        result.SignerKid.Should().BeEmpty("an unprotected-only kid is unauthenticated and must not be reported as the verified signer");
+        Encoding.UTF8.GetString(result.PayloadBytes).Should().Be("hello", "the unprotected kid is a valid resolution hint");
+        result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is the authentic signer (issue #10)");
+    }
+
+    // ── Issue #10: a JWS whose protected and unprotected kids DISAGREE is still rejected. Surfacing
+    //    the unprotected kid post-verification does not relax the agreement check.
+    [Fact]
+    public async Task JwsJson_ConflictingProtectedAndUnprotectedKid_IsRejected()
+    {
+        var pair = KeyGen.Generate(KeyType.Ed25519);
+        var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
+        var signerWithKid = new JwsSigner(new KeyPairSigner(pair, NetCrypto), "k1"); // protected kid = k1
+
+        var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signerWithKid);
+        var parts = compact.Split('.');
+
+        // Same valid signature, but the unprotected header advertises a DIFFERENT kid than the
+        // (integrity-protected) protected header. The resolver returns the real key for either kid so
+        // resolution succeeds and the parser reaches — and trips — the agreement check.
+        var flattened = new JsonObject
+        {
+            ["payload"] = parts[1],
+            ["protected"] = parts[0],
+            ["header"] = new JsonObject { ["kid"] = "k2" },
+            ["signature"] = parts[2],
+        }.ToJsonString();
+
+        Func<string, Jwk?> resolver = _ => publicJwk;
+        var act = () => JwsParser.Parse(flattened, resolver, Jose);
+
+        act.Should().Throw<MalformedJoseException>().WithMessage("*does not match the unprotected header*");
+    }
+
+    // ── Issue #10: the General (signatures-array) serialization with an unprotected-only kid behaves
+    //    identically to the Flattened form — the resolved kid is reported. This is the shape DIDComm
+    //    v2.1 multi-recipient / authcrypt(sign(...)) envelopes use.
+    [Fact]
+    public async Task JwsGeneral_KidOnlyInUnprotectedHeader_VerifiesAndReportsTheResolvedSignerKid()
+    {
+        var pair = KeyGen.Generate(KeyType.Ed25519);
+        var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
+        var signerNoKid = new JwsSigner(new KeyPairSigner(pair, NetCrypto)); // protected header carries no kid
+
+        var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signerNoKid);
+        var parts = compact.Split('.');
+
+        // General JSON JWS: signatures[] with the kid only in the per-signature unprotected header.
+        var general = new JsonObject
+        {
+            ["payload"] = parts[1],
+            ["signatures"] = new JsonArray(new JsonObject
+            {
+                ["protected"] = parts[0],
+                ["header"] = new JsonObject { ["kid"] = "k1" },
+                ["signature"] = parts[2],
+            }),
+        }.ToJsonString();
+
+        Func<string, Jwk?> resolver = kid => kid == "k1" ? publicJwk : null;
+        var result = JwsParser.Parse(general, resolver, Jose);
+
+        result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is the authentic signer (issue #10)");
     }
 
     [Fact]
