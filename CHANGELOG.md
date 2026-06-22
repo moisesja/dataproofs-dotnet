@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-22
+
+### Security
+
+- **`JweParser.Parse` is now constant-work with respect to recipient-key possession** (issue #12).
+  Previously the parser fast-failed **before any ECDH** when no recipient `kid` matched a held
+  private key, so "key held" vs "key not held" was observable as a response-time difference — a
+  **recipient-key enumeration oracle** for any consumer that decrypts attacker-supplied JWEs and
+  exposes a timing-observable result (the root cause of downstream `didcomm-dotnet#35`). The parser
+  now routes the non-decryptable case through a per-process **decoy** ECDH key on the envelope's
+  work curve, performing the same key-agreement / key-unwrap work and then failing uniformly at
+  unwrap. The decision keys on *"is a held key present that matches the envelope's `epk` curve?"* —
+  not merely *"is the `kid` held?"* — which also closes a residual leak where a held key on the
+  **wrong curve** fast-failed before the ECDH. Decoy keys are generated **once per process and
+  cached** (a per-call key generation would itself re-introduce a timing signal). The successful
+  decrypt path of a curve-matching held key is unchanged and pays nothing extra. **No public API
+  change.**
+  - **Scope:** this makes the parser's *own* post-resolution path constant-work for a fixed
+    `(alg, enc, epk-curve)`. A fully constant-time decrypt additionally requires the supplied
+    `IJweRecipientKeyResolver` (`FindPresent`/`TryGet`) to be timing-independent of which kids are
+    held — that contract is outside the parser and remains the caller's responsibility.
+
+### Added
+
+- **Async `IEcdhKey` seam for opaque (HSM/keystore) ECDH keys** (issue #13). A new additive
+  `IEcdhKey` handle (`Crv` + `DeriveAsync`) lets the JWE key-agreement step run on a private key
+  that **never exposes its scalar** — HSM, cloud KMS, OS keychain, or `NetCrypto.IKeyStore` — while
+  `DataProofsDotnet.Jose` stays DID-agnostic (the handle carries only a curve and a derive
+  callback). New async overloads `JweParser.ParseAsync` / `ParseCompactAsync` (recipient supplied as
+  an `IEcdhKey`) and `JweBuilder.BuildEcdh1PuA256KwAsync` (opaque sender static key; the per-message
+  ephemeral stays raw) drive full **authcrypt (ECDH-1PU)** and **anoncrypt (ECDH-ES)** flows. The
+  shipped `RawEcdhKey` wraps in-process key bytes and reproduces the existing conformance vectors
+  **byte-for-byte**; opaque implementations live downstream over `IKeyStore.DeriveSharedSecretAsync`
+  (raw `Z`). The existing **synchronous JWE API is unchanged** (back-compat), and the new async path
+  carries the same issue #12 constant-work decoy defense.
+
 ## [1.0.1] - 2026-06-16
 
 ### Fixed

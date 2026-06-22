@@ -167,6 +167,91 @@ public static class JweBuilder
     }
 
     /// <summary>
+    /// Build a multi-recipient General-JSON JWE with authenticated-sender key agreement
+    /// (<c>ECDH-1PU+A256KW</c>) where the sender's static key is <b>opaque</b> (issue #13) — held in
+    /// an HSM/KMS/keychain and never exposing its scalar. Identical wire output to
+    /// <see cref="BuildEcdh1PuA256Kw"/>; only the sender ECDH is delegated to <paramref name="senderKey"/>.
+    /// The per-message ephemeral key stays raw and in-package.
+    /// </summary>
+    /// <param name="plaintext">Bytes to encrypt.</param>
+    /// <param name="recipients">Recipient public JWKs; ALL must share the sender's curve, each with a <c>kid</c>.</param>
+    /// <param name="senderKey">Sender's static opaque ECDH key (matches <paramref name="skid"/>).</param>
+    /// <param name="skid">Sender key identifier written to the protected header.</param>
+    /// <param name="contentEncryption">JWE <c>enc</c> — MUST be <c>A256CBC-HS512</c>.</param>
+    /// <param name="cryptoProvider">The JOSE crypto provider.</param>
+    /// <param name="typ">Optional <c>typ</c> protected-header value.</param>
+    /// <param name="ct">Cancellation token for the (possibly I/O-bound) sender key agreement.</param>
+    /// <exception cref="ArgumentException">When <paramref name="contentEncryption"/> is not <c>A256CBC-HS512</c>.</exception>
+    public static async Task<string> BuildEcdh1PuA256KwAsync(
+        ReadOnlyMemory<byte> plaintext,
+        IReadOnlyList<Jwk> recipients,
+        IEcdhKey senderKey,
+        string skid,
+        string contentEncryption,
+        JoseCryptoProvider cryptoProvider,
+        string? typ = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipients);
+        ArgumentNullException.ThrowIfNull(senderKey);
+        ArgumentException.ThrowIfNullOrEmpty(skid);
+        ArgumentNullException.ThrowIfNull(cryptoProvider);
+        if (recipients.Count == 0)
+            throw new ArgumentException("At least one recipient is required.", nameof(recipients));
+        if (contentEncryption != JoseAlgorithms.A256CbcHs512)
+            throw new ArgumentException(
+                $"ECDH-1PU key wrap MUST use A256CBC-HS512 content encryption (draft-madden-04 §2.1 / didcomm FR-ENC-09). Got '{contentEncryption}'.",
+                nameof(contentEncryption));
+
+        EnsureRecipientsShareCurve(recipients, out var curve);
+        if (!string.Equals(curve, senderKey.Crv, StringComparison.Ordinal))
+            throw new ArgumentException(
+                $"ECDH-1PU requires the sender key and all recipients on the same curve. Sender='{senderKey.Crv}', recipients='{curve}'.",
+                nameof(senderKey));
+
+        var ephemeral = EphemeralKeyPair.Generate(curve);
+        try
+        {
+            var apvBytes = ApvComputer.ComputeBytes(recipients.Select(r => r.Kid ?? throw new MalformedJoseException("Recipient JWK is missing 'kid'.")));
+            var apvB64u = Base64Url.Encode(apvBytes);
+            var apuB64u = ApuComputer.Compute(skid);
+            // 1PU draft-04 §2.3: PartyUInfo passed to ConcatKDF is the raw UTF-8 bytes of the skid.
+            var apuBytes = Encoding.UTF8.GetBytes(skid);
+
+            var header = new JweProtectedHeader
+            {
+                Typ = typ,
+                Alg = JoseAlgorithms.Ecdh1PuA256Kw,
+                Enc = contentEncryption,
+                Epk = ephemeral.ToPublicEpkJwk(),
+                Apv = apvB64u,
+                Apu = apuB64u,
+                Skid = skid,
+            };
+
+            return await EncryptAndAssembleAsync(
+                plaintext, header, contentEncryption, cryptoProvider,
+                wrapPerRecipientAsync: (recipient, tag) => Ecdh1PuKdf.DeriveKeyAsync(
+                    cryptoProvider.UnderlyingProvider,
+                    KeyTypeMapper.FromCurveForKeyAgreement(curve),
+                    senderKey,
+                    ephemeral.PrivateKey,
+                    ExtractRecipientPublicKey(recipient),
+                    Encoding.ASCII.GetBytes(header.Alg),
+                    apuBytes,
+                    apvBytes,
+                    tag,
+                    32,
+                    ct),
+                recipients).ConfigureAwait(false);
+        }
+        finally
+        {
+            ephemeral.Clear();
+        }
+    }
+
+    /// <summary>
     /// Build a General-JSON JWE whose CEK is wrapped under one or more pre-shared symmetric
     /// keys (standalone <c>A256KW</c>, RFC 7518 §4.4).
     /// </summary>
@@ -306,6 +391,53 @@ public static class JweBuilder
                 if (string.IsNullOrEmpty(recipient.Kid))
                     throw new MalformedJoseException("Recipient JWK is missing 'kid'.");
                 var kek = wrapPerRecipient(recipient, tag);
+                try
+                {
+                    var wrapped = cryptoProvider.KeyWrap(JoseAlgorithms.A256Kw, kek, cek);
+                    wraps.Add(new RecipientWrap(recipient.Kid!, wrapped));
+                }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(kek);
+                }
+            }
+
+            return RenderJwe(protectedB64u, wraps, iv, ciphertext, tag);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(cek);
+        }
+    }
+
+    private static async Task<string> EncryptAndAssembleAsync(
+        ReadOnlyMemory<byte> plaintext,
+        JweProtectedHeader header,
+        string contentEncryption,
+        JoseCryptoProvider cryptoProvider,
+        Func<Jwk, byte[], ValueTask<byte[]>> wrapPerRecipientAsync,
+        IReadOnlyList<Jwk> recipients)
+    {
+        var cekLen = KeyTypeMapper.ContentEncryptionKeySizeBytes(contentEncryption);
+        var ivLen = KeyTypeMapper.IvSizeBytes(contentEncryption);
+        var cek = new byte[cekLen];
+        var iv = new byte[ivLen];
+        cryptoProvider.Fill(cek);
+        cryptoProvider.Fill(iv);
+
+        try
+        {
+            var protectedB64u = header.EncodeBase64Url();
+            var aad = Encoding.ASCII.GetBytes(protectedB64u);
+
+            var (ciphertext, tag) = cryptoProvider.AeadEncrypt(contentEncryption, cek, iv, aad, plaintext.Span);
+
+            var wraps = new List<RecipientWrap>(recipients.Count);
+            foreach (var recipient in recipients)
+            {
+                if (string.IsNullOrEmpty(recipient.Kid))
+                    throw new MalformedJoseException("Recipient JWK is missing 'kid'.");
+                var kek = await wrapPerRecipientAsync(recipient, tag).ConfigureAwait(false);
                 try
                 {
                     var wrapped = cryptoProvider.KeyWrap(JoseAlgorithms.A256Kw, kek, cek);

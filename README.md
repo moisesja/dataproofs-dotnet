@@ -15,7 +15,8 @@ families defined by the W3C and IETF securing-mechanism landscape.
 All cryptography routes through [NetCrypto](https://github.com/moisesja/crypto-dotnet); all
 multiformats (multibase, multicodec, `Multikey`) and JCS through
 [NetCid](https://github.com/moisesja/net-cid). Keys held in a NetCrypto `IKeyStore` are never
-exported — every signing API accepts an `ISigner` or key-store alias, never raw private bytes.
+exported — signing accepts an `ISigner` or key-store alias, and JWE ECDH key agreement accepts an
+opaque `IEcdhKey`, never raw private bytes.
 
 ## Getting started
 

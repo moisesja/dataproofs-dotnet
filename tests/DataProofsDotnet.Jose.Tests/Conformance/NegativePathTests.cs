@@ -139,7 +139,9 @@ public sealed class NegativePathTests
 
         Action act = () => Encryption.JweParser.ParseCompact(tampered, kek, null, _crypto);
 
-        act.Should().Throw<JoseCryptoException>().WithMessage("*unwrap failed*");
+        // Uniform failure (issue #12): unwrap and AEAD failures share one recipient-agnostic message
+        // so the exception cannot distinguish "wrong key" from "tampered content".
+        act.Should().Throw<JoseCryptoException>().WithMessage("*could not be decrypted*");
     }
 
     [Fact]
@@ -154,7 +156,7 @@ public sealed class NegativePathTests
 
         Action act = () => Encryption.JweParser.ParseCompact(tampered, kek, null, _crypto);
 
-        act.Should().Throw<JoseCryptoException>().WithMessage("*AEAD decryption failed*");
+        act.Should().Throw<JoseCryptoException>().WithMessage("*could not be decrypted*");
     }
 
     [Fact]

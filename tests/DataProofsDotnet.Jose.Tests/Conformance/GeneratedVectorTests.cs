@@ -121,6 +121,6 @@ public sealed class GeneratedVectorTests
         Action act = () => JweParser.Parse(
             tampered, new Envelopes.DictionarySecretsLookup([recipientPrivate]), null, _crypto);
 
-        act.Should().Throw<JoseCryptoException>().WithMessage("*AEAD decryption failed*");
+        act.Should().Throw<JoseCryptoException>().WithMessage("*could not be decrypted*");
     }
 }
