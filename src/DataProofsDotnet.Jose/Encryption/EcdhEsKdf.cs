@@ -108,6 +108,33 @@ internal static class EcdhEsKdf
         int keyDataLen)
         => DeriveKeyCore(cryptoProvider, curve, recipientPrivateKey, ephemeralPublicKey, algorithmId, apu, apv, keyDataLen);
 
+    /// <summary>
+    /// Receive-side variant for an <b>opaque</b> recipient key (issue #13). The ECDH runs inside the
+    /// <see cref="IEcdhKey"/> (which may be HSM/keystore-backed and never exposes its scalar); the
+    /// derived secret is fed through the same Concat KDF as the sync path, so the wrapping key is
+    /// byte-identical.
+    /// </summary>
+    /// <param name="recipientKey">The recipient's opaque ECDH key.</param>
+    /// <param name="ephemeralPublicKey">Ephemeral public key from the JWE protected header <c>epk</c>.</param>
+    /// <param name="algorithmId">UTF-8 of the JOSE <c>alg</c>.</param>
+    /// <param name="apu">PartyUInfo.</param>
+    /// <param name="apv">PartyVInfo.</param>
+    /// <param name="keyDataLen">Wrapping-key length in bytes (32 for A256KW).</param>
+    /// <param name="ct">Cancellation token for the (possibly I/O-bound) derivation.</param>
+    public static async ValueTask<byte[]> DeriveKeyForReceiverAsync(
+        IEcdhKey recipientKey,
+        ReadOnlyMemory<byte> ephemeralPublicKey,
+        ReadOnlyMemory<byte> algorithmId,
+        ReadOnlyMemory<byte> apu,
+        ReadOnlyMemory<byte> apv,
+        int keyDataLen,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipientKey);
+        var z = await recipientKey.DeriveAsync(ephemeralPublicKey, ct).ConfigureAwait(false);
+        return FinishConcatKdf(z, algorithmId.Span, apu.Span, apv.Span, keyDataLen);
+    }
+
     private static byte[] DeriveKeyCore(
         NetCrypto.ICryptoProvider cryptoProvider,
         KeyType curve,
@@ -119,9 +146,22 @@ internal static class EcdhEsKdf
         int keyDataLen)
     {
         ArgumentNullException.ThrowIfNull(cryptoProvider);
-
         var z = cryptoProvider.DeriveSharedSecret(curve, ownPrivateKey, peerPublicKey);
+        return FinishConcatKdf(z, algorithmId, apu, apv, keyDataLen);
+    }
 
+    /// <summary>
+    /// The shared post-ECDH assembly: tag-free <c>SuppPubInfo = BE32(keyDataLen * 8)</c> then the
+    /// Concat KDF. Both the sync and opaque-async cores funnel through here so the derived key is
+    /// identical regardless of how <paramref name="z"/> was obtained. Zeroizes <paramref name="z"/>.
+    /// </summary>
+    private static byte[] FinishConcatKdf(
+        byte[] z,
+        ReadOnlySpan<byte> algorithmId,
+        ReadOnlySpan<byte> apu,
+        ReadOnlySpan<byte> apv,
+        int keyDataLen)
+    {
         var suppPubInfo = new byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(suppPubInfo, checked((uint)keyDataLen * 8U));
 

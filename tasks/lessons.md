@@ -23,3 +23,29 @@ task") and the Task Management rule "Verify Plan: Check in before starting imple
   Creating a branch, a todo file, or any source/test edit all count as "implement."
 - When two instructions appear to conflict, the more conservative/process-protective one
   wins unless the user has said otherwise in this session.
+
+## 2026-06-22 — A side-channel fix must close every channel, not just the headline one (issue #12)
+
+**Mistake:** Fixing the issue-#12 recipient-key enumeration *timing* oracle, I implemented the
+constant-work (decoy ECDH) half and shipped it as "done" — but left the **exception
+type/message** distinguishable (held key → AEAD-stage `MalformedJoseException`/"AEAD decryption
+failed"; unheld key → unwrap-stage `JoseCryptoException`/"AES-KW unwrap failed"). The
+adversarial review caught it: timing was equal, but a length-corrupted captured envelope still
+enumerated possession through the exception channel.
+
+**Why it happened:** I fixated on the issue *title* ("timing side-channel") and under-weighted
+the issue's own "Recommended fix" list, whose **"Uniform failure"** bullet was as load-bearing
+as the constant-work bullet. I treated the timing fix as the whole fix.
+
+**The rule for myself:**
+- For any information-disclosure / side-channel fix, enumerate **all** observable channels —
+  **time, exception type, exception message, inner exception, status code, log lines, response
+  shape** — and make held/unheld (or secret/non-secret) indistinguishable across **every** one.
+  A constant-time fix with a leaky exception is not a fix.
+- Read the issue's "recommended fix" as a checklist; implement **every** clause, not just the
+  one matching the title.
+- Always run the adversarial subagent on a security fix *before* declaring done — and when it
+  finds a residual in the same threat class, treat it as in-scope, not a follow-up.
+- Uniform-failure pattern: one exception type, one fixed message, no secret-derived detail
+  (kid/stage), **no inner cause** (the inner can re-leak the stage). See
+  `JweParser.DecryptFailureMessage`.

@@ -19,6 +19,9 @@ const DataProofsDotnet.Jose.JoseAlgorithms.XC20P = "XC20P" -> string!
 DataProofsDotnet.Jose.Base64Url
 DataProofsDotnet.Jose.Encryption.ApuComputer
 DataProofsDotnet.Jose.Encryption.ApvComputer
+DataProofsDotnet.Jose.Encryption.IEcdhKey
+DataProofsDotnet.Jose.Encryption.IEcdhKey.Crv.get -> string!
+DataProofsDotnet.Jose.Encryption.IEcdhKey.DeriveAsync(System.ReadOnlyMemory<byte> peerPublicKey, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
 DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver
 DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.FindPresent(System.Collections.Generic.IEnumerable<string!>! kids) -> System.Collections.Generic.IReadOnlyList<string!>!
 DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.TryGet(string! kid) -> DataProofsDotnet.Jose.Jwk?
@@ -50,6 +53,10 @@ DataProofsDotnet.Jose.Encryption.JwePeekResult.RecipientKids.get -> System.Colle
 DataProofsDotnet.Jose.Encryption.JwePeekResult.RecipientKids.init -> void
 DataProofsDotnet.Jose.Encryption.JwePeekResult.Skid.get -> string?
 DataProofsDotnet.Jose.Encryption.JwePeekResult.Skid.init -> void
+DataProofsDotnet.Jose.Encryption.RawEcdhKey
+DataProofsDotnet.Jose.Encryption.RawEcdhKey.Crv.get -> string!
+DataProofsDotnet.Jose.Encryption.RawEcdhKey.DeriveAsync(System.ReadOnlyMemory<byte> peerPublicKey, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<byte[]!>
+DataProofsDotnet.Jose.Encryption.RawEcdhKey.RawEcdhKey(string! crv, System.ReadOnlyMemory<byte> privateKey, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> void
 DataProofsDotnet.Jose.IJoseCryptoProvider
 DataProofsDotnet.Jose.IJoseCryptoProvider.AeadDecrypt(string! enc, System.ReadOnlySpan<byte> cek, System.ReadOnlySpan<byte> iv, System.ReadOnlySpan<byte> aad, System.ReadOnlySpan<byte> ciphertext, System.ReadOnlySpan<byte> tag) -> byte[]!
 DataProofsDotnet.Jose.IJoseCryptoProvider.AeadEncrypt(string! enc, System.ReadOnlySpan<byte> cek, System.ReadOnlySpan<byte> iv, System.ReadOnlySpan<byte> aad, System.ReadOnlySpan<byte> plaintext) -> (byte[]! Ciphertext, byte[]! Tag)
@@ -255,9 +262,12 @@ static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildA256Kw(System.ReadOnlySp
 static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactA256Kw(System.ReadOnlySpan<byte> plaintext, DataProofsDotnet.Jose.Jwk! keyEncryptionKey, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> string!
 static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactEcdhEsA256Kw(System.ReadOnlySpan<byte> plaintext, DataProofsDotnet.Jose.Jwk! recipient, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> string!
 static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdh1PuA256Kw(System.ReadOnlySpan<byte> plaintext, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Jwk!>! recipients, DataProofsDotnet.Jose.Jwk! senderPrivateJwk, string! skid, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, string? typ = null) -> string!
+static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdh1PuA256KwAsync(System.ReadOnlyMemory<byte> plaintext, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Jwk!>! recipients, DataProofsDotnet.Jose.Encryption.IEcdhKey! senderKey, string! skid, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, string? typ = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 static DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdhEsA256Kw(System.ReadOnlySpan<byte> plaintext, System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.Jwk!>! recipients, string! contentEncryption, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, string? typ = null) -> string!
 static DataProofsDotnet.Jose.Encryption.JweParser.Parse(string! packed, DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver! recipientKeys, DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver? senderKeys, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Encryption.JweParseResult!
+static DataProofsDotnet.Jose.Encryption.JweParser.ParseAsync(string! packed, DataProofsDotnet.Jose.Encryption.IEcdhKey! recipientKey, DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver? senderKeys, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.Encryption.JweParseResult!>!
 static DataProofsDotnet.Jose.Encryption.JweParser.ParseCompact(string! compact, DataProofsDotnet.Jose.Jwk! recipientKey, DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver? senderKeys, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Encryption.JweParseResult!
+static DataProofsDotnet.Jose.Encryption.JweParser.ParseCompactAsync(string! compact, DataProofsDotnet.Jose.Encryption.IEcdhKey! recipientKey, DataProofsDotnet.Jose.Encryption.IJweSenderKeyResolver? senderKeys, DataProofsDotnet.Jose.JoseCryptoProvider! cryptoProvider, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.Encryption.JweParseResult!>!
 static DataProofsDotnet.Jose.Encryption.JweParser.PeekRecipients(string! packed) -> DataProofsDotnet.Jose.Encryption.JwePeekResult!
 static DataProofsDotnet.Jose.JoseAlgorithms.IsSupportedContentEncryption(string? enc) -> bool
 static DataProofsDotnet.Jose.JoseAlgorithms.SupportedContentEncryptionAlgorithms.get -> System.Collections.Generic.IReadOnlyList<string!>!

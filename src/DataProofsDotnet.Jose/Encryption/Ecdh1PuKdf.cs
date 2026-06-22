@@ -94,6 +94,74 @@ internal static class Ecdh1PuKdf
             secondZPriv: recipientPrivateKey, secondZPub: senderPublicKey,
             algorithmId, apu, apv, aeadTag, keyDataLen);
 
+    /// <summary>
+    /// Send-side derivation that mixes a <b>raw</b> in-package ephemeral key with an <b>opaque</b>
+    /// sender static key (issue #13): <c>Ze = ECDH(ephemeral, recipient)</c> runs locally, while
+    /// <c>Zs = ECDH(sender_static, recipient)</c> runs inside <paramref name="senderKey"/> (which may
+    /// be HSM/keystore-backed). The post-secret assembly is identical to the sync path.
+    /// </summary>
+    public static async ValueTask<byte[]> DeriveKeyAsync(
+        NetCrypto.ICryptoProvider cryptoProvider,
+        KeyType curve,
+        IEcdhKey senderKey,
+        ReadOnlyMemory<byte> ephemeralPrivateKey,
+        ReadOnlyMemory<byte> recipientPublicKey,
+        ReadOnlyMemory<byte> algorithmId,
+        ReadOnlyMemory<byte> apu,
+        ReadOnlyMemory<byte> apv,
+        ReadOnlyMemory<byte> aeadTag,
+        int keyDataLen,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(cryptoProvider);
+        ArgumentNullException.ThrowIfNull(senderKey);
+
+        var ze = cryptoProvider.DeriveSharedSecret(curve, ephemeralPrivateKey.Span, recipientPublicKey.Span);
+        byte[] zs;
+        try
+        {
+            zs = await senderKey.DeriveAsync(recipientPublicKey, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(ze);
+            throw;
+        }
+        return FinishConcatKdf(ze, zs, algorithmId.Span, apu.Span, apv.Span, aeadTag.Span, keyDataLen);
+    }
+
+    /// <summary>
+    /// Receive-side derivation for an <b>opaque</b> recipient key (issue #13). Both secrets run
+    /// inside <paramref name="recipientKey"/>: <c>Ze = ECDH(recipient, ephemeral_pub)</c> then
+    /// <c>Zs = ECDH(recipient, sender_pub)</c>. Identical post-secret assembly to the sync path.
+    /// </summary>
+    public static async ValueTask<byte[]> DeriveKeyForReceiverAsync(
+        IEcdhKey recipientKey,
+        ReadOnlyMemory<byte> ephemeralPublicKey,
+        ReadOnlyMemory<byte> senderPublicKey,
+        ReadOnlyMemory<byte> algorithmId,
+        ReadOnlyMemory<byte> apu,
+        ReadOnlyMemory<byte> apv,
+        ReadOnlyMemory<byte> aeadTag,
+        int keyDataLen,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipientKey);
+
+        var ze = await recipientKey.DeriveAsync(ephemeralPublicKey, ct).ConfigureAwait(false);
+        byte[] zs;
+        try
+        {
+            zs = await recipientKey.DeriveAsync(senderPublicKey, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(ze);
+            throw;
+        }
+        return FinishConcatKdf(ze, zs, algorithmId.Span, apu.Span, apv.Span, aeadTag.Span, keyDataLen);
+    }
+
     private static byte[] DeriveKeyCore(
         NetCrypto.ICryptoProvider cryptoProvider,
         KeyType curve,
@@ -109,18 +177,35 @@ internal static class Ecdh1PuKdf
 
         var ze = cryptoProvider.DeriveSharedSecret(curve, firstZPriv, firstZPub);
         var zs = cryptoProvider.DeriveSharedSecret(curve, secondZPriv, secondZPub);
+        return FinishConcatKdf(ze, zs, algorithmId, apu, apv, aeadTag, keyDataLen);
+    }
 
+    /// <summary>
+    /// The shared post-ECDH assembly: <c>Z = Ze ‖ Zs</c>, the tag-bound
+    /// <c>SuppPubInfo = BE32(keyDataLen * 8) ‖ [ BE32(tag.Length) ‖ tag ]</c> (tag block omitted when
+    /// empty), then the Concat KDF. Both the sync and opaque-async cores funnel through here so the
+    /// derived key is byte-identical regardless of how <paramref name="ze"/>/<paramref name="zs"/>
+    /// were obtained. Zeroizes <paramref name="ze"/>, <paramref name="zs"/>, and the concatenation.
+    /// </summary>
+    /// <remarks>
+    /// The 4-byte tag-length prefix is load-bearing: omitting it round-trips locally but breaks
+    /// interop with every external 1PU implementation (askar/SICPA).
+    /// </remarks>
+    private static byte[] FinishConcatKdf(
+        byte[] ze,
+        byte[] zs,
+        ReadOnlySpan<byte> algorithmId,
+        ReadOnlySpan<byte> apu,
+        ReadOnlySpan<byte> apv,
+        ReadOnlySpan<byte> aeadTag,
+        int keyDataLen)
+    {
         var z = new byte[ze.Length + zs.Length];
         ze.AsSpan().CopyTo(z);
         zs.AsSpan().CopyTo(z.AsSpan(ze.Length));
         CryptographicOperations.ZeroMemory(ze);
         CryptographicOperations.ZeroMemory(zs);
 
-        // SuppPubInfo layout per draft-madden-jose-ecdh-1pu-04 §2.3 (and the askar reference
-        // impl that produced the SICPA spec vectors):
-        //   BE32(keyDataLen * 8) || [ BE32(cctag.length) || cctag ]   (cctag-block omitted when empty)
-        // The didcomm porting source records that omitting the tag-length prefix round-trips
-        // locally but is incompatible with every external 1PU implementation.
         var suppPubInfo = aeadTag.Length == 0
             ? new byte[4]
             : new byte[4 + 4 + aeadTag.Length];
