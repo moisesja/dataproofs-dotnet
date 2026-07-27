@@ -134,31 +134,48 @@ public static class JwsParser
         ArgumentNullException.ThrowIfNull(resolveSignerPublicJwk);
         ArgumentNullException.ThrowIfNull(cryptoProvider);
 
-        using var doc = JsonDocument.Parse(packed, JoseJson.StrictDocument);
-        var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object)
-            throw new MalformedJoseException("JWS root is not a JSON object.");
-
-        string payloadB64u;
-        if (root.TryGetProperty("payload", out var payloadElement))
+        // Malformed bytes (truncated frame, trailing junk, duplicate member, over-deep nesting)
+        // must surface as the documented MalformedJoseException — never as a raw System.Text.Json
+        // exception — so a caller's catch (MalformedJoseException) is not bypassed. This runs
+        // pre-verification on attacker-supplied input, same contract the JWE/JWT parsers uphold
+        // (JweParser.ParseStructure, JwtClaims.Parse); see issue #15.
+        JsonDocument doc;
+        try
         {
-            if (payloadElement.ValueKind != JsonValueKind.String)
-                throw new MalformedJoseException("JWS is missing required 'payload' string.");
-            if (detachedPayload is not null)
-                throw new MalformedJoseException("JWS carries an embedded 'payload'; a detached payload must not also be supplied.");
-            payloadB64u = payloadElement.GetString()!;
+            doc = JsonDocument.Parse(packed, JoseJson.StrictDocument);
         }
-        else
+        catch (JsonException ex)
         {
-            payloadB64u = detachedPayload
-                ?? throw new MalformedJoseException("JWS is missing required 'payload' string.");
+            throw new MalformedJoseException("JWS is not valid JSON.", ex);
         }
 
-        var signatures = ExtractSignatures(root).ToList();
-        if (signatures.Count == 0)
-            throw new MalformedJoseException("JWS contains no signatures.");
+        using (doc)
+        {
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new MalformedJoseException("JWS root is not a JSON object.");
 
-        return VerifySignatures(payloadB64u, signatures, resolveSignerPublicJwk, cryptoProvider);
+            string payloadB64u;
+            if (root.TryGetProperty("payload", out var payloadElement))
+            {
+                if (payloadElement.ValueKind != JsonValueKind.String)
+                    throw new MalformedJoseException("JWS is missing required 'payload' string.");
+                if (detachedPayload is not null)
+                    throw new MalformedJoseException("JWS carries an embedded 'payload'; a detached payload must not also be supplied.");
+                payloadB64u = payloadElement.GetString()!;
+            }
+            else
+            {
+                payloadB64u = detachedPayload
+                    ?? throw new MalformedJoseException("JWS is missing required 'payload' string.");
+            }
+
+            var signatures = ExtractSignatures(root).ToList();
+            if (signatures.Count == 0)
+                throw new MalformedJoseException("JWS contains no signatures.");
+
+            return VerifySignatures(payloadB64u, signatures, resolveSignerPublicJwk, cryptoProvider);
+        }
     }
 
     private static JwsParseResult VerifySignatures(
@@ -299,9 +316,7 @@ public static class JwsParser
         if (root.TryGetProperty("signature", out var sigEl) && sigEl.ValueKind == JsonValueKind.String
             && root.TryGetProperty("protected", out var protEl) && protEl.ValueKind == JsonValueKind.String)
         {
-            var kid = root.TryGetProperty("header", out var hdr) && hdr.ValueKind == JsonValueKind.Object
-                ? hdr.TryGetProperty("kid", out var kEl) ? kEl.GetString() ?? string.Empty : string.Empty
-                : string.Empty;
+            var kid = ReadUnprotectedKid(root);
 
             var protB64u = protEl.GetString()!;
             if (string.IsNullOrEmpty(kid))
@@ -325,14 +340,29 @@ public static class JwsParser
                     throw new MalformedJoseException("JWS signature entry is missing a string 'protected' or 'signature'.");
 
                 var protB64u = protElement.GetString()!;
-                var kid = entry.TryGetProperty("header", out var hdr2) && hdr2.ValueKind == JsonValueKind.Object
-                    ? hdr2.TryGetProperty("kid", out var kEl) ? kEl.GetString() ?? string.Empty : string.Empty
-                    : string.Empty;
+                var kid = ReadUnprotectedKid(entry);
                 if (string.IsNullOrEmpty(kid))
                     kid = JwsProtectedHeader.Decode(protB64u).Kid;
                 yield return new RawSignature(protB64u, kid, DecodeSignature(sigElement.GetString()!));
             }
         }
+    }
+
+    // Reads the unprotected header's 'kid' hint from a flattened root or a signatures[] entry.
+    // Returns empty when 'header' is absent/not an object, or 'kid' is absent or null (the caller
+    // then falls back to the protected header's kid). A present non-string 'kid' is malformed per
+    // RFC 7515 §4.1.4 and must surface as the documented MalformedJoseException — never as a raw
+    // InvalidOperationException from GetString(); this runs pre-verification on attacker-supplied
+    // bytes (issue #15).
+    private static string ReadUnprotectedKid(JsonElement container)
+    {
+        if (!container.TryGetProperty("header", out var hdr) || hdr.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+        if (!hdr.TryGetProperty("kid", out var kidEl) || kidEl.ValueKind == JsonValueKind.Null)
+            return string.Empty;
+        if (kidEl.ValueKind != JsonValueKind.String)
+            throw new MalformedJoseException("JWS unprotected header 'kid' must be a string.");
+        return kidEl.GetString()!;
     }
 
     private static byte[] DecodeSignature(string b64u)

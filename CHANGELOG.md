@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-27
+
+### Fixed
+
+- **`JwsParser` now rejects a non-string unprotected `header.kid` as `MalformedJoseException`
+  instead of leaking a raw `InvalidOperationException`** (issue #15). Both raw-signature
+  enumeration sites (Flattened and General JSON serializations) read the unprotected header's
+  `kid` with `JsonElement.GetString()` without a `ValueKind` guard, so a JWS carrying
+  `"header": {"kid": 123}` (or an object/array/boolean) escaped the parser as an untyped fault —
+  bypassing every `catch (MalformedJoseException)` in consumers. This was reachable
+  **pre-authentication**: the read happens during structural enumeration, before any signature
+  check, so any peer able to deliver bytes could throw it (downstream, a single crafted message
+  tore down a didcomm-dotnet WebSocket receive loop — `didcomm-dotnet#58`). The strict option
+  was chosen: a present, non-null, non-string `kid` is malformed per RFC 7515 §4.1.4 and now
+  throws `MalformedJoseException("JWS unprotected header 'kid' must be a string.")`; silently
+  ignoring it would hide a broken sender. Unchanged: an absent or JSON-`null` unprotected `kid`
+  still falls back to the protected header's `kid`, and a valid string `kid` behaves as before.
+  Severity is availability/robustness — no signature is accepted, no key material is exposed.
+- **`JwsParser` now wraps the top-level `JsonDocument.Parse` so malformed JSON surfaces as
+  `MalformedJoseException`** (issue #15, adversarial follow-up). The JSON-serialization entry point
+  parsed attacker-supplied bytes without a `catch`, so a truncated frame, trailing junk, a duplicate
+  member, or over-deep nesting escaped `JwsParser.Parse` as a raw `System.Text.Json.JsonException` —
+  the same "untyped fault escapes pre-verification" failure class as the `kid` bug above, and more
+  reachable (any partial WebSocket frame is malformed JSON). `JweParser.ParseStructure` and
+  `JwtClaims.Parse` already wrap this call; `JwsParser` now matches them, throwing
+  `MalformedJoseException("JWS is not valid JSON.")`.
+
 ## [1.1.0] - 2026-06-22
 
 ### Security
