@@ -49,3 +49,34 @@ as the constant-work bullet. I treated the timing fix as the whole fix.
 - Uniform-failure pattern: one exception type, one fixed message, no secret-derived detail
   (kid/stage), **no inner cause** (the inner can re-leak the stage). See
   `JweParser.DecryptFailureMessage`.
+
+## 2026-07-27 — A regression test must not assert a spec-nonconformant fixture as "valid" (issue #15, PR #16)
+
+**Mistake:** Fixing issue #15, I added `JwsJson_MatchingStringKidInBothHeaders_...` that built a
+JWS carrying `kid` in **both** the protected and unprotected headers and asserted it as a valid,
+verifying input. RFC 7515 §5.2 step 4 / §7.2.1 require the two header objects' parameter-name sets
+to be **disjoint** — a duplicate name is invalid *even when the values match*. The test locked a
+known parser leniency (the issue #10 "both must match" agreement check) in as correct behavior, in
+a project whose stated goal is JOSE conformance. The reviewer (repo owner) declined to approve over
+exactly this.
+
+**Why it happened:** I reached for the nearest fixture that exercised "a valid string unprotected
+kid still verifies" (put it in both headers, matching) without checking the fixture itself against
+the spec — and without noticing the regression I actually wanted was **already** covered by the
+existing issue #10 disjoint-shape test. I treated "the parser accepts it" as "the input is valid."
+
+**The rule for myself:**
+- Before asserting any constructed protocol fixture is *valid*, check the **fixture** against the
+  normative spec, not just the code path. "The parser accepts it" ≠ "it is spec-conformant" — a
+  lenient parser will happily verify an invalid message, and a test that pins that as correct
+  cements the nonconformance.
+- Prefer the **minimal spec-conformant** shape that exercises the behavior under test (here: `kid`
+  in the unprotected header only). If an existing test already covers that shape, don't add a
+  redundant — and possibly nonconformant — variant.
+- When a fix reveals that the *parser itself* is lenient past the spec (accepting both-present
+  matching `kid`), that is a **separate conformance decision** — surface it explicitly (it may
+  reverse a prior decision, e.g. issue #10), don't silently bake it into a new test or silently
+  "fix" it in an unrelated PR.
+- Keep unrelated build-unblock changes (the AngleSharp `NU1902` floor-lift) in their **own commit**
+  so independent changes carry independent rollback decisions — a reviewer should be able to revert
+  one without the other.
