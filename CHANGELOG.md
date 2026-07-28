@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.1] - 2026-07-27
 
+### Security
+
+- **Transitive `AngleSharp` lifted 1.4.0 → 1.6.0** (via a direct floor-lift reference in
+  `DataProofsDotnet.Rdfc`, the sole `dotNetRdf.Core` consumer) to clear the newly published
+  [GHSA-pgww-w46g-26qg](https://github.com/advisories/GHSA-pgww-w46g-26qg) mXSS advisory
+  (< 1.5.0), which failed the repo-wide NuGet audit (`NU1902` as error) and blocked every
+  restore. Supply-chain hygiene only: this stack never parses HTML — AngleSharp rides in for
+  dotNetRDF's HTML/RDFa readers, which DataProofs does not use. Remove the floor-lift when
+  dotNetRdf.Core's own AngleSharp floor reaches 1.5.0+.
+
 ### Fixed
 
 - **`JwsParser` now rejects a non-string unprotected `header.kid` as `MalformedJoseException`

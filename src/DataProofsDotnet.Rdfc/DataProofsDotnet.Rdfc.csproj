@@ -12,6 +12,9 @@
     <ProjectReference Include="../DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
     <!-- Sole dotNetRDF reference in the entire stack (PRD §2.2); Newtonsoft rides only as its internal transitive -->
     <PackageReference Include="dotNetRdf.Core" />
+    <!-- Not used by this codebase: lifts dotNetRdf.Core's transitive AngleSharp past the
+         GHSA-pgww-w46g-26qg audit floor (see Directory.Packages.props). -->
+    <PackageReference Include="AngleSharp" />
     <!-- CBOR encoding for the bbs-2023 multi-component proofValue (FR-12). Internal only; no CBOR type
          appears in any public signature (AC-7) — allowed for Rdfc's internal use (PRD §2.2 / phase brief). -->
     <PackageReference Include="System.Formats.Cbor" />
