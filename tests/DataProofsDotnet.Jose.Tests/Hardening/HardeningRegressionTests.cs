@@ -227,7 +227,7 @@ public class HardeningRegressionTests
     public void Base64Url_Decode_AcceptsCanonicalNoPad()
         => Base64Url.Decode("AQID").Should().Equal(1, 2, 3);
 
-    // ── Issue #15: a non-string unprotected 'header.kid' (number/object/array/boolean) must FAIL
+    // ── Issue #15: a non-string unprotected 'header.kid' (number/object/array/boolean/null) must FAIL
     //    CLOSED as MalformedJoseException — the documented contract — not escape as a raw
     //    InvalidOperationException from JsonElement.GetString(). Reachable pre-authentication:
     //    the read happens while enumerating raw signatures, before any verification, so any peer
@@ -238,17 +238,19 @@ public class HardeningRegressionTests
     [InlineData("{}")]
     [InlineData("[]")]
     [InlineData("true")]
+    [InlineData("null")]
     public async Task JwsJson_NonStringUnprotectedKid_ThrowsMalformed_NotRawException(string kidJson)
     {
         var pair = KeyGen.Generate(KeyType.Ed25519);
         var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
-        var signer = new JwsSigner(new KeyPairSigner(pair, NetCrypto), "k1");
+        var signer = new JwsSigner(new KeyPairSigner(pair, NetCrypto));
 
         var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signer);
         var parts = compact.Split('.');
 
-        // Valid flattened JWS, then the unprotected kid is replaced by a non-string JSON value —
-        // no key material is needed to craft this.
+        // The protected header carries no kid, so the malformed unprotected kid is the envelope's
+        // only kid parameter. This isolates the wrong-type condition from RFC 7515's disjoint-header
+        // rule; no key material is needed to craft the malformed input.
         var flattened = new JsonObject
         {
             ["payload"] = parts[1],
@@ -271,16 +273,18 @@ public class HardeningRegressionTests
     [InlineData("{}")]
     [InlineData("[]")]
     [InlineData("true")]
+    [InlineData("null")]
     public async Task JwsGeneral_NonStringUnprotectedKid_InOneEntry_ThrowsMalformed(string kidJson)
     {
         var pair = KeyGen.Generate(KeyType.Ed25519);
         var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
-        var signer = new JwsSigner(new KeyPairSigner(pair, NetCrypto), "k1");
+        var signer = new JwsSigner(new KeyPairSigner(pair, NetCrypto));
 
         var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signer);
         var parts = compact.Split('.');
 
-        // First entry is fully valid and would verify; the second carries the malformed kid.
+        // The first entry is RFC-valid and would verify: kid appears only in its unprotected header.
+        // The second carries the malformed kid, also with no protected-header duplicate.
         var general = new JsonObject
         {
             ["payload"] = parts[1],
@@ -304,12 +308,10 @@ public class HardeningRegressionTests
         act.Should().Throw<MalformedJoseException>().WithMessage("*'kid' must be a string*");
     }
 
-    // ── Issue #15 regression guards: 'kid' absent from the unprotected header, or present as JSON
-    //    null, keeps today's lenient behavior — fall back to the protected header's kid and verify.
-    [Theory]
-    [InlineData(false)] // header object without a kid member
-    [InlineData(true)]  // header.kid: null
-    public async Task JwsJson_AbsentOrNullUnprotectedKid_FallsBackToProtectedKid(bool nullKid)
+    // ── Issue #15 regression guard: an absent unprotected kid still falls back to the protected
+    //    header's kid. JSON null is present but non-string and is rejected by the theories above.
+    [Fact]
+    public async Task JwsJson_AbsentUnprotectedKid_FallsBackToProtectedKid()
     {
         var pair = KeyGen.Generate(KeyType.Ed25519);
         var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
@@ -318,22 +320,18 @@ public class HardeningRegressionTests
         var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signerWithKid);
         var parts = compact.Split('.');
 
-        var header = new JsonObject();
-        if (nullKid)
-            header["kid"] = null;
-
         var flattened = new JsonObject
         {
             ["payload"] = parts[1],
             ["protected"] = parts[0],
-            ["header"] = header,
+            ["header"] = new JsonObject(),
             ["signature"] = parts[2],
         }.ToJsonString();
 
         Func<string, Jwk?> resolver = kid => kid == "k1" ? publicJwk : null;
         var result = JwsParser.Parse(flattened, resolver, Jose);
 
-        result.SignerKid.Should().Be("k1", "a missing/null unprotected kid falls back to the protected header's kid");
+        result.SignerKid.Should().Be("k1", "a missing unprotected kid falls back to the protected header's kid");
     }
 
     // ── Issue #15 (adversarial follow-up): malformed JSON must FAIL CLOSED as MalformedJoseException,

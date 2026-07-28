@@ -28,10 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **pre-authentication**: the read happens during structural enumeration, before any signature
   check, so any peer able to deliver bytes could throw it (downstream, a single crafted message
   tore down a didcomm-dotnet WebSocket receive loop — `didcomm-dotnet#58`). The strict option
-  was chosen: a present, non-null, non-string `kid` is malformed per RFC 7515 §4.1.4 and now
-  throws `MalformedJoseException("JWS unprotected header 'kid' must be a string.")`; silently
-  ignoring it would hide a broken sender. Unchanged: an absent or JSON-`null` unprotected `kid`
-  still falls back to the protected header's `kid`, and a valid string `kid` behaves as before.
+  was chosen: any present non-string `kid` — including JSON `null` — is malformed per RFC 7515
+  §4.1.4. It now throws
+  `MalformedJoseException("JWS unprotected header 'kid' must be a string.")`; silently ignoring it
+  would hide a broken sender. An absent unprotected `kid` still falls back to the protected
+  header's `kid`, and a valid string `kid` behaves as before.
   Severity is availability/robustness — no signature is accepted, no key material is exposed.
 - **`JwsParser` now wraps the top-level `JsonDocument.Parse` so malformed JSON surfaces as
   `MalformedJoseException`** (issue #15, adversarial follow-up). The JSON-serialization entry point

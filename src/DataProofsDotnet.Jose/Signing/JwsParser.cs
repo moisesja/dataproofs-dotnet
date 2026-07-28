@@ -349,16 +349,16 @@ public static class JwsParser
     }
 
     // Reads the unprotected header's 'kid' hint from a flattened root or a signatures[] entry.
-    // Returns empty when 'header' is absent/not an object, or 'kid' is absent or null (the caller
-    // then falls back to the protected header's kid). A present non-string 'kid' is malformed per
-    // RFC 7515 §4.1.4 and must surface as the documented MalformedJoseException — never as a raw
-    // InvalidOperationException from GetString(); this runs pre-verification on attacker-supplied
-    // bytes (issue #15).
+    // Returns empty when 'header' is absent/not an object or 'kid' is absent (the caller then falls
+    // back to the protected header's kid). Any present non-string 'kid', including JSON null, is
+    // malformed per RFC 7515 §4.1.4 and must surface as the documented MalformedJoseException —
+    // never as a raw InvalidOperationException from GetString(); this runs pre-verification on
+    // attacker-supplied bytes (issue #15).
     private static string ReadUnprotectedKid(JsonElement container)
     {
         if (!container.TryGetProperty("header", out var hdr) || hdr.ValueKind != JsonValueKind.Object)
             return string.Empty;
-        if (!hdr.TryGetProperty("kid", out var kidEl) || kidEl.ValueKind == JsonValueKind.Null)
+        if (!hdr.TryGetProperty("kid", out var kidEl))
             return string.Empty;
         if (kidEl.ValueKind != JsonValueKind.String)
             throw new MalformedJoseException("JWS unprotected header 'kid' must be a string.");
