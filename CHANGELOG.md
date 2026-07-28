@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.1] - 2026-07-27
 
+### Added
+
+- **Samples now cover the opaque-key (HSM / KMS / keychain) JWE flow** — a new section in
+  `samples/DataProofsDotnet.Samples.Jwe` exercising `IEcdhKey`, the shipped `RawEcdhKey` handle, a
+  worked custom `IEcdhKey` implementation standing in for a device-backed key, and the async
+  `JweBuilder.BuildEcdh1PuA256KwAsync` / `JweParser.ParseAsync` / `JweParser.ParseCompactAsync`
+  overloads. These eight public members shipped in **1.1.0** (issue #13) with no sample, which left
+  the **`ac-9` samples-coverage gate (FR-21 / AC-9) red on `main`** and blocked the release
+  checklist's "all AC gates green" precondition. Coverage is back to **100%** (540/540 public
+  members, 0 allowlisted). The sample also demonstrates that ECDH-1PU invokes the handle **twice**
+  per decrypt (`Ze` against the ephemeral, then `Zs` against the sender's static key).
+
 ### Security
 
 - **Transitive `AngleSharp` lifted 1.4.0 → 1.6.0** (via a direct floor-lift reference in

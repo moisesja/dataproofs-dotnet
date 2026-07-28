@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **530**
-- Covered by at least one sample: **530**
+- Public members across 6 packages: **540**
+- Covered by at least one sample: **540**
 - Allowlisted (excused, with justification): **0**
 - Uncovered: **0**
 
@@ -207,6 +207,9 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Encryption.ApvComputer (type)`
 - `DataProofsDotnet.Jose.Encryption.ApvComputer.Compute`
 - `DataProofsDotnet.Jose.Encryption.ApvComputer.ComputeBytes`
+- `DataProofsDotnet.Jose.Encryption.IEcdhKey (type)`
+- `DataProofsDotnet.Jose.Encryption.IEcdhKey.Crv`
+- `DataProofsDotnet.Jose.Encryption.IEcdhKey.DeriveAsync`
 - `DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver (type)`
 - `DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.FindPresent`
 - `DataProofsDotnet.Jose.Encryption.IJweRecipientKeyResolver.TryGet`
@@ -217,6 +220,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactA256Kw`
 - `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildCompactEcdhEsA256Kw`
 - `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdh1PuA256Kw`
+- `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdh1PuA256KwAsync`
 - `DataProofsDotnet.Jose.Encryption.JweBuilder.BuildEcdhEsA256Kw`
 - `DataProofsDotnet.Jose.Encryption.JweParseResult (type)`
 - `DataProofsDotnet.Jose.Encryption.JweParseResult..ctor(Byte[],String,String,String,IReadOnlyList`1,String,Boolean)`
@@ -229,13 +233,19 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Encryption.JweParseResult.SenderKid`
 - `DataProofsDotnet.Jose.Encryption.JweParser (type)`
 - `DataProofsDotnet.Jose.Encryption.JweParser.Parse`
+- `DataProofsDotnet.Jose.Encryption.JweParser.ParseAsync`
 - `DataProofsDotnet.Jose.Encryption.JweParser.ParseCompact`
+- `DataProofsDotnet.Jose.Encryption.JweParser.ParseCompactAsync`
 - `DataProofsDotnet.Jose.Encryption.JweParser.PeekRecipients`
 - `DataProofsDotnet.Jose.Encryption.JwePeekResult (type)`
 - `DataProofsDotnet.Jose.Encryption.JwePeekResult..ctor(String,String,IReadOnlyList`1)`
 - `DataProofsDotnet.Jose.Encryption.JwePeekResult.Algorithm`
 - `DataProofsDotnet.Jose.Encryption.JwePeekResult.RecipientKids`
 - `DataProofsDotnet.Jose.Encryption.JwePeekResult.Skid`
+- `DataProofsDotnet.Jose.Encryption.RawEcdhKey (type)`
+- `DataProofsDotnet.Jose.Encryption.RawEcdhKey..ctor(String,ReadOnlyMemory`1,JoseCryptoProvider)`
+- `DataProofsDotnet.Jose.Encryption.RawEcdhKey.Crv`
+- `DataProofsDotnet.Jose.Encryption.RawEcdhKey.DeriveAsync`
 - `DataProofsDotnet.Jose.IJoseCryptoProvider (type)`
 - `DataProofsDotnet.Jose.IJoseCryptoProvider.AeadDecrypt`
 - `DataProofsDotnet.Jose.IJoseCryptoProvider.AeadEncrypt`

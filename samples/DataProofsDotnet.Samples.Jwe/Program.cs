@@ -178,7 +178,61 @@ byte[] zRecipient = provider.DeriveSharedSecret(JoseAlgorithms.CrvX25519, Base64
 Console.WriteLine($"  derived ECDH shared secret ({zSender.Length} bytes); both sides agree: {zSender.AsSpan().SequenceEqual(zRecipient)}");
 Check(zSender.AsSpan().SequenceEqual(zRecipient), "DeriveSharedSecret yields the same Z on both sides (ECDH)");
 
+// ----------------------------------------------------------- 7. Opaque ECDH keys (HSM / KMS) — async
+// Issue #13: IEcdhKey lets the key-agreement step run on a private key whose scalar NEVER enters
+// this process — an HSM, cloud KMS, OS keychain, or NetCrypto IKeyStore. The handle carries only a
+// curve and a derive callback, so DataProofsDotnet.Jose stays DID-agnostic. Everything after the
+// raw Z (Concat KDF, key-wrap, AEAD) runs on public/derived data and needs no private key at all.
+Console.WriteLine("--- IEcdhKey: opaque (HSM / KMS / keychain) private keys, async JWE ---");
+
+var opaqueRecipient = Recipient(KeyType.X25519, "did:example:bob#hsm");
+var opaqueSender = Recipient(KeyType.X25519, "did:example:alice#hsm");
+
+// RawEcdhKey is the shipped in-process implementation — it wraps key bytes you already hold.
+IEcdhKey recipientHandle = new RawEcdhKey(
+    JoseAlgorithms.CrvX25519, Base64Url.Decode(opaqueRecipient.Private.D!), crypto);
+
+// A custom IEcdhKey stands in for a device-backed key (see the class at the bottom of this file).
+var senderHandle = new SimulatedHsmEcdhKey(
+    JoseAlgorithms.CrvX25519, Base64Url.Decode(opaqueSender.Private.D!), crypto);
+
+Check(recipientHandle.Crv == JoseAlgorithms.CrvX25519, "the handle self-describes its curve");
+
+// The handle's ECDH agrees byte-for-byte with the provider primitive — Z is raw and unhashed.
+byte[] zHandle = await senderHandle.DeriveAsync(Base64Url.Decode(opaqueRecipient.Public.X!));
+byte[] zProvider = provider.DeriveSharedSecret(
+    JoseAlgorithms.CrvX25519,
+    Base64Url.Decode(opaqueSender.Private.D!),
+    Base64Url.Decode(opaqueRecipient.Public.X!));
+Check(zHandle.AsSpan().SequenceEqual(zProvider), "IEcdhKey.DeriveAsync returns the raw, unhashed Z");
+
+// Authcrypt (ECDH-1PU) SENT with an opaque sender static key; the per-message ephemeral stays raw.
+string opaqueAuthcrypt = await JweBuilder.BuildEcdh1PuA256KwAsync(
+    Plaintext(),
+    [opaqueRecipient.Public],
+    senderHandle,
+    opaqueSender.Public.Kid!,
+    JoseAlgorithms.A256CbcHs512,
+    crypto);
+
+// …and RECEIVED with an opaque recipient key. ECDH-1PU derives twice (Ze against the ephemeral,
+// then Zs against the sender's static key), so a handle must tolerate repeated invocation.
+JweParseResult opaqueResult = await JweParser.ParseAsync(
+    opaqueAuthcrypt, recipientHandle, new DictionarySenderResolver(opaqueSender.Public), crypto);
+Console.WriteLine($"  authcrypt via opaque keys: authenticated={opaqueResult.IsAuthenticated}, sender={opaqueResult.SenderKid.Split('#')[^1]}, device derives={senderHandle.DeriveCallCount}");
+Check(opaqueResult.Plaintext.AsSpan().SequenceEqual(Plaintext()), "opaque-key authcrypt round-trips");
+Check(opaqueResult.IsAuthenticated, "ECDH-1PU over an opaque sender key is still sender-authenticated");
+Check(senderHandle.DeriveCallCount > 0, "the sender's derive ran inside the handle, not on exported bytes");
+
+// Compact anoncrypt (ECDH-ES) decrypted through the same opaque recipient handle.
+string opaqueCompact = JweBuilder.BuildCompactEcdhEsA256Kw(
+    Plaintext(), opaqueRecipient.Public, JoseAlgorithms.A256Gcm, crypto);
+JweParseResult opaqueCompactResult = await JweParser.ParseCompactAsync(
+    opaqueCompact, recipientHandle, senderKeys: null, crypto);
+Console.WriteLine($"  compact anoncrypt via opaque key: enc={opaqueCompactResult.ContentEncryption}, authenticated={opaqueCompactResult.IsAuthenticated}");
+Check(opaqueCompactResult.Plaintext.AsSpan().SequenceEqual(Plaintext()), "opaque-key compact anoncrypt round-trips");
 Console.WriteLine();
+
 Console.WriteLine("Done! JWE example completed successfully.");
 return 0;
 
@@ -213,4 +267,36 @@ internal sealed class DictionarySenderResolver : IJweSenderKeyResolver
         => _byKid = publicJwks.ToDictionary(j => j.Kid!, StringComparer.Ordinal);
 
     public Jwk? TryGet(string skid) => _byKid.GetValueOrDefault(skid);
+}
+
+/// <summary>
+/// Stands in for a device-backed <see cref="IEcdhKey"/> — an HSM, cloud KMS, OS keychain, or a
+/// NetCrypto <c>IKeyStore</c>. A production implementation forwards the derive to the device (e.g.
+/// <c>IKeyStore.DeriveSharedSecretAsync</c>, which returns the raw Z) and the private scalar never
+/// enters managed memory; this sample holds the bytes only because it has no real device to call.
+/// </summary>
+internal sealed class SimulatedHsmEcdhKey : IEcdhKey
+{
+    private readonly byte[] _privateScalar;
+    private readonly JoseCryptoProvider _crypto;
+
+    public SimulatedHsmEcdhKey(string crv, byte[] privateScalar, JoseCryptoProvider crypto)
+    {
+        Crv = crv;
+        _privateScalar = privateScalar;
+        _crypto = crypto;
+    }
+
+    public string Crv { get; }
+
+    /// <summary>How many times the device was asked to derive — ECDH-1PU asks twice (Ze, then Zs).</summary>
+    public int DeriveCallCount { get; private set; }
+
+    public ValueTask<byte[]> DeriveAsync(ReadOnlyMemory<byte> peerPublicKey, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        DeriveCallCount++;
+        // A real backing awaits the device here; the scalar stays behind that boundary.
+        return ValueTask.FromResult(_crypto.DeriveSharedSecret(Crv, _privateScalar, peerPublicKey.Span));
+    }
 }
