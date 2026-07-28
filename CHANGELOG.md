@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-27
+
+### Security
+
+- **Transitive `AngleSharp` lifted 1.4.0 → 1.6.0** (via a direct floor-lift reference in
+  `DataProofsDotnet.Rdfc`, the sole `dotNetRdf.Core` consumer) to clear the newly published
+  [GHSA-pgww-w46g-26qg](https://github.com/advisories/GHSA-pgww-w46g-26qg) mXSS advisory
+  (< 1.5.0), which failed the repo-wide NuGet audit (`NU1902` as error) and blocked every
+  restore. Supply-chain hygiene only: this stack never parses HTML — AngleSharp rides in for
+  dotNetRDF's HTML/RDFa readers, which DataProofs does not use. Remove the floor-lift when
+  dotNetRdf.Core's own AngleSharp floor reaches 1.5.0+.
+
+### Fixed
+
+- **`JwsParser` now rejects a non-string unprotected `header.kid` as `MalformedJoseException`
+  instead of leaking a raw `InvalidOperationException`** (issue #15). Both raw-signature
+  enumeration sites (Flattened and General JSON serializations) read the unprotected header's
+  `kid` with `JsonElement.GetString()` without a `ValueKind` guard, so a JWS carrying
+  `"header": {"kid": 123}` (or an object/array/boolean) escaped the parser as an untyped fault —
+  bypassing every `catch (MalformedJoseException)` in consumers. This was reachable
+  **pre-authentication**: the read happens during structural enumeration, before any signature
+  check, so any peer able to deliver bytes could throw it (downstream, a single crafted message
+  tore down a didcomm-dotnet WebSocket receive loop — `didcomm-dotnet#58`). The strict option
+  was chosen: any present non-string `kid` — including JSON `null` — is malformed per RFC 7515
+  §4.1.4. It now throws
+  `MalformedJoseException("JWS unprotected header 'kid' must be a string.")`; silently ignoring it
+  would hide a broken sender. An absent unprotected `kid` still falls back to the protected
+  header's `kid`, and a valid string `kid` behaves as before.
+  Severity is availability/robustness — no signature is accepted, no key material is exposed.
+- **`JwsParser` now wraps the top-level `JsonDocument.Parse` so malformed JSON surfaces as
+  `MalformedJoseException`** (issue #15, adversarial follow-up). The JSON-serialization entry point
+  parsed attacker-supplied bytes without a `catch`, so a truncated frame, trailing junk, a duplicate
+  member, or over-deep nesting escaped `JwsParser.Parse` as a raw `System.Text.Json.JsonException` —
+  the same "untyped fault escapes pre-verification" failure class as the `kid` bug above, and more
+  reachable (any partial WebSocket frame is malformed JSON). `JweParser.ParseStructure` and
+  `JwtClaims.Parse` already wrap this call; `JwsParser` now matches them, throwing
+  `MalformedJoseException("JWS is not valid JSON.")`.
+
 ## [1.1.0] - 2026-06-22
 
 ### Security

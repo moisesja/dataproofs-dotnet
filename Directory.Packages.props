@@ -12,6 +12,10 @@
     <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
     <!-- JSON-LD / RDF Dataset Canonicalization — sole dotNetRDF reference in the stack, Rdfc only. -->
     <PackageVersion Include="dotNetRdf.Core" Version="3.5.1" />
+    <!-- Not used directly: floor-lift of dotNetRdf.Core's transitive AngleSharp above the
+         GHSA-pgww-w46g-26qg (mXSS, < 1.5.0) audit failure. Remove when dotNetRdf.Core's own
+         floor reaches 1.5.0+. -->
+    <PackageVersion Include="AngleSharp" Version="1.6.0" />
     <!-- CBOR encoding — Cose only; never in a public signature (AC-7). -->
     <PackageVersion Include="System.Formats.Cbor" Version="10.0.8" />
     <!-- Logging (FR-23: abstractions only, no mandatory logger) -->

@@ -9,7 +9,7 @@
          install resolves it (and its NetCrypto 1.1.0 dependency) only from the local pack feed —
          no collision with the already-published 0.1.0-preview.* (which pin NetCrypto 1.0.0).
          Release CI overrides this from the git tag (e.g. v1.1.0 -> 1.1.0). -->
-    <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">1.1.0</DataProofsVersion>
+    <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">1.1.1</DataProofsVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Deterministic>true</Deterministic>
