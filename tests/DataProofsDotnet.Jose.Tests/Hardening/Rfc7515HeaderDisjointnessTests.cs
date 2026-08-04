@@ -1,0 +1,112 @@
+using System.Text.Json;
+using DataProofsDotnet.Jose.Signing;
+using DataProofsDotnet.Jose.Tests.Envelopes;
+using FluentAssertions;
+using NetCrypto;
+using Xunit;
+
+namespace DataProofsDotnet.Jose.Tests.Hardening;
+
+/// <summary>
+/// Regression tests for issue #17: <see cref="JwsBuilder"/> emitted the signer <c>kid</c> in
+/// BOTH the integrity-protected header and the per-signature unprotected <c>header</c> object.
+/// RFC 7515 §7.2 requires the two header parameter-name sets to be disjoint, so strict
+/// verifiers (nimbus-jose-jwt, used by didcomm-jvm) rejected every such JWS. The fix keeps the
+/// <c>kid</c> protected-only; these tests pin the disjointness invariant for both JSON
+/// serializations so it cannot regress.
+/// </summary>
+public class Rfc7515HeaderDisjointnessTests
+{
+    private static readonly JoseCryptoProvider Jose = new();
+
+    [Fact]
+    public async Task Flattened_SingleSigner_HeaderParameterSetsAreDisjoint_AndKidIsProtected()
+    {
+        var signer = TestKeyMaterial.Generate(KeyType.Ed25519, "did:example:alice#key-1");
+
+        var packed = await JwsBuilder.BuildJsonAsync(
+            Encoding.UTF8.GetBytes("hello"), new[] { signer.Signer });
+
+        using var doc = JsonDocument.Parse(packed);
+        AssertDisjointAndProtectedKid(doc.RootElement, "did:example:alice#key-1");
+
+        // The RFC-conformant envelope still round-trips: the parser resolves the signer from
+        // the protected kid and surfaces it as the verified identity.
+        var result = JwsParser.Parse(packed,
+            kid => kid == signer.PublicJwk.Kid ? signer.PublicJwk : null, Jose);
+        result.SignerKid.Should().Be("did:example:alice#key-1");
+    }
+
+    [Fact]
+    public async Task General_MultiSigner_HeaderParameterSetsAreDisjoint_AndKidsAreProtected()
+    {
+        var signerA = TestKeyMaterial.Generate(KeyType.Ed25519, "did:example:alice#ed");
+        var signerB = TestKeyMaterial.Generate(KeyType.P256, "did:example:alice#p256");
+
+        var packed = await JwsBuilder.BuildJsonAsync(
+            Encoding.UTF8.GetBytes("hello"), new[] { signerA.Signer, signerB.Signer });
+
+        using var doc = JsonDocument.Parse(packed);
+        var signatures = doc.RootElement.GetProperty("signatures").EnumerateArray().ToArray();
+        signatures.Should().HaveCount(2);
+        AssertDisjointAndProtectedKid(signatures[0], "did:example:alice#ed");
+        AssertDisjointAndProtectedKid(signatures[1], "did:example:alice#p256");
+
+        // Each signature still verifies with the kid resolvable from the protected header only.
+        var resultB = JwsParser.Parse(packed,
+            kid => kid == signerB.PublicJwk.Kid ? signerB.PublicJwk : null, Jose);
+        resultB.SignerKid.Should().Be("did:example:alice#p256");
+    }
+
+    // The detached-payload renders are separate object literals in JwsBuilder, so cover them
+    // too — a regression could reintroduce the unprotected 'header' in the detached branch only.
+    [Fact]
+    public async Task DetachedPayload_BothSerializations_HeaderParameterSetsAreDisjoint()
+    {
+        var signerA = TestKeyMaterial.Generate(KeyType.Ed25519, "did:example:alice#ed");
+        var signerB = TestKeyMaterial.Generate(KeyType.P256, "did:example:alice#p256");
+        var payload = Encoding.UTF8.GetBytes("hello");
+
+        var flattened = await JwsBuilder.BuildJsonAsync(payload, new[] { signerA.Signer }, detachedPayload: true);
+        using (var doc = JsonDocument.Parse(flattened))
+        {
+            doc.RootElement.TryGetProperty("payload", out _).Should().BeFalse("detached form omits 'payload'");
+            AssertDisjointAndProtectedKid(doc.RootElement, "did:example:alice#ed");
+        }
+
+        var general = await JwsBuilder.BuildJsonAsync(payload, new[] { signerA.Signer, signerB.Signer }, detachedPayload: true);
+        using (var doc = JsonDocument.Parse(general))
+        {
+            doc.RootElement.TryGetProperty("payload", out _).Should().BeFalse("detached form omits 'payload'");
+            foreach (var (signature, kid) in doc.RootElement.GetProperty("signatures").EnumerateArray()
+                         .Zip(new[] { "did:example:alice#ed", "did:example:alice#p256" }))
+                AssertDisjointAndProtectedKid(signature, kid);
+        }
+    }
+
+    /// <summary>
+    /// Asserts RFC 7515 §7.2 disjointness for one signature object: the protected and
+    /// unprotected header parameter-name sets share no member, and the <c>kid</c> lives in
+    /// the protected header. (The current builder omits the unprotected <c>header</c> object
+    /// entirely; the intersection check keeps the test valid even if a future change emits
+    /// other, non-duplicated unprotected members.)
+    /// </summary>
+    private static void AssertDisjointAndProtectedKid(JsonElement signatureObject, string expectedKid)
+    {
+        using var protectedHeader = JsonDocument.Parse(
+            Base64Url.Decode(signatureObject.GetProperty("protected").GetString()!));
+        var protectedNames = protectedHeader.RootElement.EnumerateObject()
+            .Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+
+        protectedNames.Should().Contain("kid", "the signer kid must stay under the signature");
+        protectedHeader.RootElement.GetProperty("kid").GetString().Should().Be(expectedKid);
+
+        if (signatureObject.TryGetProperty("header", out var unprotectedHeader))
+        {
+            var unprotectedNames = unprotectedHeader.EnumerateObject()
+                .Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+            unprotectedNames.Intersect(protectedNames).Should().BeEmpty(
+                "RFC 7515 §7.2 requires the protected and unprotected header parameter-name sets to be disjoint");
+        }
+    }
+}

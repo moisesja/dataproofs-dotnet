@@ -24,9 +24,6 @@
   "flattenedJws": {
     "payload": "RXhhbXBsZSBvZiBFUzI1Nksgc2lnbmluZyAoUkZDIDg4MTIp",
     "protected": "eyJhbGciOiJFUzI1NksiLCJraWQiOiJlczI1NmstMjAyNiJ9",
-    "header": {
-      "kid": "es256k-2026"
-    },
     "signature": "A2UnhWr7hjyg6-1rKeK3oxCbtWFNL6_ioAD_8SIQTsZIG8fPZvDh5XNY9dkiPuZpzEL8JZsCA_9eu80VhmtFwg"
   }
 }

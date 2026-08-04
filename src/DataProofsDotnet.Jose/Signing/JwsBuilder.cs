@@ -90,65 +90,43 @@ public static class JwsBuilder
         var protectedB64u = header.EncodeBase64Url();
         var signingInput = Encoding.ASCII.GetBytes(protectedB64u + "." + payloadB64u);
         var signature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
-        return new SignatureEntry(protectedB64u, signer.Kid, signature);
+        return new SignatureEntry(protectedB64u, signature);
     }
 
     private static string RenderFlattened(string? payloadB64u, SignatureEntry entry)
     {
-        // Anonymous-object member order is the spec-conventional payload/protected/header/signature;
-        // 'header' (unprotected, kid carrier) is omitted entirely when the signer has no kid so a
-        // kid-less JWS byte-matches the RFC 7520 cookbook json_flat form.
-        if (string.IsNullOrEmpty(entry.Kid))
-        {
-            return payloadB64u is null
-                ? JsonSerializer.Serialize(new
-                {
-                    @protected = entry.ProtectedB64u,
-                    signature = Base64Url.Encode(entry.Signature),
-                })
-                : JsonSerializer.Serialize(new
-                {
-                    payload = payloadB64u,
-                    @protected = entry.ProtectedB64u,
-                    signature = Base64Url.Encode(entry.Signature),
-                });
-        }
-
+        // Anonymous-object member order is the spec-conventional payload/protected/signature.
+        // No unprotected 'header' object is ever emitted: the kid already lives in the signed
+        // protected header, and repeating it there would violate RFC 7515 §7.2's requirement
+        // that the two header parameter-name sets be disjoint (issue #17 — strict verifiers
+        // such as nimbus-jose-jwt reject the duplicate). This also byte-matches the RFC 7520
+        // cookbook json_flat form.
         return payloadB64u is null
             ? JsonSerializer.Serialize(new
             {
                 @protected = entry.ProtectedB64u,
-                header = new { kid = entry.Kid },
                 signature = Base64Url.Encode(entry.Signature),
             })
             : JsonSerializer.Serialize(new
             {
                 payload = payloadB64u,
                 @protected = entry.ProtectedB64u,
-                header = new { kid = entry.Kid },
                 signature = Base64Url.Encode(entry.Signature),
             });
     }
 
     private static string RenderGeneral(string? payloadB64u, IReadOnlyList<SignatureEntry> signatures)
     {
-        var entries = signatures.Select(s => string.IsNullOrEmpty(s.Kid)
-            ? (object)new
-            {
-                @protected = s.ProtectedB64u,
-                signature = Base64Url.Encode(s.Signature),
-            }
-            : new
-            {
-                @protected = s.ProtectedB64u,
-                header = new { kid = s.Kid },
-                signature = Base64Url.Encode(s.Signature),
-            }).ToArray();
+        var entries = signatures.Select(s => new
+        {
+            @protected = s.ProtectedB64u,
+            signature = Base64Url.Encode(s.Signature),
+        }).ToArray();
 
         return payloadB64u is null
             ? JsonSerializer.Serialize(new { signatures = entries })
             : JsonSerializer.Serialize(new { payload = payloadB64u, signatures = entries });
     }
 
-    private readonly record struct SignatureEntry(string ProtectedB64u, string? Kid, byte[] Signature);
+    private readonly record struct SignatureEntry(string ProtectedB64u, byte[] Signature);
 }
