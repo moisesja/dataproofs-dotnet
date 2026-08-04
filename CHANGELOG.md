@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-04
+
+### Fixed
+
+- **`JwsBuilder` no longer duplicates the signer `kid` in both the protected and unprotected
+  JWS headers** (issue #17). Both JSON serializations (Flattened and General) rendered a
+  per-signature unprotected `"header": {"kid": ...}` object carrying the same `kid` already
+  stamped into the integrity-protected header, violating RFC 7515 §7.2's requirement that the
+  two header parameter-name sets be disjoint. Strict verifiers enforce this — nimbus-jose-jwt
+  (used by didcomm-jvm) rejected every such JWS, blocking DIDComm v2.1 live-interop for the
+  `signed` and `anoncrypt(sign)` compositions downstream. The `kid` is now **protected-only**
+  (the conservative placement: it stays under the signature, and it is where `JwsParser` has
+  preferred to read it since #10); the unprotected `header` object is no longer emitted at all.
+  Round-trip behavior is unchanged — `JwsParser` already falls back to the protected header's
+  `kid` when no unprotected one is present. Regression tests pin protected/unprotected
+  parameter-set disjointness for both serializations. Wire-format note for consumers that
+  inspected the envelope JSON directly: single- and multi-signature outputs with a kid-bearing
+  signer no longer contain a `header` member (kid-less output is byte-identical to before).
+
 ## [1.1.1] - 2026-07-27
 
 ### Added
