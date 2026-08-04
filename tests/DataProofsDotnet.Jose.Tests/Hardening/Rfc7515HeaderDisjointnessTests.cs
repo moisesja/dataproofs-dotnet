@@ -61,7 +61,7 @@ public class Rfc7515HeaderDisjointnessTests
     // The detached-payload renders are separate object literals in JwsBuilder, so cover them
     // too — a regression could reintroduce the unprotected 'header' in the detached branch only.
     [Fact]
-    public async Task DetachedPayload_BothSerializations_HeaderParameterSetsAreDisjoint()
+    public async Task DetachedPayload_BothSerializations_AreDisjoint_AndRoundTripWithTheSuppliedPayload()
     {
         var signerA = TestKeyMaterial.Generate(KeyType.Ed25519, "did:example:alice#ed");
         var signerB = TestKeyMaterial.Generate(KeyType.P256, "did:example:alice#p256");
@@ -74,14 +74,28 @@ public class Rfc7515HeaderDisjointnessTests
             AssertDisjointAndProtectedKid(doc.RootElement, "did:example:alice#ed");
         }
 
+        var detachedFlattened = JwsParser.Parse(flattened, payload,
+            kid => kid == signerA.PublicJwk.Kid ? signerA.PublicJwk : null, Jose);
+        detachedFlattened.SignerKid.Should().Be("did:example:alice#ed");
+
         var general = await JwsBuilder.BuildJsonAsync(payload, new[] { signerA.Signer, signerB.Signer }, detachedPayload: true);
         using (var doc = JsonDocument.Parse(general))
         {
             doc.RootElement.TryGetProperty("payload", out _).Should().BeFalse("detached form omits 'payload'");
-            foreach (var (signature, kid) in doc.RootElement.GetProperty("signatures").EnumerateArray()
-                         .Zip(new[] { "did:example:alice#ed", "did:example:alice#p256" }))
+
+            var expectedKids = new[] { "did:example:alice#ed", "did:example:alice#p256" };
+            var signatures = doc.RootElement.GetProperty("signatures").EnumerateArray().ToArray();
+            // Assert the count before pairing — Zip truncates silently, so a dropped signature
+            // entry would otherwise leave its disjointness unchecked.
+            signatures.Should().HaveCount(expectedKids.Length);
+            foreach (var (signature, kid) in signatures.Zip(expectedKids))
                 AssertDisjointAndProtectedKid(signature, kid);
         }
+
+        var detachedGeneral = JwsParser.Parse(general, payload,
+            kid => kid == signerB.PublicJwk.Kid ? signerB.PublicJwk : null, Jose);
+        detachedGeneral.SignerKid.Should().Be("did:example:alice#p256");
+        Encoding.UTF8.GetString(detachedGeneral.PayloadBytes).Should().Be("hello");
     }
 
     /// <summary>

@@ -34,3 +34,29 @@ The package version is derived from the tag (`v0.1.0-preview.1` → `0.1.0-previ
 `1.0.0`), overriding the dev-default `DataProofsVersion` in `Directory.Build.props` via
 `-p:DataProofsVersion=`. The dev default is itself a `-preview` prerelease so local/CI packs are
 never mistaken for a stable release.
+
+## Versioning policy
+
+SemVer applies to the **public .NET API surface** — the contract `ac-7` pins. On top of that, this
+library emits standardized wire formats (JWS, JWE, COSE_Sign1, SD-JWT), so changes to *emitted
+bytes* need their own rule:
+
+- **Major** — a breaking change to the public .NET API, or a change to emitted output that was
+  **already spec-conformant** (a conformant consumer could legitimately have depended on it).
+- **Minor** — a correction that brings emitted output **into** conformance with the governing RFC,
+  where the previous output was invalid, even though the bytes observably change. A conformant peer
+  could not have relied on the old bytes: strict verifiers were rejecting them. The bump is minor
+  rather than patch precisely to signal "the wire changed, read the CHANGELOG."
+- **Patch** — bug fixes with no change to emitted output for inputs that previously succeeded
+  (including hardening that turns an untyped fault into a documented exception).
+
+Any minor release carrying a wire-format correction MUST describe the observable delta in the
+CHANGELOG and state what a consumer has to do about it.
+
+**Worked example — 1.2.0 (issue #17).** `JwsBuilder` stopped emitting the unprotected
+`"header": {"kid": …}` object, because carrying the same `kid` there *and* in the protected header
+violates RFC 7515 §7.2 disjointness and made every signed envelope unverifiable to nimbus-jose-jwt.
+The public API did not change, and the removed member was part of an invalid envelope, so this
+shipped as **minor**, not major — while the CHANGELOG spelled out that verifiers reading only the
+unprotected `kid` must fall back to the protected header (tracked downstream in
+`moisesja/didcomm-dotnet#70`).
