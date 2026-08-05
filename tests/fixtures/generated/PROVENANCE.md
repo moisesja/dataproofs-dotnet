@@ -4,6 +4,12 @@
   `tests/fixtures/generated/generate.sh`; **not** vendored from an external source.
 - **Generation date:** 2026-06-12, against `DataProofsDotnet.Jose` at the Phase-B commit and
   `NetCrypto 1.0.0-preview.1`.
+- **Re-pin 2026-08-04 (`es256k-jws.json` only):** the `flattenedJws` member re-frozen after the
+  issue #17 fix — `JwsBuilder` no longer emits the unprotected `"header": {"kid": ...}` object
+  (RFC 7515 §7.2 protected/unprotected disjointness), so the old frozen shape was
+  spec-nonconformant. The signature, protected header, and compact form are byte-identical to
+  the 2026-06-12 pin (RFC 6979 determinism); only the `header` member was removed. `xc20p.json`
+  untouched (regenerating it would churn the random ECDH-ES ephemeral key for no reason).
 - **Why generated (PRD AC-3):** neither algorithm has a worked vector in an RFC nor coverage in
   the `jose-jwt` oracle —
   - **ES256K (RFC 8812):** RFC 8812 publishes no worked JWS vector, and `jose-jwt`'s closed

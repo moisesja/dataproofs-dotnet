@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-04
+
+### Fixed
+
+- **`JwsBuilder` no longer duplicates the signer `kid` in both the protected and unprotected
+  JWS headers** (issue #17). Both JSON serializations (Flattened and General) rendered a
+  per-signature unprotected `"header": {"kid": ...}` object carrying the same `kid` already
+  stamped into the integrity-protected header, violating RFC 7515 §7.2's requirement that the
+  two header parameter-name sets be disjoint. Strict verifiers enforce this — nimbus-jose-jwt
+  (used by didcomm-jvm) rejected every such JWS, blocking DIDComm v2.1 live-interop for the
+  `signed` and `anoncrypt(sign)` compositions downstream. The `kid` is now **protected-only**
+  (the conservative placement: it stays under the signature, and it is where `JwsParser` has
+  preferred to read it since #10); the unprotected `header` object is no longer emitted at all.
+  Round-trip behavior is unchanged — `JwsParser` already falls back to the protected header's
+  `kid` when no unprotected one is present. Regression tests pin protected/unprotected
+  parameter-set disjointness for both serializations. Wire-format note for consumers that
+  inspected the envelope JSON directly: single- and multi-signature outputs with a kid-bearing
+  signer no longer contain a `header` member (kid-less output is byte-identical to before).
+  **Why this is a minor and not a major release:** the public .NET API is unchanged, and the
+  removed member was part of an RFC 7515-invalid envelope that strict verifiers were already
+  rejecting, so no conformant consumer could have depended on it — see the versioning policy in
+  [`RELEASING.md`](RELEASING.md). A consumer that reads the signer `kid` straight out of the
+  envelope JSON must read it from the protected header (or use `JwsParseResult.SignerKid`, which
+  has always resolved both placements). Downstream impact is tracked in
+  [`moisesja/didcomm-dotnet#70`](https://github.com/moisesja/didcomm-dotnet/issues/70).
+
+### Known limitations
+
+- **`JwsParser` does not yet enforce RFC 7515 §5.2 step 4 header disjointness on the verify side**
+  ([#19](https://github.com/moisesja/dataproofs-dotnet/issues/19)). This release fixes what the
+  library *emits*; it still *accepts* a JWS carrying the same `kid` in both headers, and never
+  inspects the unprotected header for any other overlapping parameter. No signature-acceptance
+  risk — the protected header stays authoritative for `alg`/`crit`/`b64` — but our accept-set is
+  looser than what strict verifiers will grant us. Tracked for a follow-up release.
+
 ## [1.1.1] - 2026-07-27
 
 ### Added
