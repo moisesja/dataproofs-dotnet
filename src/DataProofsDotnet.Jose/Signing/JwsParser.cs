@@ -12,8 +12,8 @@ namespace DataProofsDotnet.Jose.Signing;
 /// Ported from didcomm-dotnet <c>DidComm.Jose.Signing.JwsParser</c> (PRD §1.4 item 2),
 /// preserving its behavior contract: <c>crit</c> rejection (RFC 7515 §4.1.11), <c>b64=false</c>
 /// rejection (RFC 7797 unencoded payloads are unsupported; detached payloads remain
-/// base64url-encoded), alg↔key-curve binding (algorithm-confusion defense), the kid placement
-/// rule (protected and unprotected <c>kid</c> must agree when both present), and
+/// base64url-encoded), alg↔key-curve binding (algorithm-confusion defense), protected/unprotected
+/// header parameter-name disjointness (RFC 7515 §5.2 step 4), and
 /// first-verifying-signature-wins with the last failure rethrown when none verifies.
 /// Additions over the porting source: <c>alg="none"</c> hard rejection, compact and detached
 /// parsing.
@@ -114,12 +114,13 @@ public static class JwsParser
         }
 
         var protectedB64u = segments[0];
-        var kid = JwsProtectedHeader.Decode(protectedB64u).Kid;
+        var protectedHeader = JwsProtectedHeader.Decode(protectedB64u);
+        var kid = protectedHeader.Kid;
         var signature = DecodeSignature(segments[2]);
 
         return VerifySignatures(
             payloadB64u,
-            [new RawSignature(protectedB64u, kid, signature)],
+            [new RawSignature(protectedB64u, protectedHeader, kid, signature)],
             resolveSignerPublicJwk,
             cryptoProvider);
     }
@@ -206,7 +207,7 @@ public static class JwsParser
 
             try
             {
-                var header = JwsProtectedHeader.Decode(sig.ProtectedB64u);
+                var header = sig.ProtectedHeader;
 
                 // RFC 7515 §4.1.1 requires 'alg'; "none" (RFC 7518 §3.6) is never accepted —
                 // an unsigned JWS must not be confusable with a signed one (AC-3 negative path).
@@ -246,17 +247,6 @@ public static class JwsParser
                     continue;
                 }
 
-                // The JWS spec allows 'kid' in either the protected or the unprotected header.
-                // When both are present they MUST match; when only one is present, use that one.
-                if (!string.IsNullOrEmpty(header.Kid)
-                    && !string.IsNullOrEmpty(sig.Kid)
-                    && !string.Equals(header.Kid, sig.Kid, StringComparison.Ordinal))
-                {
-                    lastFailure = new MalformedJoseException(
-                        $"JWS protected 'kid' ({header.Kid}) does not match the unprotected header 'kid' ({sig.Kid}).");
-                    continue;
-                }
-
                 var signingInput = Encoding.ASCII.GetBytes(sig.ProtectedB64u + "." + payloadB64u);
                 var (_, publicKeyBytes) = JwkConversion.ExtractPublicKey(publicJwk);
                 if (!cryptoProvider.Verify(header.Alg, publicKeyBytes, signingInput, sig.Signature))
@@ -275,8 +265,9 @@ public static class JwsParser
                 // verification therefore IS the signer's. DIDComm v2.1 carries the signer kid only in
                 // the unprotected header, so dropping it (the former behavior) broke signed/authcrypt
                 // conformance (issue #10). Downstream callers re-check the kid against the resolved
-                // key material (defense in depth); the protected-vs-unprotected agreement check above
-                // still rejects a JWS whose two kids disagree. Empty only when neither header has one.
+                // key material (defense in depth). ExtractSignatures has already enforced that a
+                // parameter name — including kid — cannot occur in both headers. Empty only when
+                // neither header has one.
                 var verifiedKid = !string.IsNullOrEmpty(header.Kid) ? header.Kid : (sig.Kid ?? string.Empty);
                 return new JwsParseResult(header.Alg, verifiedKid, payloadBytes) { Typ = header.Typ };
             }
@@ -310,22 +301,35 @@ public static class JwsParser
 
     private static IEnumerable<RawSignature> ExtractSignatures(JsonElement root)
     {
+        // Flattened and General are distinct JSON serializations. A hybrid object is ambiguous and
+        // could otherwise make the Flattened fast path ignore malformed/overlapping entries in a
+        // sibling signatures[] array, so reject the mixed shape before selecting either path.
+        if (root.TryGetProperty("signature", out _) && root.TryGetProperty("signatures", out _))
+        {
+            throw new MalformedJoseException(
+                "JWS cannot mix Flattened 'signature' and General 'signatures' members.");
+        }
+
         // Flattened: payload + protected + (optional header) + signature at the top level. Both
         // 'signature' and 'protected' must be strings; otherwise this is not a flattened JWS and we
         // fall through (an empty result then surfaces as a clean "no signatures" malformed error).
         if (root.TryGetProperty("signature", out var sigEl) && sigEl.ValueKind == JsonValueKind.String
             && root.TryGetProperty("protected", out var protEl) && protEl.ValueKind == JsonValueKind.String)
         {
-            var kid = ReadUnprotectedKid(root);
-
             var protB64u = protEl.GetString()!;
+            var protectedHeader = JwsProtectedHeader.DecodeWithMemberNames(protB64u);
+            var kid = ReadUnprotectedKid(root, protectedHeader.MemberNames);
             if (string.IsNullOrEmpty(kid))
             {
                 // Kid MAY live only in protected; pull it from there as a fallback.
-                kid = JwsProtectedHeader.Decode(protB64u).Kid;
+                kid = protectedHeader.Header.Kid;
             }
 
-            yield return new RawSignature(protB64u, kid, DecodeSignature(sigEl.GetString()!));
+            yield return new RawSignature(
+                protB64u,
+                protectedHeader.Header,
+                kid,
+                DecodeSignature(sigEl.GetString()!));
             yield break;
         }
 
@@ -340,24 +344,42 @@ public static class JwsParser
                     throw new MalformedJoseException("JWS signature entry is missing a string 'protected' or 'signature'.");
 
                 var protB64u = protElement.GetString()!;
-                var kid = ReadUnprotectedKid(entry);
+                var protectedHeader = JwsProtectedHeader.DecodeWithMemberNames(protB64u);
+                var kid = ReadUnprotectedKid(entry, protectedHeader.MemberNames);
                 if (string.IsNullOrEmpty(kid))
-                    kid = JwsProtectedHeader.Decode(protB64u).Kid;
-                yield return new RawSignature(protB64u, kid, DecodeSignature(sigElement.GetString()!));
+                    kid = protectedHeader.Header.Kid;
+                yield return new RawSignature(
+                    protB64u,
+                    protectedHeader.Header,
+                    kid,
+                    DecodeSignature(sigElement.GetString()!));
             }
         }
     }
 
-    // Reads the unprotected header's 'kid' hint from a flattened root or a signatures[] entry.
-    // Returns empty when 'header' is absent/not an object or 'kid' is absent (the caller then falls
-    // back to the protected header's kid). Any present non-string 'kid', including JSON null, is
-    // malformed per RFC 7515 §4.1.4 and must surface as the documented MalformedJoseException —
-    // never as a raw InvalidOperationException from GetString(); this runs pre-verification on
-    // attacker-supplied bytes (issue #15).
-    private static string ReadUnprotectedKid(JsonElement container)
+    // Validates the complete unprotected header namespace, then reads its 'kid' hint. RFC 7515
+    // §5.2 step 4 requires the protected and unprotected parameter-name sets to be disjoint — an
+    // overlap is malformed even when the duplicate values match. This runs while all raw
+    // signatures are extracted, before key resolution or cryptographic verification (issue #19).
+    // Returns empty when 'header' or 'kid' is absent (the caller falls back to the protected kid).
+    // Any present non-string 'kid', including JSON null, remains malformed
+    // per §4.1.4 and surfaces as MalformedJoseException (issue #15).
+    private static string ReadUnprotectedKid(JsonElement container, IReadOnlySet<string> protectedMemberNames)
     {
-        if (!container.TryGetProperty("header", out var hdr) || hdr.ValueKind != JsonValueKind.Object)
+        if (!container.TryGetProperty("header", out var hdr))
             return string.Empty;
+        if (hdr.ValueKind != JsonValueKind.Object)
+            throw new MalformedJoseException("JWS unprotected 'header' must be a JSON object.");
+
+        foreach (var member in hdr.EnumerateObject())
+        {
+            if (protectedMemberNames.Contains(member.Name))
+            {
+                throw new MalformedJoseException(
+                    $"JWS protected and unprotected headers must be disjoint; parameter '{member.Name}' appears in both.");
+            }
+        }
+
         if (!hdr.TryGetProperty("kid", out var kidEl))
             return string.Empty;
         if (kidEl.ValueKind != JsonValueKind.String)
@@ -377,7 +399,11 @@ public static class JwsParser
         }
     }
 
-    private readonly record struct RawSignature(string ProtectedB64u, string Kid, byte[] Signature);
+    private readonly record struct RawSignature(
+        string ProtectedB64u,
+        JwsProtectedHeader ProtectedHeader,
+        string Kid,
+        byte[] Signature);
 }
 
 /// <summary>Outcome of a successful JWS parse: payload bytes plus verified signer metadata.</summary>
