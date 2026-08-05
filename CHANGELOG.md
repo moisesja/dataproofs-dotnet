@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.1] - 2026-08-04
 
 ### Fixed
 
@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Adjacent structural hardening now also rejects mixed Flattened+General objects, a present
   unprotected `header` that is not a JSON object, and an empty protected-header string through the
   parser's documented `MalformedJoseException` contract.
+
+  **Upgrade note — this rejects envelopes produced by DataProofsDotnet ≤ 1.1.1.** Those versions
+  emitted the signer `kid` in *both* headers (the bug fixed in 1.2.0), which is exactly the shape
+  1.2.1 now refuses. A 1.2.1 verifier therefore cannot verify a signed envelope from a peer still
+  running ≤ 1.1.1. In a mixed deployment, upgrade **senders** to ≥ 1.2.0 — whose output is
+  conformant and verifies on every version — rather than expecting 1.2.1 to keep accepting the old
+  shape; no version of this library will accept it again, since RFC 7515 §5.2 step 4 requires the
+  rejection. Downstream coordination for DIDComm is tracked in
+  [`moisesja/didcomm-dotnet#70`](https://github.com/moisesja/didcomm-dotnet/issues/70).
+
+  Shipping as a **patch** under the accept-set clause of the versioning policy in
+  [`RELEASING.md`](RELEASING.md): no public .NET API change (`ac-7` green), no emitted-output
+  change, and every newly-rejected input was invalid under RFC 7515 — strict verifiers such as
+  nimbus-jose-jwt were already rejecting it, so no conformant peer could have produced it.
 
 ### Changed
 
