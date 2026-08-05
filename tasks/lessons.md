@@ -185,3 +185,19 @@ checkout. A detailed, plausible description of a control read as evidence that t
   not gated.
 - Docs that turn out to be false get a dated correction in place, not a silent rewrite — the
   earlier claim is what someone acted on, so the record has to show it was wrong.
+
+## 2026-08-05 — Compatibility is a policy constraint, not an automatic review veto (PR #26)
+
+**Mistake:** I made removal of the two-argument `JwsSigner` constructor the lead blocking finding
+on PR #26. The binary-compatibility analysis was technically correct, but the repository owner
+does not require binary compatibility for this release and explicitly accepts updating downstream
+systems. I silently promoted a conventional library-maintenance preference into an acceptance
+criterion the owner had not set.
+
+**The rule for myself:**
+- Still identify a binary/source/wire compatibility break precisely; reviewers need the fact.
+- Before using it to request changes, check the repository's stated release policy and the owner's
+  expressed migration tolerance. Compatibility impact is evidence, not automatically a veto.
+- When downstream systems are owned and can move in lockstep, classify an intentional break as a
+  migration/release note unless the user or project explicitly requires compatibility.
+- A waived compatibility constraint does not waive independent correctness or security findings.
