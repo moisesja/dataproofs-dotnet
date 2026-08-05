@@ -77,6 +77,10 @@ public class Rfc7515HeaderDisjointnessTests
         var detachedFlattened = JwsParser.Parse(flattened, payload,
             kid => kid == signerA.PublicJwk.Kid ? signerA.PublicJwk : null, Jose);
         detachedFlattened.SignerKid.Should().Be("did:example:alice#ed");
+        // Byte equality, not a UTF-8 round-trip: the parser must hand back exactly the payload it
+        // was given. Asserting the identity alone would miss a parser that verifies and reports
+        // the right signer while returning the wrong bytes (issue #21).
+        detachedFlattened.PayloadBytes.Should().Equal(payload);
 
         var general = await JwsBuilder.BuildJsonAsync(payload, new[] { signerA.Signer, signerB.Signer }, detachedPayload: true);
         using (var doc = JsonDocument.Parse(general))
@@ -95,7 +99,7 @@ public class Rfc7515HeaderDisjointnessTests
         var detachedGeneral = JwsParser.Parse(general, payload,
             kid => kid == signerB.PublicJwk.Kid ? signerB.PublicJwk : null, Jose);
         detachedGeneral.SignerKid.Should().Be("did:example:alice#p256");
-        Encoding.UTF8.GetString(detachedGeneral.PayloadBytes).Should().Be("hello");
+        detachedGeneral.PayloadBytes.Should().Equal(payload);
     }
 
     /// <summary>

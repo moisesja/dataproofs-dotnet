@@ -25,8 +25,12 @@ jobs:
     permissions:
       contents: read
       id-token: write   # request the GitHub OIDC token for NuGet Trusted Publishing
-    # Gate the irreversible publish: add "Required reviewers" to the `nuget-release`
-    # environment (repo Settings > Environments) so each tag push waits for approval.
+    # Gates the irreversible publish. `nuget-release` carries a required-reviewer rule with
+    # admin bypass disabled (configured 2026-08-04, issue #20), so a tag push parks the WHOLE
+    # job pending approval — none of the steps below run, not even the checkout, until the
+    # owner approves. This line alone does not create that gate: the protection rule lives in
+    # repo settings and can be removed without touching this file. RELEASING.md carries the
+    # verified configuration and the `gh api` command to re-check it.
     environment: nuget-release
     steps:
       - name: Checkout

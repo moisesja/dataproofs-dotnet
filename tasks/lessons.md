@@ -112,3 +112,29 @@ into a gate on my own next action. Two things let that happen:
   The todo file is for tracking work that has **already** been approved.
 - When I catch myself thinking "this is what they obviously want, just do it", that is the exact
   condition AGENTS.md §6 does *not* cover. §6 is about not needing hand-holding on **mechanics**.
+
+## 2026-08-04 — A control that only exists in a comment is not a control (issue #20)
+
+**Mistake:** `RELEASING.md`, the `environment: nuget-release` comment in `publish.yml`, PR #18, and
+`tasks/todo-2026-08-04-issue-17.md` all stated that a tag push waits for release approval. None of
+them had ever checked. The `nuget-release` environment had `protection_rules: []` and
+`can_admins_bypass: true` from the day it was created, so v1.2.0 went from tag to published on
+NuGet.org in 55 seconds with no human stop — on the one path in this repo that cannot be undone.
+Worse, the wording was confidently *ordered* ("build/test/ac-11 gates, **then** waits for
+approval"), which is not even how environment protection works: it gates the whole job, before the
+checkout. A detailed, plausible description of a control read as evidence that the control existed.
+
+**The rule for myself:**
+- When I write, copy, or repeat a claim about **platform behavior I did not configure in this
+  change** — an environment gate, a branch protection, a required check, a trusted-publishing
+  policy, a webhook — verify it against the platform's API in the same change, or write it as an
+  open TODO. `gh api .../environments/<name>` takes one call. Repo settings live outside the
+  diff, so nothing in code review can catch a stale claim about them.
+- Prose inherited from a sibling repo (`tasks/research/conventions.md` carried this same "gated
+  behind a reviewer-approved environment" line) describes *that* repo's intent, not this repo's
+  configuration. Convention text is a template to verify, never a statement of fact.
+- Before declaring an irreversible step "gated", answer concretely: *what stops it, where does that
+  thing live, and what does the API return right now?* If any answer is "the docs say so", it is
+  not gated.
+- Docs that turn out to be false get a dated correction in place, not a silent rewrite — the
+  earlier claim is what someone acted on, so the record has to show it was wrong.
