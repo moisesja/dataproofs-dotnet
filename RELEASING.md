@@ -82,6 +82,21 @@ bytes* need their own rule:
 - **Patch** — bug fixes with no change to emitted output for inputs that previously succeeded
   (including hardening that turns an untyped fault into a documented exception).
 
+The three rules above govern what this library **emits**. Changes to what it **accepts** — the
+parsers' input contract — follow a parallel rule:
+
+- **Accept-set narrowing** ships as **patch** when every newly-rejected input was invalid under the
+  governing RFC, so no conformant peer could have produced it and strict implementations were
+  already rejecting it. It ships as **minor or major** when it rejects input that was spec-valid,
+  because a conformant peer could legitimately still be sending it.
+
+The asymmetry with the emitted-output rules is deliberate. Emitting different bytes changes what
+*every* consumer sees, so a conformance correction there earns a minor. Refusing bytes that were
+never valid changes behavior only for peers that were already broken against the wider ecosystem —
+so it does not, by itself, earn more than a patch. Any release that narrows the accept-set MUST
+still name the concrete upgrade-window consequence in the CHANGELOG, including whether this
+library's own earlier output is among what is now rejected.
+
 Any minor release carrying a wire-format correction MUST describe the observable delta in the
 CHANGELOG and state what a consumer has to do about it.
 
@@ -92,3 +107,17 @@ The public API did not change, and the removed member was part of an invalid env
 shipped as **minor**, not major — while the CHANGELOG spelled out that verifiers reading only the
 unprotected `kid` must fall back to the protected header (tracked downstream in
 `moisesja/didcomm-dotnet#70`).
+
+**Worked example — 1.2.1 (issue #19).** `JwsParser` started rejecting JWS whose protected and
+unprotected header parameter-name sets overlap, per RFC 7515 §5.2 step 4 — the verify-side half of
+the 1.2.0 fix. This shipped as **patch** under the accept-set rule: the public API is unchanged,
+nothing about emitted output changed, and the newly-rejected shape was invalid, so nimbus-jose-jwt
+and every other strict verifier already refused it.
+
+The trade-off is on the record, because it is the uncomfortable case for this rule: the rejected
+shape is precisely what **this library itself emitted up to 1.1.1**, so a 1.2.1 verifier cannot
+verify envelopes from a peer still on ≤ 1.1.1, and consumers tracking a floating `1.2.*` range pick
+that up without a deliberate opt-in. It stays a patch because the fix is not optional — no future
+version can accept that shape and remain conformant — and because the resolution is to upgrade
+senders to ≥ 1.2.0 rather than to pin verifiers back. A future accept-set narrowing that lacks
+*both* of those properties should be treated as minor instead.
