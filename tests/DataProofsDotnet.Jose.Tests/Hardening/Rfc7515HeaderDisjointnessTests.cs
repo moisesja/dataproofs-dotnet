@@ -14,6 +14,13 @@ namespace DataProofsDotnet.Jose.Tests.Hardening;
 /// verifiers (nimbus-jose-jwt, used by didcomm-jvm) rejected every such JWS. The fix keeps the
 /// <c>kid</c> protected-only; these tests pin the disjointness invariant for both JSON
 /// serializations so it cannot regress.
+/// <para>
+/// Since issue #25 the placement is selectable (<see cref="JwsKidPlacement"/>) and defaults to the
+/// unprotected header for the DIDComm signed media type. None of these cases passes a <c>typ</c>,
+/// so they all exercise the protected-only default and remain the #17 regression pin;
+/// <c>Conformance/DidCommKidPlacementTests</c> covers the other placements. Disjointness is
+/// invariant across all of them — the kid goes in exactly one header, never both.
+/// </para>
 /// </summary>
 public class Rfc7515HeaderDisjointnessTests
 {

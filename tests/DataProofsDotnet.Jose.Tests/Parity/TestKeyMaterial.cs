@@ -25,6 +25,13 @@ internal sealed class TestKeyMaterial
     /// <summary>A NetCrypto-backed JWS signer over this key (signing-capable key types only).</summary>
     public JwsSigner Signer => new(new KeyPairSigner(_pair, _netCrypto), PrivateJwk.Kid);
 
+    /// <summary>The same signer with an explicit <c>kid</c> placement (issue #25).</summary>
+    public JwsSigner SignerWith(JwsKidPlacement placement)
+        => new(new KeyPairSigner(_pair, _netCrypto), PrivateJwk.Kid, placement);
+
+    /// <summary>A signer over this key that carries no <c>kid</c> at all.</summary>
+    public JwsSigner KidlessSigner => new(new KeyPairSigner(_pair, _netCrypto));
+
     private TestKeyMaterial(KeyPair pair, Jwk privateJwk, Jwk publicJwk)
     {
         _pair = pair;

@@ -268,8 +268,13 @@ public static class JwsParser
                 // key material (defense in depth). ExtractSignatures has already enforced that a
                 // parameter name — including kid — cannot occur in both headers. Empty only when
                 // neither header has one.
-                var verifiedKid = !string.IsNullOrEmpty(header.Kid) ? header.Kid : (sig.Kid ?? string.Empty);
-                return new JwsParseResult(header.Alg, verifiedKid, payloadBytes) { Typ = header.Typ };
+                var kidIsProtected = !string.IsNullOrEmpty(header.Kid);
+                var verifiedKid = kidIsProtected ? header.Kid : (sig.Kid ?? string.Empty);
+                return new JwsParseResult(header.Alg, verifiedKid, payloadBytes)
+                {
+                    Typ = header.Typ,
+                    SignerKidIsProtected = kidIsProtected,
+                };
             }
             catch (Exception ex) when (ex is JoseCryptoException or MalformedJoseException)
             {
@@ -423,4 +428,38 @@ public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid,
     /// prevent cross-context token confusion.
     /// </summary>
     public string? Typ { get; init; }
+
+    /// <summary>
+    /// Whether <see cref="SignerKid"/> came from the integrity-protected header — that is, whether
+    /// the signature covers it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>false</c> means the kid was read from the per-signature unprotected header, or that
+    /// neither header carried one (<see cref="SignerKid"/> is then empty). Both cases are RFC 7515
+    /// §4.1.4-conformant, and DIDComm v2.1 mandates the unprotected placement in practice.
+    /// </para>
+    /// <para>
+    /// Check this before using <see cref="SignerKid"/> for anything beyond recording which key
+    /// verified. RFC 7515 §6 draws the line exactly here: these parameters "MUST be integrity
+    /// protected <em>if</em> the information that they convey is to be utilized in a trust
+    /// decision; however, if the only information used in the trust decision is a key, these
+    /// parameters need not be integrity protected". An unprotected kid is sound as a key hint —
+    /// a rewritten one resolves a key the attacker cannot sign under, so verification fails — but
+    /// it is <b>not</b> sound as a proof-purpose, verification-relationship, or authorization
+    /// input: any identifier that resolves to the same key material verifies just as well, and a
+    /// DID document commonly lists one key under several verification-method ids. A verifier with
+    /// such a policy should require <c>SignerKidIsProtected</c>, which also fails closed when no
+    /// kid was present at all.
+    /// </para>
+    /// <para>
+    /// This describes the signature that actually verified — first-verifying-signature-wins. In a
+    /// multi-signature envelope mixing both placements, reordering the <c>signatures</c> array can
+    /// therefore change the reported value, so a "require a signed kid" policy may reject an
+    /// envelope that does contain a valid protected-kid signature. That direction is safe (it
+    /// rejects, it never trusts an unprotected kid as a protected one), but a caller needing every
+    /// signature's placement must inspect the envelope itself.
+    /// </para>
+    /// </remarks>
+    public bool SignerKidIsProtected { get; init; }
 }

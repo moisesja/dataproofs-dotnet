@@ -29,10 +29,19 @@ public sealed class JwsSigner
     /// <summary>Create a JWS signer over a NetCrypto signer.</summary>
     /// <param name="signer">The NetCrypto signer holding (or proxying) the private key.</param>
     /// <param name="kid">Optional key identifier written into the JWS headers.</param>
+    /// <param name="kidPlacement">
+    /// Which JWS header carries <paramref name="kid"/>. Defaults to
+    /// <see cref="JwsKidPlacement.Auto"/> — the protected header for every media type except the
+    /// DIDComm signed one, which requires the per-signature unprotected header (issue #25).
+    /// Ignored when <paramref name="kid"/> is null or empty.
+    /// </param>
     /// <exception cref="NotSupportedException">When the signer's key type has no v1 JWS algorithm (PRD FR-13).</exception>
-    public JwsSigner(ISigner signer, string? kid = null)
+    /// <exception cref="ArgumentOutOfRangeException">When <paramref name="kidPlacement"/> is not a defined enum value.</exception>
+    public JwsSigner(ISigner signer, string? kid = null, JwsKidPlacement kidPlacement = JwsKidPlacement.Auto)
     {
         Signer = signer ?? throw new ArgumentNullException(nameof(signer));
+        if (!Enum.IsDefined(kidPlacement))
+            throw new ArgumentOutOfRangeException(nameof(kidPlacement), kidPlacement, "Undefined JWS kid placement.");
         (Algorithm, _p1363CoordinateLength) = signer.KeyType switch
         {
             KeyType.Ed25519 => (JoseAlgorithms.EdDSA, 0),
@@ -43,6 +52,7 @@ public sealed class JwsSigner
                 $"Key type '{signer.KeyType}' has no JWS algorithm in v1 (PRD FR-13: EdDSA, ES256K, ES256, ES384)."),
         };
         Kid = kid;
+        KidPlacement = kidPlacement;
     }
 
     /// <summary>The underlying NetCrypto signer.</summary>
@@ -53,6 +63,9 @@ public sealed class JwsSigner
 
     /// <summary>The key identifier written into the JWS headers; <c>null</c> to omit.</summary>
     public string? Kid { get; }
+
+    /// <summary>Which JWS header carries <see cref="Kid"/> (see <see cref="JwsKidPlacement"/>).</summary>
+    public JwsKidPlacement KidPlacement { get; }
 
     /// <summary>Sign the JWS signing input and return the signature in JOSE wire format.</summary>
     /// <param name="signingInput">The ASCII bytes of <c>BASE64URL(header) "." BASE64URL(payload)</c>.</param>

@@ -121,3 +121,24 @@ that up without a deliberate opt-in. It stays a patch because the fix is not opt
 version can accept that shape and remain conformant — and because the resolution is to upgrade
 senders to ≥ 1.2.0 rather than to pin verifiers back. A future accept-set narrowing that lacks
 *both* of those properties should be treated as minor instead.
+
+**Worked example — 1.3.0 (issue #25).** `JwsBuilder` gained `JwsKidPlacement` and, under its `Auto`
+default, now emits the signer `kid` in the per-signature **unprotected** header for the DIDComm
+signed media type instead of the protected one. This shipped as **minor**. The public-API half is
+purely additive (an optional constructor parameter, a get-only property, a new enum), so nothing
+existing breaks. The emitted-output half is the interesting one: unlike 1.2.0, the previous bytes
+were *not* invalid — RFC 7515 §6 permits `kid` in either header — so the "correction into
+conformance" clause does not apply. That the old bytes were rejected by both DIDComm reference
+implementations is why the change is worth making, not why it is a minor.
+
+This is the case that shows why "already spec-conformant → major" cannot be read mechanically. Both
+placements are conformant, so the letter of the major rule could be argued. It stays minor because
+the scope is one media type whose only real consumers are DIDComm implementations that were
+rejecting the old output outright — there was no working conformant peer to break — and because the
+.NET API contract that SemVer primarily governs here is untouched. A future emitted-output change
+that lacks that narrow, demonstrably-broken-audience scope should be treated as major.
+
+The rule these two examples together imply, stated for the next time: **an emitted-output change
+earns a major only when a conformant peer could plausibly be depending on the old bytes today.**
+Ask who is actually reading the output, and whether they were succeeding. "The old bytes were
+technically legal" is not enough on its own.
