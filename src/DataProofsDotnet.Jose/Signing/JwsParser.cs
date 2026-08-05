@@ -258,7 +258,8 @@ public static class JwsParser
                 // Surface the kid that resolved the verifying key, and say which header it came
                 // from. RFC 7515 §4.1.4 permits 'kid' in either header; ExtractSignatures has
                 // already enforced that it cannot be in both. Empty only when neither header has
-                // one. DIDComm v2.1 places it in the unprotected header, so dropping it (the
+                // one. DIDComm v2.1 states no placement rule, but its Appendix C.2 examples and
+                // both reference implementations use the unprotected header, so dropping it (the
                 // behavior before #10) broke signed/authcrypt interop.
                 //
                 // What a caller may conclude differs sharply by header, and the flag is the only
@@ -437,7 +438,8 @@ public static class JwsParser
 /// identifier that resolves the same key material — a resolver pinned to one key, or a DID document
 /// listing one key under several verification-method ids — and the signature still verifies.
 /// The protected header's <c>kid</c> is preferred whenever the member is present, including a valid
-/// empty-string value. DIDComm v2.1 places the signer kid in the unprotected header (issue #10).</param>
+/// empty-string value. DIDComm v2.1 states no placement rule, but its published examples and both
+/// reference implementations carry the signer kid unprotected (issue #10).</param>
 /// <param name="PayloadBytes">Raw decoded payload bytes.</param>
 public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid, byte[] PayloadBytes)
 {

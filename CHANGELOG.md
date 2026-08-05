@@ -102,9 +102,11 @@ rebuilt), and is recorded here because it is a real migration step, not a compat
 
 ### Why this is a minor and not a major release
 
-Per the versioning policy in [`RELEASING.md`](RELEASING.md). The public .NET API change is purely
-additive — an optional constructor parameter, a get-only property, and a new enum — so `ac-7`
-stays green and no existing call site changes. The emitted-output change is confined to the DIDComm
+Per the versioning policy in [`RELEASING.md`](RELEASING.md). The public .NET API change is
+**source-additive** — an optional constructor parameter, two get-only properties, and a new enum —
+so `ac-7` stays green and no existing call site changes. It is *not* binary-additive; see the
+migration note above, which that policy classifies as a rebuild step rather than a major bump
+because binary compatibility is explicitly out of scope for this project. The emitted-output change is confined to the DIDComm
 signed media type, where the previous bytes were rejected by both reference implementations, so no
 conformant DIDComm peer could have been relying on them. It is a minor rather than a patch
 precisely because the wire changed for that media type.
@@ -152,11 +154,14 @@ Two things ship to address it:
   7515 §4.1.4 and DIDComm v2.1 both leave placement open. What drives `Auto` is DIDComm's published
   Appendix C.2 examples and reference-implementation interoperability, and the docs now say so.
 
-This exposure is inherent to the DIDComm v2.1 wire format, not created by this library — every
-conformant DIDComm implementation carries it, and this library's parser has accepted
-unprotected-kid envelopes from peers since #10. What changed in 1.3.0 is that our own DIDComm
-output now has the property too. Callers who need the signer identity bound into the signed bytes
-should pass `JwsKidPlacement.Protected`, which remains the default for every non-DIDComm media type.
+The exposure follows from the unprotected *placement*, not from DIDComm conformance — DIDComm v2.1
+states no placement rule, so an implementation using a protected `kid` is equally conformant and
+does not carry it. What makes it near-universal in practice is that the Appendix C.2 examples and
+both reference implementations use the unprotected header, so interoperating implementations
+converge on that shape. This library's parser has accepted unprotected-kid envelopes from peers
+since #10; what changed in 1.3.0 is that our own DIDComm output now has the property too. Callers
+who need the signer identity bound into the signed bytes should pass `JwsKidPlacement.Protected`,
+which remains the default for every non-DIDComm media type.
 
 ### Also fixed in this release (found by the adversarial review, not by issue #25)
 
@@ -356,7 +361,7 @@ should pass `JwsKidPlacement.Protected`, which remains the default for every non
   unprotected header** (issue #10). The parser already resolves the verifying key from the
   per-signature unprotected `header.kid` and verifies against it, but previously returned
   `JwsParseResult.SignerKid == ""` whenever the integrity-protected header carried no `kid` —
-  discarding the very identity the signature proved. `SignerKid` is now the `kid` that resolved
+  discarding the `kid` that selected the verifying key. `SignerKid` is now the `kid` that resolved
   the key under which the signature verified (the protected header is preferred when present;
   otherwise the unprotected `kid` is reported). This is sound because verification has already
   succeeded: a rewritten unprotected `kid` resolves a different key under which the signature
@@ -366,6 +371,20 @@ should pass `JwsKidPlacement.Protected`, which remains the default for every non
   JWS header (the five Appendix C.2/C.3 interop vectors that previously failed). Unchanged:
   a `kid` in the protected header is still reported as before, and a JWS whose protected and
   unprotected `kid` **disagree** is still rejected (`MalformedJoseException`).
+
+  > **Correction (2026-08-05, issue #25).** The security reasoning above is **wrong**, and is left
+  > in place rather than rewritten because it is what readers acted on. Two claims do not hold:
+  > that the reported `kid` is "the identity the signature proved", and that "a rewritten
+  > unprotected `kid` resolves a different key … so a forged `kid` never reaches the result".
+  > Both assume the caller's `Func<string, Jwk?>` resolver is **injective**, which nothing in this
+  > library requires. When two identifiers resolve the same key material — a resolver pinned to a
+  > single key, or an ordinary DID document listing one key under both an `authentication` and an
+  > `assertionMethod` verification-method id — an intermediary can rewrite the unprotected `kid`
+  > to the other identifier, the signature still verifies, and `SignerKid` reports the attacker's
+  > choice. The behavior 1.0.1 introduced is correct and stays: an unprotected `kid` is a valid
+  > **key-selection hint** and reporting it is right. What was overstated is its status as an
+  > authenticated **identity**. Since 1.3.0, `JwsParseResult.SignerKidIsProtected` distinguishes
+  > the two cases; see that release's security note.
 
 ## [1.0.0] - 2026-06-14
 
