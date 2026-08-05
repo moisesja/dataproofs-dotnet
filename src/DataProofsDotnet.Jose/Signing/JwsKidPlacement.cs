@@ -27,7 +27,10 @@ namespace DataProofsDotnet.Jose.Signing;
 public enum JwsKidPlacement
 {
     /// <summary>
-    /// Choose the placement the declared media type requires (the default).
+    /// Choose the placement the declared media type calls for (the default). No specification
+    /// mandates either placement — RFC 7515 §4.1.4 leaves it open and DIDComm v2.1 states no rule;
+    /// what drives this choice is DIDComm's published examples and reference-implementation
+    /// interoperability.
     /// <para>
     /// For a JSON serialization whose <c>typ</c> is the DIDComm signed media type
     /// (<c>application/didcomm-signed+json</c>, or the bare <c>didcomm-signed+json</c> — DIDComm

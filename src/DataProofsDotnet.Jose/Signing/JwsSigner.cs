@@ -32,8 +32,11 @@ public sealed class JwsSigner
     /// <param name="kidPlacement">
     /// Which JWS header carries <paramref name="kid"/>. Defaults to
     /// <see cref="JwsKidPlacement.Auto"/> — the protected header for every media type except the
-    /// DIDComm signed one, which requires the per-signature unprotected header (issue #25).
-    /// Ignored when <paramref name="kid"/> is null or empty.
+    /// DIDComm signed one, where the per-signature unprotected header is used instead. No
+    /// specification requires that: RFC 7515 §4.1.4 and DIDComm v2.1 both leave placement open,
+    /// but DIDComm's Appendix C.2 examples and both reference implementations use the unprotected
+    /// header, and they reject an envelope without it (issue #25). Ignored when
+    /// <paramref name="kid"/> is null or empty.
     /// </param>
     /// <exception cref="NotSupportedException">When the signer's key type has no v1 JWS algorithm (PRD FR-13).</exception>
     /// <exception cref="ArgumentOutOfRangeException">When <paramref name="kidPlacement"/> is not a defined enum value.</exception>

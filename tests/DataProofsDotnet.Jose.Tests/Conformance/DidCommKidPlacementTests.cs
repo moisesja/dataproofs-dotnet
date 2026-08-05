@@ -429,6 +429,42 @@ public sealed class DidCommKidPlacementTests
         resolverWasCalled.Should().BeFalse("the header is rejected before any key resolution");
     }
 
+    /// <summary>
+    /// RFC 7515 §4.1.4 requires <c>kid</c> to be a string, not a non-empty one, so a protected
+    /// <c>"kid":""</c> is valid and — being in the protected header — is covered by the signature.
+    /// <see cref="JwsParseResult.SignerKidIsProtected"/> must therefore report header
+    /// <em>membership</em>, not value emptiness: testing <c>!string.IsNullOrEmpty(header.Kid)</c>
+    /// cannot tell a signed empty kid from an absent one, and would tell a verifier the kid was
+    /// unprotected when the signature did in fact cover it.
+    /// </summary>
+    [Fact]
+    public async Task AProtectedEmptyStringKid_IsReportedAsProtected_BecauseTheSignatureCoversTheMember()
+    {
+        var alice = TestKeyMaterial.Generate(KeyType.Ed25519, AliceKey1);
+        // Sign a protected header carrying kid:"" — the builder's empty-kid sentinel drops the
+        // member, so this is hand-rolled to produce the shape a conformant peer may legitimately
+        // send. A resolver is documented as free to map "" to a default key. Ed25519 signatures
+        // are already JOSE-native, so the raw ISigner output needs no transcoding.
+        var protectedB64u = Base64Url.Encode(Encoding.UTF8.GetBytes("""{"alg":"EdDSA","kid":""}"""));
+        var payloadB64u = Base64Url.Encode(Payload);
+        var signingInput = Encoding.ASCII.GetBytes($"{protectedB64u}.{payloadB64u}");
+        var signature = Base64Url.Encode(
+            await alice.Signer.Signer.SignAsync(signingInput, CancellationToken.None));
+
+        var json = JsonSerializer.Serialize(new
+        {
+            payload = payloadB64u,
+            @protected = protectedB64u,
+            signature,
+        });
+
+        var result = JwsParser.Parse(json, kid => kid == string.Empty ? alice.PublicJwk : null, Jose);
+
+        result.SignerKid.Should().BeEmpty();
+        result.SignerKidIsProtected.Should().BeTrue(
+            "the kid member was present in the protected header, so the signature covers it");
+    }
+
     [Theory]
     [InlineData("[1,2]")]
     [InlineData("\"hello\"")]

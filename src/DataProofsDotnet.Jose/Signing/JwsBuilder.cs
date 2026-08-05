@@ -37,7 +37,8 @@ public static class JwsBuilder
     /// <summary>
     /// Build a JSON-serialization JWS: Flattened when exactly one signer, General when two or
     /// more (RFC 7515 §7.2) — or always General when <paramref name="typ"/> is the DIDComm signed
-    /// media type, which is the form its reference implementations require.
+    /// media type. DIDComm v2.1 permits either form, but didcomm-python 0.3.2 rejects an envelope
+    /// without a <c>signatures</c> array, so General is what interoperates.
     /// </summary>
     /// <param name="payload">Payload bytes; base64url-encoded as the JWS payload.</param>
     /// <param name="signers">One or more signers. Each contributes one signature entry.</param>
@@ -168,10 +169,11 @@ public static class JwsBuilder
                 return kid;
 
             default:
-                // Auto: the placement the declared media type requires. DIDComm v2.1 signed
-                // messages carry the kid unprotected (Appendix C.2; both reference implementations
-                // reject an envelope without it — issue #25). Everything else, and all of compact,
-                // keeps it under the signature.
+                // Auto: the placement the declared media type calls for. No spec mandates one —
+                // RFC 7515 §4.1.4 and DIDComm v2.1 both leave it open — but every signed example
+                // in DIDComm v2.1 Appendix C.2 carries the kid unprotected, and both reference
+                // implementations reject an envelope without it (issue #25). Everything else, and
+                // all of compact, keeps it under the signature.
                 return unprotectedHeaderAvailable && IsDidCommSignedMediaType(typ) ? kid : null;
         }
     }

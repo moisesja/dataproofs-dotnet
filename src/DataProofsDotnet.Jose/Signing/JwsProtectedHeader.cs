@@ -19,6 +19,20 @@ internal sealed class JwsProtectedHeader
     [JsonPropertyName("kid")]
     public string Kid { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether the decoded JSON actually carried a <c>kid</c> member, as distinct from
+    /// <see cref="Kid"/> holding the empty-string sentinel that also means "absent".
+    /// </summary>
+    /// <remarks>
+    /// RFC 7515 §4.1.4 requires <c>kid</c> to be a string, not a non-empty string, so
+    /// <c>"kid":""</c> is a valid — and, in the protected header, signed — member.
+    /// <see cref="JwsParseResult.SignerKidIsProtected"/> reports header membership rather than
+    /// value emptiness so that case is not misreported as "no protected kid". Always <c>false</c>
+    /// on a header built for signing rather than decoded; only the parse path reads it.
+    /// </remarks>
+    [JsonIgnore]
+    public bool HasKidMember { get; private set; }
+
     [JsonPropertyName("typ")]
     public string? Typ { get; set; }
 
@@ -81,11 +95,13 @@ internal sealed class JwsProtectedHeader
             // NullReferenceException/ArgumentNullException instead of MalformedJoseException. This
             // is the protected-header half of the check ReadUnprotectedKid already performs on the
             // unprotected header (issue #15).
-            if (document.RootElement.TryGetProperty("kid", out var kid) && kid.ValueKind != JsonValueKind.String)
+            var hasKidMember = document.RootElement.TryGetProperty("kid", out var kid);
+            if (hasKidMember && kid.ValueKind != JsonValueKind.String)
                 throw new MalformedJoseException("JWS protected header 'kid' must be a string.");
 
             var header = document.RootElement.Deserialize<JwsProtectedHeader>(HeaderContext.Header)
                 ?? throw new MalformedJoseException("JWS protected header decoded to null.");
+            header.HasKidMember = hasKidMember;
 
             if (!collectMemberNames)
                 return (header, null);

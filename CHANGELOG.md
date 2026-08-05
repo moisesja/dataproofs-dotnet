@@ -90,6 +90,16 @@ rejecting — unchanged from 1.2.1). A 1.2.x verifier accepts 1.3.0's output too
 unprotected-kid path is exactly what #10 added. The peers that could not read 1.2.x output are the
 external ones — didcomm-jvm and didcomm-python — and 1.3.0 is what fixes them.
 
+### Migration note — recompilation required for the `JwsSigner` constructor
+
+Source-compatible, **not binary-compatible**. `JwsSigner..ctor(ISigner, string)` is replaced by
+`JwsSigner..ctor(ISigner, string, JwsKidPlacement)`; an optional parameter does not preserve the
+old CLR method token, so an already-compiled dependent that was built against 1.2.x throws
+`MissingMethodException` if the 1.3.0 assembly is dropped in without a rebuild. No source change is
+needed — recompile against 1.3.0 and existing call sites bind to the new default. This is accepted
+under this repository's policy (binary compatibility is not a release constraint; downstream is
+rebuilt), and is recorded here because it is a real migration step, not a compatibility guarantee.
+
 ### Why this is a minor and not a major release
 
 Per the versioning policy in [`RELEASING.md`](RELEASING.md). The public .NET API change is purely
@@ -124,13 +134,23 @@ disjointness (#19). A pinned-key or single-key resolver has the same exposure in
 
 Two things ship to address it:
 
-- **`JwsParseResult.SignerKidIsProtected`** (new) — `true` only when the verified `kid` came from
-  the integrity-protected header. It is `false` for the unprotected placement *and* when no `kid`
-  was carried at all, so `if (!result.SignerKidIsProtected) reject;` fails closed. Before this,
-  a verifier had no way to tell the two placements apart, which made
-  `JwsKidPlacement.Protected` a mitigation only the *producer* could apply.
-- The `JwsKidPlacement.Unprotected` and `SignerKidIsProtected` documentation now states the §6
-  precondition rather than only its exemption.
+- **`JwsParseResult.SignerKidIsProtected`** (new) — `true` when the protected header carried a
+  `kid` **member**, so the signature covers it. It is `false` for the unprotected placement *and*
+  when no `kid` was carried at all, so `if (!result.SignerKidIsProtected) reject;` fails closed.
+  Before this, a verifier had no way to tell the two placements apart, which made
+  `JwsKidPlacement.Protected` a mitigation only the *producer* could apply. The flag reports
+  member presence rather than value emptiness: RFC 7515 §4.1.4 requires `kid` to be a string, not a
+  non-empty one, so a signed `"kid":""` is valid and is correctly reported as protected.
+- **The `SignerKid` documentation itself now carries the qualification**, not just
+  `SignerKidIsProtected`. The previous text — and the corresponding parser comment — asserted that
+  a forged `kid` "resolves a different key and fails to verify", which is exactly the claim this
+  release's own regression test disproves. `SignerKid`, `SignerKidIsProtected`,
+  `JwsKidPlacement.Unprotected`, and the inline parser rationale now agree: when
+  `SignerKidIsProtected` is `false`, `SignerKid` is the key-selection hint that resolved the
+  verifying key and nothing more.
+- **The XML docs no longer claim DIDComm *requires* the unprotected placement.** It does not; RFC
+  7515 §4.1.4 and DIDComm v2.1 both leave placement open. What drives `Auto` is DIDComm's published
+  Appendix C.2 examples and reference-implementation interoperability, and the docs now say so.
 
 This exposure is inherent to the DIDComm v2.1 wire format, not created by this library — every
 conformant DIDComm implementation carries it, and this library's parser has accepted

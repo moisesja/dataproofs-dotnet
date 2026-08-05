@@ -255,20 +255,33 @@ public static class JwsParser
                     continue;
                 }
 
-                // Surface the kid that resolved the *verifying* key as the verified signer identity,
-                // preferring the integrity-protected header when it carries one. RFC 7515 §4.1.4
-                // permits 'kid' in either header; it is a hint and is not part of the signed input.
-                // Reporting the unprotected kid here is safe BECAUSE verification has already
-                // succeeded: an attacker who rewrites the unprotected kid to K' makes us resolve K''s
-                // key, under which this signature cannot verify (they do not hold K''s private key),
-                // so a forged kid never reaches this line. The kid that produced a successful
-                // verification therefore IS the signer's. DIDComm v2.1 carries the signer kid only in
-                // the unprotected header, so dropping it (the former behavior) broke signed/authcrypt
-                // conformance (issue #10). Downstream callers re-check the kid against the resolved
-                // key material (defense in depth). ExtractSignatures has already enforced that a
-                // parameter name — including kid — cannot occur in both headers. Empty only when
-                // neither header has one.
-                var kidIsProtected = !string.IsNullOrEmpty(header.Kid);
+                // Surface the kid that resolved the verifying key, and say which header it came
+                // from. RFC 7515 §4.1.4 permits 'kid' in either header; ExtractSignatures has
+                // already enforced that it cannot be in both. Empty only when neither header has
+                // one. DIDComm v2.1 places it in the unprotected header, so dropping it (the
+                // behavior before #10) broke signed/authcrypt interop.
+                //
+                // What a caller may conclude differs sharply by header, and the flag is the only
+                // way to tell:
+                //
+                //  * Protected — the signature covers the kid, so it is an authenticated
+                //    statement by the signer.
+                //  * Unprotected — the kid is ONLY the key-selection hint that happened to resolve
+                //    the verifying key. It is NOT an authenticated identity. The tempting argument
+                //    ("a rewritten kid resolves a key the attacker cannot sign under, so it fails")
+                //    holds only if resolveSignerPublicJwk is injective, and nothing here requires
+                //    that: a resolver pinned to one key, or an ordinary DID document listing the
+                //    same key under two verification-method ids, both let an intermediary relabel
+                //    the kid to another identifier that resolves the same key material — the
+                //    signature still verifies and this line reports the attacker's choice. That is
+                //    exactly the case RFC 7515 §6 carves out by making its exemption conditional on
+                //    the kid feeding nothing but key selection.
+                //
+                // Membership, not emptiness, decides the flag: RFC 7515 §4.1.4 requires 'kid' to be
+                // a string, not a non-empty one, so a signed "kid":"" is valid and must not be
+                // reported as unprotected (the Kid property alone cannot distinguish it from an
+                // absent member, which is also the empty-string sentinel).
+                var kidIsProtected = header.HasKidMember;
                 var verifiedKid = kidIsProtected ? header.Kid : (sig.Kid ?? string.Empty);
                 return new JwsParseResult(header.Alg, verifiedKid, payloadBytes)
                 {
@@ -413,12 +426,18 @@ public static class JwsParser
 
 /// <summary>Outcome of a successful JWS parse: payload bytes plus verified signer metadata.</summary>
 /// <param name="SignatureAlgorithm">JOSE <c>alg</c> of the verified signature (e.g. <c>"EdDSA"</c>).</param>
-/// <param name="SignerKid">The verified signer key identifier: the <c>kid</c> that resolved the
-/// key under which the signature verified. The integrity-protected header's <c>kid</c> is preferred
-/// when present; otherwise the per-signature unprotected header's <c>kid</c> is reported, which is
-/// sound because verification already succeeded under the key that kid resolved (a forged kid
-/// resolves a different key and fails to verify). Empty only when neither header carried a
-/// <c>kid</c>. DIDComm v2.1 places the signer kid in the unprotected header (issue #10).</param>
+/// <param name="SignerKid">The <c>kid</c> that resolved the key under which the signature verified.
+/// <b>Check <see cref="JwsParseResult.SignerKidIsProtected"/> before treating this as a signer
+/// identity.</b> When that flag is <c>true</c> the signature covers the <c>kid</c> and it is an
+/// authenticated statement by the signer. When it is <c>false</c> — the kid came from the
+/// per-signature unprotected header, or neither header carried one and this is empty — the value is
+/// <i>only</i> the key-selection hint that happened to resolve the verifying key: it is not
+/// authenticated, and must not be used as a proof purpose, verification relationship, or
+/// authorization input. An intermediary can rewrite an unprotected <c>kid</c> to any other
+/// identifier that resolves the same key material — a resolver pinned to one key, or a DID document
+/// listing one key under several verification-method ids — and the signature still verifies.
+/// The protected header's <c>kid</c> is preferred whenever the member is present, including a valid
+/// empty-string value. DIDComm v2.1 places the signer kid in the unprotected header (issue #10).</param>
 /// <param name="PayloadBytes">Raw decoded payload bytes.</param>
 public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid, byte[] PayloadBytes)
 {
@@ -435,22 +454,29 @@ public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid,
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>false</c> means the kid was read from the per-signature unprotected header, or that
-    /// neither header carried one (<see cref="SignerKid"/> is then empty). Both cases are RFC 7515
-    /// §4.1.4-conformant, and DIDComm v2.1 mandates the unprotected placement in practice.
+    /// <c>true</c> whenever the protected header carried a <c>kid</c> member — including a valid
+    /// empty-string value, which RFC 7515 §4.1.4 permits (it requires a string, not a non-empty
+    /// one). <c>false</c> means the kid was read from the per-signature unprotected header, or that
+    /// neither header carried one (<see cref="SignerKid"/> is then empty). Both placements are
+    /// §4.1.4-conformant; DIDComm v2.1 states no placement rule, but its Appendix C.2 examples and
+    /// both reference implementations use the unprotected one, which is what
+    /// <see cref="JwsKidPlacement.Auto"/> emits for that media type.
     /// </para>
     /// <para>
     /// Check this before using <see cref="SignerKid"/> for anything beyond recording which key
     /// verified. RFC 7515 §6 draws the line exactly here: these parameters "MUST be integrity
     /// protected <em>if</em> the information that they convey is to be utilized in a trust
     /// decision; however, if the only information used in the trust decision is a key, these
-    /// parameters need not be integrity protected". An unprotected kid is sound as a key hint —
-    /// a rewritten one resolves a key the attacker cannot sign under, so verification fails — but
-    /// it is <b>not</b> sound as a proof-purpose, verification-relationship, or authorization
-    /// input: any identifier that resolves to the same key material verifies just as well, and a
-    /// DID document commonly lists one key under several verification-method ids. A verifier with
-    /// such a policy should require <c>SignerKidIsProtected</c>, which also fails closed when no
-    /// kid was present at all.
+    /// parameters need not be integrity protected". An unprotected kid satisfies that exemption as
+    /// a key hint and nothing more. It is <b>not</b> an authenticated identity: the argument that a
+    /// rewritten kid resolves a key the attacker cannot sign under holds only for an
+    /// <i>injective</i> resolver, and neither this parser nor RFC 7515 requires one. A resolver
+    /// pinned to a single key, or a DID document listing one key under several
+    /// verification-method ids, both let an intermediary relabel the kid to another identifier
+    /// resolving the same key material — verification still succeeds and
+    /// <see cref="SignerKid"/> reports the attacker's choice. A verifier that derives a proof
+    /// purpose, verification relationship, or authorization scope from the kid must therefore
+    /// require <c>SignerKidIsProtected</c>, which also fails closed when no kid was present at all.
     /// </para>
     /// <para>
     /// This describes the signature that actually verified — first-verifying-signature-wins. In a
