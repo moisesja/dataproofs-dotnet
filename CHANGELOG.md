@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`JwsParser` now rejects non-disjoint protected and unprotected JWS headers** (issue #19).
+  RFC 7515 §5.2 step 4 requires the two parameter-name sets to have no members in common,
+  regardless of whether duplicate values match. Both Flattened and General JSON serializations
+  now enumerate the complete raw header namespaces and throw `MalformedJoseException` before key
+  resolution or signature verification when any name overlaps — including `kid`, `alg`, or an
+  extension parameter. The former special case that accepted a matching `kid` in both headers has
+  been removed. Conformant protected-only and unprotected-only `kid` forms remain valid; the latter
+  still resolves and reports the verified signer as required for DIDComm v2.1 (issue #10). No public
+  API or emitted-wire change; this tightens only the parser's accept-set to match strict verifiers.
+  Adjacent structural hardening now also rejects mixed Flattened+General objects, a present
+  unprotected `header` that is not a JSON object, and an empty protected-header string through the
+  parser's documented `MalformedJoseException` contract.
+
+### Changed
+
+- **Bumped the `NetCrypto` dependency from 1.1.0 to 1.4.0** across all packages. The intervening
+  releases add deterministic asymmetric-key zeroization, public EC point decompression, and the
+  `IRecoverableDigestSigner` abstraction for HSM/key-store EVM signing. This library requires no
+  source migration; consumers now resolve NetCrypto ≥ 1.4.0 transitively.
+
 ## [1.2.0] - 2026-08-04
 
 ### Fixed

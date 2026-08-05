@@ -113,10 +113,11 @@ public class HardeningRegressionTests
         result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is the authentic signer (issue #10)");
     }
 
-    // ── Issue #10: a JWS whose protected and unprotected kids DISAGREE is still rejected. Surfacing
-    //    the unprotected kid post-verification does not relax the agreement check.
+    // ── Issue #10, tightened by issue #19: a JWS whose protected and unprotected headers both
+    //    carry kid is rejected structurally. RFC 7515 requires disjoint parameter-name sets, so
+    //    disagreement is no longer a special value-comparison case.
     [Fact]
-    public async Task JwsJson_ConflictingProtectedAndUnprotectedKid_IsRejected()
+    public async Task JwsJson_ConflictingProtectedAndUnprotectedKid_IsRejectedAsNonDisjoint()
     {
         var pair = KeyGen.Generate(KeyType.Ed25519);
         var publicJwk = JwkConversion.ToPublicJwk(pair.KeyType, pair.PublicKey, "k1");
@@ -125,9 +126,8 @@ public class HardeningRegressionTests
         var compact = await JwsBuilder.BuildCompactAsync(Encoding.UTF8.GetBytes("hello"), signerWithKid);
         var parts = compact.Split('.');
 
-        // Same valid signature, but the unprotected header advertises a DIFFERENT kid than the
-        // (integrity-protected) protected header. The resolver returns the real key for either kid so
-        // resolution succeeds and the parser reaches — and trips — the agreement check.
+        // Same valid signature, but the unprotected header also carries kid. Its different value
+        // is immaterial: duplicating the parameter name across the two headers is itself malformed.
         var flattened = new JsonObject
         {
             ["payload"] = parts[1],
@@ -139,7 +139,7 @@ public class HardeningRegressionTests
         Func<string, Jwk?> resolver = _ => publicJwk;
         var act = () => JwsParser.Parse(flattened, resolver, Jose);
 
-        act.Should().Throw<MalformedJoseException>().WithMessage("*does not match the unprotected header*");
+        act.Should().Throw<MalformedJoseException>().WithMessage("*parameter 'kid' appears in both*");
     }
 
     // ── Issue #10: the General (signatures-array) serialization with an unprotected-only kid behaves

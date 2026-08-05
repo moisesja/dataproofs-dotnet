@@ -41,17 +41,7 @@ internal sealed class JwsProtectedHeader
     /// <exception cref="MalformedJoseException">When <paramref name="encoded"/> is not valid base64url-encoded JSON.</exception>
     public static JwsProtectedHeader Decode(string encoded)
     {
-        ArgumentException.ThrowIfNullOrEmpty(encoded);
-        byte[] bytes;
-        try
-        {
-            bytes = Base64Url.Decode(encoded);
-        }
-        catch (FormatException ex)
-        {
-            throw new MalformedJoseException("JWS protected header is not valid base64url.", ex);
-        }
-
+        var bytes = DecodeBytes(encoded);
         try
         {
             return JsonSerializer.Deserialize<JwsProtectedHeader>(bytes, HeaderContext.Header)
@@ -60,6 +50,45 @@ internal sealed class JwsProtectedHeader
         catch (JsonException ex)
         {
             throw new MalformedJoseException("JWS protected header is not valid JSON.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Parse a protected header and retain its exact JSON member-name set. The raw set is needed
+    /// when validating RFC 7515 protected/unprotected header disjointness: extension parameters
+    /// are in the same namespace as modeled parameters such as <c>alg</c> and <c>kid</c>.
+    /// </summary>
+    public static (JwsProtectedHeader Header, IReadOnlySet<string> MemberNames) DecodeWithMemberNames(string encoded)
+    {
+        var bytes = DecodeBytes(encoded);
+
+        try
+        {
+            using var document = JsonDocument.Parse(bytes, JoseJson.StrictDocument);
+            var header = document.RootElement.Deserialize<JwsProtectedHeader>(HeaderContext.Header)
+                ?? throw new MalformedJoseException("JWS protected header decoded to null.");
+            var memberNames = document.RootElement.EnumerateObject()
+                .Select(member => member.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            return (header, memberNames);
+        }
+        catch (JsonException ex)
+        {
+            throw new MalformedJoseException("JWS protected header is not valid JSON.", ex);
+        }
+    }
+
+    private static byte[] DecodeBytes(string encoded)
+    {
+        if (string.IsNullOrEmpty(encoded))
+            throw new MalformedJoseException("JWS protected header is empty.");
+        try
+        {
+            return Base64Url.Decode(encoded);
+        }
+        catch (FormatException ex)
+        {
+            throw new MalformedJoseException("JWS protected header is not valid base64url.", ex);
         }
     }
 }
