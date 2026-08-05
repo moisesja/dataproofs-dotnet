@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **540**
-- Covered by at least one sample: **540**
+- Public members across 6 packages: **543**
+- Covered by at least one sample: **543**
 - Allowlisted (excused, with justification): **0**
 - Uncovered: **0**
 
@@ -442,11 +442,13 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Signing.JwsBuilder (type)`
 - `DataProofsDotnet.Jose.Signing.JwsBuilder.BuildCompactAsync`
 - `DataProofsDotnet.Jose.Signing.JwsBuilder.BuildJsonAsync`
+- `DataProofsDotnet.Jose.Signing.JwsKidPlacement (type)`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult (type)`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult..ctor(String,String,Byte[])`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.PayloadBytes`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKidIsProtected`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.Typ`
 - `DataProofsDotnet.Jose.Signing.JwsParser (type)`
 - `DataProofsDotnet.Jose.Signing.JwsParser.Parse`
@@ -454,9 +456,10 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact`
 - `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact`
 - `DataProofsDotnet.Jose.Signing.JwsSigner (type)`
-- `DataProofsDotnet.Jose.Signing.JwsSigner..ctor(ISigner,String)`
+- `DataProofsDotnet.Jose.Signing.JwsSigner..ctor(ISigner,String,JwsKidPlacement)`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.Kid`
+- `DataProofsDotnet.Jose.Signing.JwsSigner.KidPlacement`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.Signer`
 - `DataProofsDotnet.Jose.VcJose (type)`
 - `DataProofsDotnet.Jose.VcJose.CredentialContentType`

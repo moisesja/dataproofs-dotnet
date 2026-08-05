@@ -5,6 +5,195 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-05
+
+### Added
+
+- **`JwsKidPlacement` — the signer `kid` can now travel in the per-signature unprotected header**
+  (issue [#25](https://github.com/moisesja/dataproofs-dotnet/issues/25)). `JwsSigner` takes an
+  optional third constructor argument, `JwsKidPlacement kidPlacement = JwsKidPlacement.Auto`, and
+  exposes it as a `KidPlacement` property:
+
+  | Value | Effect |
+  | --- | --- |
+  | `Auto` (default) | The placement the declared media type needs — see below. |
+  | `Protected` | Always the integrity-protected header (the 1.2.x behavior), every serialization. |
+  | `Unprotected` | Always the per-signature unprotected `header`. JSON serializations only. |
+
+  Under `Auto`, a JSON-serialized JWS whose `typ` is the DIDComm signed media type —
+  `application/didcomm-signed+json`, or the bare `didcomm-signed+json`, since DIDComm v2.1
+  §Message Formats permits omitting the `application/` prefix — emits
+  `protected = {typ, alg}` plus `header = {kid}`. Every other media type keeps the `kid` in the
+  protected header, and compact serialization always does: RFC 7515 §7.1 gives it no unprotected
+  header to use. `BuildCompactAsync` throws `ArgumentException` when a signer explicitly requests
+  `Unprotected`, rather than silently signing a `kid` the caller asked to leave unsigned.
+
+### Fixed
+
+- **DIDComm v2.1 signed envelopes are interoperable again.** 1.2.0 fixed a genuine RFC 7515 §7.2.1
+  violation (the `kid` was emitted in *both* headers) by making it protected-only — the
+  conservative placement, but not the one DIDComm uses. Every signed envelope in DIDComm v2.1
+  Appendix C.2, and every envelope emitted by the two SICPA reference implementations, carries
+  `protected = {typ, alg}` with `header = {kid}`. With the `kid` protected-only, outbound signed
+  interop for `moisesja/didcomm-dotnet` went from **1-of-2** reference implementations accepting
+  our envelopes to **0-of-2**:
+
+  - didcomm-jvm 0.3.2 — `MalformedMessageException: JWS Unprotected Per-Signature header must be
+    present` (`Unpack.kt:63`).
+  - didcomm-python 0.3.2 — `core/validation.py` requires `signatures[0].header.kid`, and
+    `core/sign.py` reads it unconditionally without consulting the protected header.
+
+  Because `Auto` keys off the media type, a consumer producing DIDComm signed messages is fixed by
+  the version bump alone — no code change.
+
+- **A single-signer DIDComm signed envelope now uses the General JSON serialization**, not the
+  Flattened one. This is a *second* blocker, found while verifying the fix above against
+  didcomm-python's source and not identified in issue #25. `unpack_sign` in `didcomm/core/sign.py`
+  (v0.3.2) calls `validate_jws` on the **raw** envelope dict, and `didcomm/core/validation.py`
+  rejects anything without a `signatures` array — before authlib is ever asked to normalize the
+  serialization. So a Flattened envelope fails there with `MalformedMessageError` no matter where
+  the `kid` sits, and the `kid` fix alone would have left didcomm-python interop broken at 1-of-2.
+  didcomm-jvm is unaffected either way, since nimbus-jose-jwt normalizes both forms.
+
+  DIDComm v2.1 §Message Signing allows either form and requires recipients to process both, so
+  this is an interop accommodation rather than a conformance fix — which is why it is scoped to
+  the DIDComm signed media type. Every other JSON JWS still flattens for a single signer, and the
+  General form is still selected automatically for two or more signers as before.
+
+  With both changes, a freshly built envelope is structurally identical to the authoritative
+  DIDComm v2.1 spec vectors — same root members, same `signatures` array, same protected member
+  set, same unprotected `header` — for all three of their algorithms (EdDSA, ES256, ES256K).
+
+### Wire-format delta
+
+Emitted bytes change **only** for a JSON-serialized JWS whose `typ` is the DIDComm signed media
+type. For that shape, two things change: a single-signer envelope is rendered General
+(`{payload, signatures:[…]}`) instead of Flattened, and — for a kid-bearing signer — `kid` moves
+out of the base64url `protected` header into a per-signature `header` member, which also changes
+the signing input and therefore the signature bytes.
+
+Everything else is byte-identical to 1.2.1: compact JWS, JWT, SD-JWT, SD-JWT VC, VC-JOSE-COSE, and
+every other `typ` in either serialization — including the RFC 7520 cookbook `json_flat`
+byte-compare and the frozen `tests/fixtures/generated/es256k-jws.json` vector, both of which are
+unchanged and still pass.
+
+There is nothing to do on the verify side: `JwsParser` has read the unprotected `kid` first with a
+protected-header fallback since [#10](https://github.com/moisesja/dataproofs-dotnet/issues/10), so
+it accepts both placements, and it has enforced RFC 7515 §5.2 step 4 disjointness since
+[#19](https://github.com/moisesja/dataproofs-dotnet/issues/19). A consumer that reads the signer
+`kid` straight out of DIDComm envelope JSON must now look in the per-signature `header`;
+`JwsParseResult.SignerKid` resolves either placement and always has.
+
+**Interop matrix for DIDComm signed envelopes.** A 1.3.0 verifier accepts output from 1.2.0, 1.2.1,
+and 1.3.0 (but still not from ≤ 1.1.1, whose both-headers shape RFC 7515 §5.2 step 4 requires
+rejecting — unchanged from 1.2.1). A 1.2.x verifier accepts 1.3.0's output too, since the
+unprotected-kid path is exactly what #10 added. The peers that could not read 1.2.x output are the
+external ones — didcomm-jvm and didcomm-python — and 1.3.0 is what fixes them.
+
+### Migration note — recompilation required for the `JwsSigner` constructor
+
+Source-compatible, **not binary-compatible**. `JwsSigner..ctor(ISigner, string)` is replaced by
+`JwsSigner..ctor(ISigner, string, JwsKidPlacement)`; an optional parameter does not preserve the
+old CLR method token, so an already-compiled dependent that was built against 1.2.x throws
+`MissingMethodException` if the 1.3.0 assembly is dropped in without a rebuild. No source change is
+needed — recompile against 1.3.0 and existing call sites bind to the new default. This is accepted
+under this repository's policy (binary compatibility is not a release constraint; downstream is
+rebuilt), and is recorded here because it is a real migration step, not a compatibility guarantee.
+
+### Why this is a minor and not a major release
+
+Per the versioning policy in [`RELEASING.md`](RELEASING.md). The public .NET API change is
+**source-additive** — an optional constructor parameter, two get-only properties, and a new enum —
+so `ac-7` stays green and no existing call site changes. It is *not* binary-additive; see the
+migration note above, which that policy classifies as a rebuild step rather than a major bump
+because binary compatibility is explicitly out of scope for this project. The emitted-output change is confined to the DIDComm
+signed media type, where the previous bytes were rejected by both reference implementations, so no
+conformant DIDComm peer could have been relying on them. It is a minor rather than a patch
+precisely because the wire changed for that media type.
+
+### Security note — read this if you consume `JwsParseResult.SignerKid`
+
+RFC 7515 §6 is the governing text, and its condition is load-bearing: "These Header Parameters MUST
+be integrity protected **if** the information that they convey is to be utilized in a trust
+decision; however, **if the only information used in the trust decision is a key**, these parameters
+need not be integrity protected, since changing them in a way that causes a different key to be used
+will cause the validation to fail."
+
+**As a key hint, an unprotected `kid` is sound.** It selects a key; the signature is then verified
+under that key; a rewritten `kid` resolves a key the attacker cannot sign under, so verification
+fails. `SignerKid` is reported only *after* a successful verify (the reasoning recorded in #10).
+
+**As a signer identity, it is not.** That safety argument holds only while the caller's
+`Func<string, Jwk?>` resolver is injective, and nothing requires it to be. An adversarial review of
+this change demonstrated the gap concretely: when one DID document lists the same key under two
+verification-method ids — an entirely ordinary arrangement, e.g. `#key-1` in `authentication` and
+`#assert-1` in `assertionMethod` — an intermediary can rewrite the unprotected `kid` from one to the
+other. The signature still verifies, and `SignerKid` reports the attacker's choice. A verifier that
+derives a proof purpose, a verification relationship, or an authorization scope from `SignerKid` is
+making a trust decision on an unsigned value. The same rewrite against a protected `kid` is refused
+outright, because adding an unprotected `kid` beside a protected one breaks RFC 7515 §5.2 step 4
+disjointness (#19). A pinned-key or single-key resolver has the same exposure in a stronger form.
+
+Two things ship to address it:
+
+- **`JwsParseResult.SignerKidIsProtected`** (new) — `true` when the protected header carried a
+  `kid` **member**, so the signature covers it. It is `false` for the unprotected placement *and*
+  when no `kid` was carried at all, so `if (!result.SignerKidIsProtected) reject;` fails closed.
+  Before this, a verifier had no way to tell the two placements apart, which made
+  `JwsKidPlacement.Protected` a mitigation only the *producer* could apply. The flag reports
+  member presence rather than value emptiness: RFC 7515 §4.1.4 requires `kid` to be a string, not a
+  non-empty one, so a signed `"kid":""` is valid and is correctly reported as protected.
+- **The `SignerKid` documentation itself now carries the qualification**, not just
+  `SignerKidIsProtected`. The previous text — and the corresponding parser comment — asserted that
+  a forged `kid` "resolves a different key and fails to verify", which is exactly the claim this
+  release's own regression test disproves. `SignerKid`, `SignerKidIsProtected`,
+  `JwsKidPlacement.Unprotected`, and the inline parser rationale now agree: when
+  `SignerKidIsProtected` is `false`, `SignerKid` is the key-selection hint that resolved the
+  verifying key and nothing more.
+- **The XML docs no longer claim DIDComm *requires* the unprotected placement.** It does not; RFC
+  7515 §4.1.4 and DIDComm v2.1 both leave placement open. What drives `Auto` is DIDComm's published
+  Appendix C.2 examples and reference-implementation interoperability, and the docs now say so.
+
+The exposure follows from the unprotected *placement*, not from DIDComm conformance — DIDComm v2.1
+states no placement rule, so an implementation using a protected `kid` is equally conformant and
+does not carry it. What makes it near-universal in practice is that the Appendix C.2 examples and
+both reference implementations use the unprotected header, so interoperating implementations
+converge on that shape. This library's parser has accepted unprotected-kid envelopes from peers
+since #10; what changed in 1.3.0 is that our own DIDComm output now has the property too. Callers
+who need the signer identity bound into the signed bytes should pass `JwsKidPlacement.Protected`,
+which remains the default for every non-DIDComm media type.
+
+### Also fixed in this release (found by the adversarial review, not by issue #25)
+
+- **A non-string `kid` in the *protected* header no longer escapes the parser's exception
+  contract.** `{"alg":"EdDSA","kid":null}` deserialized a `null` onto the header model, and
+  `JwsParser` passes the `kid` to the caller's resolver *outside* its `try` block — so a resolver
+  that dereferenced the argument threw `NullReferenceException`, and a dictionary-backed one threw
+  `ArgumentNullException`, straight through the documented
+  `MalformedJoseException`/`JoseCryptoException` contract. Any caller's
+  `catch (MalformedJoseException)` was bypassed, giving a remote unauthenticated crash on
+  attacker-supplied input. The protected header now rejects a present-but-non-string `kid` per
+  RFC 7515 §4.1.4, before key resolution — the protected-header half of the check
+  `ReadUnprotectedKid` has performed since #15. This narrows the accept-set only for input that was
+  already invalid.
+- **A protected header whose JSON root is not an object, or whose member name is not valid UTF-8,
+  now also fails as `MalformedJoseException`.** `JsonElement`'s member accessors
+  (`TryGetProperty`, `EnumerateObject`) throw `InvalidOperationException`, not `JsonException`, in
+  those cases. The invalid-UTF-8 variant escaped `JwsParser.Parse` before this release; the
+  non-object-root variant was introduced *by* the `kid` check above and caught by a second
+  adversarial pass before it shipped. Both now route through the documented contract on all three
+  entry points — `JwsParser.Parse`, `JwsParser.ParseCompact`, and `VcJose.VerifyCredential`.
+- **The unprotected `header` is now written with the same JSON encoder as the protected one.**
+  `JsonObject.ToJsonString()` defaulted to HTML-escaping while `DeterministicJsonWriter` uses
+  `JoseJson.Default`'s relaxed encoder, so one envelope could render the same `kid` two ways —
+  `did:x#a+b` as `a+b` protected but `a+b` unprotected. Both parse identically; the
+  inconsistency was cosmetic but is the kind that breaks byte-comparison against other
+  implementations' vectors.
+- **Documentation correction.** `BuildCompactAsync`'s and `JwsKidPlacement.Unprotected`'s XML docs
+  said compact rejects a signer requesting `Unprotected`, unconditionally. It rejects one that
+  requests `Unprotected` *and carries a `kid`*; a kid-less signer has nothing to place and is
+  accepted. The behavior was correct and matched `JwsSigner`'s own doc; the other two were wrong.
+
 ## [1.2.1] - 2026-08-04
 
 ### Fixed
@@ -172,7 +361,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unprotected header** (issue #10). The parser already resolves the verifying key from the
   per-signature unprotected `header.kid` and verifies against it, but previously returned
   `JwsParseResult.SignerKid == ""` whenever the integrity-protected header carried no `kid` —
-  discarding the very identity the signature proved. `SignerKid` is now the `kid` that resolved
+  discarding the `kid` that selected the verifying key. `SignerKid` is now the `kid` that resolved
   the key under which the signature verified (the protected header is preferred when present;
   otherwise the unprotected `kid` is reported). This is sound because verification has already
   succeeded: a rewritten unprotected `kid` resolves a different key under which the signature
@@ -182,6 +371,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JWS header (the five Appendix C.2/C.3 interop vectors that previously failed). Unchanged:
   a `kid` in the protected header is still reported as before, and a JWS whose protected and
   unprotected `kid` **disagree** is still rejected (`MalformedJoseException`).
+
+  > **Correction (2026-08-05, issue #25).** The security reasoning above is **wrong**, and is left
+  > in place rather than rewritten because it is what readers acted on. Two claims do not hold:
+  > that the reported `kid` is "the identity the signature proved", and that "a rewritten
+  > unprotected `kid` resolves a different key … so a forged `kid` never reaches the result".
+  > Both assume the caller's `Func<string, Jwk?>` resolver is **injective**, which nothing in this
+  > library requires. When two identifiers resolve the same key material — a resolver pinned to a
+  > single key, or an ordinary DID document listing one key under both an `authentication` and an
+  > `assertionMethod` verification-method id — an intermediary can rewrite the unprotected `kid`
+  > to the other identifier, the signature still verifies, and `SignerKid` reports the attacker's
+  > choice. The behavior 1.0.1 introduced is correct and stays: an unprotected `kid` is a valid
+  > **key-selection hint** and reporting it is right. What was overstated is its status as an
+  > authenticated **identity**. Since 1.3.0, `JwsParseResult.SignerKidIsProtected` distinguishes
+  > the two cases; see that release's security note.
 
 ## [1.0.0] - 2026-06-14
 

@@ -146,6 +146,10 @@ DataProofsDotnet.Jose.MalformedJoseException
 DataProofsDotnet.Jose.MalformedJoseException.MalformedJoseException(string! message) -> void
 DataProofsDotnet.Jose.MalformedJoseException.MalformedJoseException(string! message, System.Exception! innerException) -> void
 DataProofsDotnet.Jose.Signing.JwsBuilder
+DataProofsDotnet.Jose.Signing.JwsKidPlacement
+DataProofsDotnet.Jose.Signing.JwsKidPlacement.Auto = 0 -> DataProofsDotnet.Jose.Signing.JwsKidPlacement
+DataProofsDotnet.Jose.Signing.JwsKidPlacement.Protected = 1 -> DataProofsDotnet.Jose.Signing.JwsKidPlacement
+DataProofsDotnet.Jose.Signing.JwsKidPlacement.Unprotected = 2 -> DataProofsDotnet.Jose.Signing.JwsKidPlacement
 DataProofsDotnet.Jose.Signing.JwsParser
 DataProofsDotnet.Jose.Signing.JwsParseResult
 DataProofsDotnet.Jose.Signing.JwsParseResult.JwsParseResult(string! SignatureAlgorithm, string! SignerKid, byte[]! PayloadBytes) -> void
@@ -155,12 +159,15 @@ DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm.get -> string!
 DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm.init -> void
 DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid.get -> string!
 DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid.init -> void
+DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKidIsProtected.get -> bool
+DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKidIsProtected.init -> void
 DataProofsDotnet.Jose.Signing.JwsParseResult.Typ.get -> string?
 DataProofsDotnet.Jose.Signing.JwsParseResult.Typ.init -> void
 DataProofsDotnet.Jose.Signing.JwsSigner
 DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm.get -> string!
-DataProofsDotnet.Jose.Signing.JwsSigner.JwsSigner(NetCrypto.ISigner! signer, string? kid = null) -> void
+DataProofsDotnet.Jose.Signing.JwsSigner.JwsSigner(NetCrypto.ISigner! signer, string? kid = null, DataProofsDotnet.Jose.Signing.JwsKidPlacement kidPlacement = DataProofsDotnet.Jose.Signing.JwsKidPlacement.Auto) -> void
 DataProofsDotnet.Jose.Signing.JwsSigner.Kid.get -> string?
+DataProofsDotnet.Jose.Signing.JwsSigner.KidPlacement.get -> DataProofsDotnet.Jose.Signing.JwsKidPlacement
 DataProofsDotnet.Jose.Signing.JwsSigner.Signer.get -> NetCrypto.ISigner!
 DataProofsDotnet.Jose.SdJwt.Disclosure
 DataProofsDotnet.Jose.SdJwt.Disclosure.ClaimName.get -> string?

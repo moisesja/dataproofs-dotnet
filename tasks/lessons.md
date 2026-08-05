@@ -113,6 +113,53 @@ into a gate on my own next action. Two things let that happen:
 - When I catch myself thinking "this is what they obviously want, just do it", that is the exact
   condition AGENTS.md §6 does *not* cover. §6 is about not needing hand-holding on **mechanics**.
 
+## 2026-08-05 — Re-review the fix, not just the bug; and check the issue's premise against the spec (issue #25)
+
+**Three things worth keeping from this one. No user correction was needed, but two of them were
+caught only because something re-checked my work.**
+
+**1. The issue's proposed fix had no spec basis, and asking "what does the spec say?" changed the
+design.** Issue #25's primary proposal was to move `kid` to the unprotected header unconditionally.
+Reading RFC 7515 §4.1.4/§6 showed both placements are conformant — §6 explicitly exempts `kid` from
+integrity protection *when the only trust input is a key* — and that DIDComm pins the shape by
+example (Appendix C.2) and by implementation, not by any MUST. So an unconditional move would have
+changed emitted bytes for every consumer with no spec requiring it. The rule: **when an issue
+proposes a fix, verify its normative premise before implementing it.** A well-argued issue from the
+repo owner is still a hypothesis. Quote the normative text in the plan so the reasoning is
+reviewable.
+
+**2. Verifying against the *real* counterparty source found a blocker the issue missed.** The issue
+attributed didcomm-python's rejection to the `kid`. Reading `didcomm/core/sign.py` at the exact
+cited version showed `validate_jws` runs on the **raw** dict and requires a `signatures` array —
+so our Flattened single-signer output would still have been rejected after the `kid` fix, leaving
+interop at 1-of-2 and the issue's actual goal unmet. The rule: **for an interop fix, read the
+counterparty's source at the version named in the report and trace the specific code path, rather
+than trusting the reporter's attribution of the error.** "Both implementations reject us" is the
+observation; *why* is a claim to verify.
+
+**3. A security fix needs its own adversarial pass — the fix is new code too.** Pass 1 found four
+real defects, including one that disproved a confident security claim I had written into the
+CHANGELOG ("denial of service, not forgery" — false whenever the caller's key resolver is not
+injective, e.g. one DID doc listing a key under two verification-method ids). Pass 2, reviewing
+*the fixes*, found that my fix for the null-`kid` crash had **reintroduced the same bug class** —
+`TryGetProperty` throws `InvalidOperationException` on a non-object root, escaping the documented
+exception contract on three entry points, and strictly easier to reach than the bug it replaced.
+The full suite was green the whole time because no test covered a non-object protected-header root.
+The rules:
+- **Send the adversarial reviewer back over its own findings' fixes.** One pass reviews the change;
+  it does not review the repair. Budget for two.
+- **A green suite after a security fix means nothing if the suite never covered the input class.**
+  Ask "what input would distinguish the fixed code from the broken code?" and confirm a test
+  actually fails when the fix is reverted — the reviewer checked exactly this for all five new
+  tests, and that check is what makes them worth having.
+- **When hardening an exception contract, enumerate the exception *types* the API can emit, not
+  just the one in the report.** `JsonElement` throws `InvalidOperationException`, not
+  `JsonException`, for non-object roots and invalid UTF-8 member names — a `catch (JsonException)`
+  looked complete and was not. This is the 2026-06-22 "close every channel" lesson in a new
+  costume: I fixed the reported channel (`null` kid) and opened an adjacent one.
+- **Reordering validation ahead of parsing changes which errors fire first.** Any check moved
+  *before* a deserialize inherits none of deserialize's error handling.
+
 ## 2026-08-04 — A control that only exists in a comment is not a control (issue #20)
 
 **Mistake:** `RELEASING.md`, the `environment: nuget-release` comment in `publish.yml`, PR #18, and
@@ -138,3 +185,19 @@ checkout. A detailed, plausible description of a control read as evidence that t
   not gated.
 - Docs that turn out to be false get a dated correction in place, not a silent rewrite — the
   earlier claim is what someone acted on, so the record has to show it was wrong.
+
+## 2026-08-05 — Compatibility is a policy constraint, not an automatic review veto (PR #26)
+
+**Mistake:** I made removal of the two-argument `JwsSigner` constructor the lead blocking finding
+on PR #26. The binary-compatibility analysis was technically correct, but the repository owner
+does not require binary compatibility for this release and explicitly accepts updating downstream
+systems. I silently promoted a conventional library-maintenance preference into an acceptance
+criterion the owner had not set.
+
+**The rule for myself:**
+- Still identify a binary/source/wire compatibility break precisely; reviewers need the fact.
+- Before using it to request changes, check the repository's stated release policy and the owner's
+  expressed migration tolerance. Compatibility impact is evidence, not automatically a veto.
+- When downstream systems are owned and can move in lockstep, classify an intentional break as a
+  migration/release note unless the user or project explicitly requires compatibility.
+- A waived compatibility constraint does not waive independent correctness or security findings.

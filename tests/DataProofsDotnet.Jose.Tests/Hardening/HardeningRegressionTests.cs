@@ -81,12 +81,19 @@ public class HardeningRegressionTests
         act.Should().Throw<MalformedJoseException>();
     }
 
-    // ── Finding #2 (LOW), CORRECTED by issue #10: the verified SignerKid is the kid that resolved
-    //    the *verifying* key. Issue #6 originally dropped an unprotected-only kid as "unauthenticated";
-    //    issue #10 showed that is wrong AFTER verification — a forged unprotected kid resolves a
-    //    different key under which the signature cannot verify, so a kid that produced a SUCCESSFUL
-    //    verification is authentic. DIDComm v2.1 carries the signer kid only in the unprotected
-    //    header, so this kid MUST be reported (else signed/authcrypt unpack loses the signer identity).
+    // ── Finding #2 (LOW), CORRECTED by issue #10, and the rationale re-corrected by issue #25:
+    //    the reported SignerKid is the kid that resolved the *verifying* key. Issue #6 originally
+    //    dropped an unprotected-only kid entirely, which loses the key-selection hint that DIDComm
+    //    v2.1 signed/authcrypt unpack needs — its envelopes carry the signer kid only there.
+    //    Reporting it is therefore correct, and that is the invariant this test protects.
+    //
+    //    What this test does NOT establish — the issue #10 rationale claimed it did, wrongly — is
+    //    that an unprotected kid is an *authenticated* signer identity. That argument ("a forged
+    //    kid resolves a different key under which the signature cannot verify") holds only for an
+    //    injective resolver, which nothing requires: two identifiers resolving the same key
+    //    material both verify, so an intermediary can relabel between them. See
+    //    Conformance/DidCommKidPlacementTests.ARelabeledUnprotectedKid_..., which pins that
+    //    exposure, and JwsParseResult.SignerKidIsProtected, which lets a verifier refuse it.
     [Fact]
     public async Task JwsJson_KidOnlyInUnprotectedHeader_VerifiesAndReportsTheResolvedSignerKid()
     {
@@ -110,7 +117,7 @@ public class HardeningRegressionTests
         var result = JwsParser.Parse(flattened, resolver, Jose);
 
         Encoding.UTF8.GetString(result.PayloadBytes).Should().Be("hello", "the unprotected kid is a valid resolution hint");
-        result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is the authentic signer (issue #10)");
+        result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is reported as the signer hint (issue #10); it is not authenticated unless SignerKidIsProtected (issue #25)");
     }
 
     // ── Issue #10, tightened by issue #19: a JWS whose protected and unprotected headers both
@@ -170,7 +177,7 @@ public class HardeningRegressionTests
         Func<string, Jwk?> resolver = kid => kid == "k1" ? publicJwk : null;
         var result = JwsParser.Parse(general, resolver, Jose);
 
-        result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is the authentic signer (issue #10)");
+        result.SignerKid.Should().Be("k1", "the kid that resolved the verifying key is reported as the signer hint (issue #10); it is not authenticated unless SignerKidIsProtected (issue #25)");
     }
 
     [Fact]

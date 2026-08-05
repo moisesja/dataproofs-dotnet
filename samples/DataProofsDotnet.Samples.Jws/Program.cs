@@ -15,6 +15,8 @@ using Base64Url = DataProofsDotnet.Jose.Base64Url;
 //     general form with a `signatures` array (multi-signature over one payload).
 //   * DETACHED payload — the payload bytes are omitted from the wire and supplied again
 //     at verification (RFC 7515 Appendix F): useful when the payload travels separately.
+//   * KID PLACEMENT — whether the signer `kid` rides in the integrity-protected header or the
+//     per-signature unprotected one, defaulted from the declared media type.
 // Algorithms here: EdDSA (Ed25519) and ES256K (secp256k1), all signed through NetCrypto ISigner.
 //
 // Constructed by hand (no DI package).
@@ -123,7 +125,97 @@ Console.WriteLine($"  wrong detached payload fails verification: {wrongDetachedF
 Check(wrongDetachedFailed, "the wrong detached payload fails (JoseCryptoException)");
 Console.WriteLine();
 
-// ----------------------------------------------------------- 5. Base64Url helpers (the JOSE encoding)
+// ----------------------------------------------------------- 5. Where the `kid` goes
+Console.WriteLine("--- kid placement (JwsKidPlacement) ---");
+// RFC 7515 puts no rule on this. §4.1.4 calls `kid` a hint, and §6 says such parameters "need not
+// be integrity protected" when the only thing they feed is key selection, "since changing them in
+// a way that causes a different key to be used will cause the validation to fail". What §7.2.1
+// does require is that the protected and unprotected parameter-name sets be DISJOINT — so the kid
+// goes in exactly one header, never both.
+//
+// The default, JwsKidPlacement.Auto, picks the placement the declared media type needs: DIDComm
+// v2.1 signed messages carry it in the per-signature unprotected `header` (Appendix C.2, and both
+// reference implementations reject an envelope without it); everything else keeps it signed.
+KeyPair placementPair = keyGen.Generate(KeyType.Ed25519);
+const string PlacementKid = "did:example:alice#key-1";
+Jwk placementPublicJwk = JwkConversion.ToPublicJwk(KeyType.Ed25519, placementPair.PublicKey, PlacementKid);
+Func<string, Jwk?> placementResolve = k => k == PlacementKid ? placementPublicJwk : null;
+
+JwsSigner autoSigner = new(new KeyPairSigner(placementPair, crypto), PlacementKid);
+Console.WriteLine($"  default placement: {autoSigner.KidPlacement}");
+Check(autoSigner.KidPlacement == JwsKidPlacement.Auto, "JwsKidPlacement.Auto is the default");
+
+// Auto + the DIDComm signed media type -> unprotected per-signature header, in the General form.
+// That media type also pins the serialization: DIDComm v2.1 Appendix C.2 uses the General form
+// even for a single signature, and didcomm-python rejects anything without a `signatures` array.
+string didcomm = await JwsBuilder.BuildJsonAsync(payload, [autoSigner], "application/didcomm-signed+json");
+using (var doc = JsonDocument.Parse(didcomm))
+{
+    JsonElement signature = doc.RootElement.GetProperty("signatures")[0];
+    string protectedJson = Encoding.UTF8.GetString(
+        Base64Url.Decode(signature.GetProperty("protected").GetString()!));
+    string unprotectedKid = signature.GetProperty("header").GetProperty("kid").GetString()!;
+    Console.WriteLine($"  didcomm-signed protected={protectedJson}");
+    Console.WriteLine($"  didcomm-signed unprotected header kid={unprotectedKid}");
+    Check(!protectedJson.Contains("kid", StringComparison.Ordinal), "the DIDComm shape keeps kid out of the protected header");
+    Check(unprotectedKid == PlacementKid, "the DIDComm shape carries kid in the unprotected header");
+    Check(doc.RootElement.GetProperty("signatures").GetArrayLength() == 1, "one signer, one entry in the general form");
+}
+JwsParseResult didcommResult = JwsParser.Parse(didcomm, placementResolve, joseCrypto);
+Check(didcommResult.SignerKid == PlacementKid,
+    "an unprotected kid still resolves the verifying key and is reported after verification");
+
+// A verifier can tell where the reported kid came from — and must, if it uses the kid for more
+// than key selection. RFC 7515 §6 exempts `kid` from integrity protection only when "the only
+// information used in the trust decision is a key". An unprotected kid is a safe hint (rewriting
+// it selects a key the attacker cannot sign under, so verification fails), but it is NOT a safe
+// proof-purpose or authorization input: any id resolving to the same key verifies equally well,
+// and one DID document routinely lists a key under several verification-method ids.
+Console.WriteLine($"  SignerKidIsProtected (didcomm) = {didcommResult.SignerKidIsProtected}");
+Check(!didcommResult.SignerKidIsProtected, "the DIDComm shape reports its kid as unprotected");
+
+// Auto + any other media type -> the kid stays under the signature (no `header` member at all).
+string signedKid = await JwsBuilder.BuildJsonAsync(payload, [autoSigner], "application/example+json");
+using (var doc = JsonDocument.Parse(signedKid))
+{
+    Check(!doc.RootElement.TryGetProperty("header", out _), "a non-DIDComm envelope emits no unprotected header");
+}
+Check(JwsParser.Parse(signedKid, placementResolve, joseCrypto).SignerKidIsProtected,
+    "a protected kid is reported as covered by the signature");
+
+// Either placement can be forced explicitly, whatever the media type.
+JwsSigner forcedUnprotected = new(new KeyPairSigner(placementPair, crypto), PlacementKid, JwsKidPlacement.Unprotected);
+string forced = await JwsBuilder.BuildJsonAsync(payload, [forcedUnprotected]);
+using (var doc = JsonDocument.Parse(forced))
+{
+    Check(doc.RootElement.GetProperty("header").GetProperty("kid").GetString() == PlacementKid,
+        "JwsKidPlacement.Unprotected moves the kid without a DIDComm typ");
+}
+
+JwsSigner forcedProtected = new(new KeyPairSigner(placementPair, crypto), PlacementKid, JwsKidPlacement.Protected);
+string kept = await JwsBuilder.BuildJsonAsync(payload, [forcedProtected], "application/didcomm-signed+json");
+using (var doc = JsonDocument.Parse(kept))
+{
+    Check(!doc.RootElement.GetProperty("signatures")[0].TryGetProperty("header", out _),
+        "JwsKidPlacement.Protected keeps the kid signed even for DIDComm");
+}
+
+// Compact serialization has no unprotected header (RFC 7515 §7.1), so asking for one is an error
+// rather than a silent fallback to signing the kid the caller wanted left unsigned.
+bool compactRejected;
+try
+{
+    await JwsBuilder.BuildCompactAsync(payload, forcedUnprotected);
+    compactRejected = false;
+}
+catch (ArgumentException)
+{
+    compactRejected = true;
+}
+Check(compactRejected, "compact JWS rejects JwsKidPlacement.Unprotected (no unprotected header exists)");
+Console.WriteLine();
+
+// ----------------------------------------------------------- 6. Base64Url helpers (the JOSE encoding)
 Console.WriteLine("--- Base64Url ---");
 string b64 = Base64Url.Encode(payload);
 string b64u = Base64Url.EncodeUtf8("héllo");

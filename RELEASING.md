@@ -69,9 +69,21 @@ never mistaken for a stable release.
 
 ## Versioning policy
 
-SemVer applies to the **public .NET API surface** — the contract `ac-7` pins. On top of that, this
-library emits standardized wire formats (JWS, JWE, COSE_Sign1, SD-JWT), so changes to *emitted
-bytes* need their own rule:
+SemVer applies to the **public .NET API surface** — the contract `ac-7` pins, which is the
+*source-level* surface recorded in each package's `PublicAPI.*.txt`.
+
+**Binary compatibility is explicitly out of scope.** Assembly-level (CLR token) compatibility is
+not a release constraint for this project: consumers are expected to recompile against a new
+version rather than drop a new assembly beside an old build. This matters because some
+source-compatible changes are binary-breaking — adding an optional parameter to an existing method
+or constructor replaces its method token, so an already-compiled dependent throws
+`MissingMethodException` until it is rebuilt. Such a change is **not** a "breaking change to the
+public .NET API" for the major-bump rule below, because no source has to change. Any release
+containing one MUST say so in the CHANGELOG as an explicit migration step, naming the affected
+member and the required rebuild (worked example: 1.3.0's `JwsSigner` constructor).
+
+On top of the API surface, this library emits standardized wire formats (JWS, JWE, COSE_Sign1,
+SD-JWT), so changes to *emitted bytes* need their own rule:
 
 - **Major** — a breaking change to the public .NET API, or a change to emitted output that was
   **already spec-conformant** (a conformant consumer could legitimately have depended on it).
@@ -121,3 +133,27 @@ that up without a deliberate opt-in. It stays a patch because the fix is not opt
 version can accept that shape and remain conformant — and because the resolution is to upgrade
 senders to ≥ 1.2.0 rather than to pin verifiers back. A future accept-set narrowing that lacks
 *both* of those properties should be treated as minor instead.
+
+**Worked example — 1.3.0 (issue #25).** `JwsBuilder` gained `JwsKidPlacement` and, under its `Auto`
+default, now emits the signer `kid` in the per-signature **unprotected** header for the DIDComm
+signed media type instead of the protected one. This shipped as **minor**. The public-API half is
+**source-additive**: an optional constructor parameter, two get-only properties, and a new enum, so
+no existing call site changes. It is **not** binary-additive — the optional parameter replaces
+`JwsSigner..ctor(ISigner, string)`'s method token, so already-compiled 1.2.x dependents must be
+rebuilt. Under the out-of-scope rule above that is a migration step, recorded as such in the
+CHANGELOG, not a major bump. The emitted-output half is the interesting one: unlike 1.2.0, the previous bytes
+were *not* invalid — RFC 7515 §6 permits `kid` in either header — so the "correction into
+conformance" clause does not apply. That the old bytes were rejected by both DIDComm reference
+implementations is why the change is worth making, not why it is a minor.
+
+This is the case that shows why "already spec-conformant → major" cannot be read mechanically. Both
+placements are conformant, so the letter of the major rule could be argued. It stays minor because
+the scope is one media type whose only real consumers are DIDComm implementations that were
+rejecting the old output outright — there was no working conformant peer to break — and because the
+.NET API contract that SemVer primarily governs here is untouched. A future emitted-output change
+that lacks that narrow, demonstrably-broken-audience scope should be treated as major.
+
+The rule these two examples together imply, stated for the next time: **an emitted-output change
+earns a major only when a conformant peer could plausibly be depending on the old bytes today.**
+Ask who is actually reading the output, and whether they were succeeding. "The old bytes were
+technically legal" is not enough on its own.
