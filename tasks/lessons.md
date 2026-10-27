@@ -259,3 +259,13 @@ three of them wrong and the fourth incomplete:
 - State the version/release assumption as the **first** decision in a plan. The owner's one-line
   rejection ("Version is still 1.4.0. We haven't deployed.") corrected an assumption I had reasoned
   about at length; putting it first makes it the first thing the owner can strike.
+
+**Addendum, same day — "analyzer-clean" is a claim about annotated code only.** With all six
+packages building warning-free under `IsAotCompatible`, the first reflection-disabled run of the new
+`tasks/aot-smoke` still failed: NetCid's `JcsCanonicalizer.Canonicalize(JsonNode)` serializes through
+reflection internally, and NetCid carries no annotations, so every JCS proof with `@context` would
+have failed to verify in an AOT host. The rule: **zero trim/AOT warnings proves nothing about
+unannotated dependencies.** Before claiming AOT support, run every public path with
+`JsonSerializerIsReflectionEnabledByDefault=false` (cheap, no native toolchain) and as a native
+binary, and turn each hidden-reflection dependency API found into a `BannedSymbols.txt` entry with
+the reason, so the compile step guards what the analyzers cannot.
