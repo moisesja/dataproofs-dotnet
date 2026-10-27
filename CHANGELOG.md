@@ -282,7 +282,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Every Data Integrity entry point that takes a document now makes one pass over its UTF-8 first. The pass
   rejects all four. Member names are compared after unescaping, so `"a"` and its escaped spelling are the
-  same name. Comments and trailing commas left in a leniently parsed element are not faults.
+  same name; names that differ only in case are distinct. Comments and trailing commas left in a leniently
+  parsed element are not faults. Some later steps re-parse raw text strictly (proof embedding, bbs-2023
+  skolemization), so an element carrying either is replaced by a strict copy of the same JSON before any
+  step reads it. The pass keeps one member-name set per nesting depth, reused across sibling objects, so a
+  document of many small objects allocates almost nothing for it.
 
   - `Verify` and `VerifyAsync` report a failing document as one document-level
     `PROOF_TRANSFORMATION_ERROR`, before any proof is parsed and before the resolver is called (see
@@ -293,12 +297,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     extension members) is checked as given, because serialization would rewrite non-UTF-8 text as U+FFFD
     or throw. Extension keys matching any modeled proof member are rejected, including omitted members:
     "The proof options object has an extension member with a reserved proof name." Their serialized
-    form is checked too.
+    form is checked too, against the depth it will occupy in the secured document: one level below the
+    root, or two once the proof member is an array. That check runs before the suite signs, so no
+    signature is spent on a document that could not be written out: "The proof options object nests deeper
+    than 63 levels."
   - The pipeline's own transformation steps also map any remaining System.Text.Json fault to the contract.
     On verification that is a failed result; on creation it is `ProofGenerationException` with the cause
-    attached. One such fault is reachable today: a document at the 64-level limit whose object-form proof
-    becomes an array element when a second proof is added ("The secured document could not be
-    assembled."). The call into the suite is not wrapped, so a signer's exceptions keep their types.
+    attached. Two such faults are reachable today. On creation, a document at the 64-level limit whose
+    object-form proof becomes an array element when a second proof is added fails as "The secured
+    document could not be assembled." One case still fails after signing, so the signature is spent and
+    discarded. Most suites copy the document's `@context` into the proof, where it sits one level deeper
+    than in the document. A `@context` already nested to the 64-level limit therefore cannot be written
+    out. The pipeline does not check for it before signing, because it cannot know whether the suite
+    copies `@context`: the legacy JCS suites don't, and a pre-check would reject documents they can sign.
+    A real `@context` is a list of URLs or a small object, so this takes a deliberately pathological
+    document. On verification, a proof
+    whose `previousProof` names itself is re-embedded one level deeper. At the limit it fails with the
+    fixed message "The secured document could not be transformed for verification." The call into the
+    suite is not wrapped, so a signer's exceptions keep their types.
 
 - **The same check guards the suites' own create entry points.** They are public and documented to throw
   only `ProofGenerationException` for invalid input. None of them was in the report.
@@ -308,12 +324,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `CreateProofAsync` of every suite: `eddsa-jcs-2022`, `ecdsa-jcs-2019`, `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, and `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019` in both variants | Proof options whose `@context` or extension members held an unpaired-surrogate escape threw a raw `JsonException`. A `default(JsonElement)` there threw `InvalidOperationException`. An extension member named like a modelled one (`proofPurpose`) was written twice. The JCS suites then refused the configuration; the others signed a proof carrying both members. |
   | The legacy suites' `CreateProofAsync`, JCS variant | A hostile document threw a raw `InvalidOperationException`, `JsonException` or `ArgumentException`. A nested duplicate was signed, with the last value winning. Non-UTF-8 text was signed as U+FFFD. |
   | The RDFC suites, and the legacy suites' RDFC variant | Duplicate members and unpaired-surrogate escapes were signed: the JSON-LD processor silently picked a value. Non-UTF-8 text threw a raw `InvalidOperationException`. |
-  | `Bbs2023Cryptosuite.CreateBaseProofAsync` and `DeriveProof` | Every kind threw a raw exception (`InvalidOperationException`, `JsonException`, `ArgumentException` or `JsonReaderException`), except one: `DeriveProof` accepted a non-UTF-8 string value. `DeriveProof` is the holder's boundary over a document an issuer sent. |
+  | `Bbs2023Cryptosuite.CreateBaseProofAsync` and `DeriveProof` | Every kind threw a raw exception (`InvalidOperationException`, `JsonException`, `ArgumentException` or `JsonReaderException`), except one: `DeriveProof` accepted a non-UTF-8 string value. `CreateBaseProofAsync` also threw a raw `JsonReaderException` for a document with a comment or a trailing comma. `DeriveProof` is the holder's boundary over a document an issuer sent. It also threw raw exceptions for a malformed base proof. A modelled member of the wrong JSON kind threw `JsonException`, and a `proofValue` that is not the five-element CBOR array threw `InvalidOperationException`. A public key or signature of the wrong size threw `ArgumentException`, a signature that does not match its messages threw `CryptographicException`, and an invalid mandatory or selective JSON pointer threw `ArgumentException`. |
 
   They now throw `ProofGenerationException`, with "The document to secure …", "The secured base document
-  …" (`DeriveProof`) or "The proof configuration …". Rdfc and Legacy carry a verbatim copy of the internal
-  check, so neither reaches into Core's internals. The suites' `VerifyProof` methods already failed closed,
-  and are unchanged.
+  …" (`DeriveProof`) or "The proof configuration …". A malformed base proof in `DeriveProof` fails as
+  "The base proof could not be parsed.", "The base proofValue is not a valid bbs-2023 base proof.", "The
+  base proof's BBS signature could not be used to derive a proof.", "The base proof carries an invalid
+  mandatory pointer." or "A selective pointer is invalid.". `BbsUnavailableException` still escapes as
+  documented. Rdfc and Legacy carry a verbatim copy of the internal check, so neither reaches into Core's
+  internals. The suites' `VerifyProof` methods already failed closed, and are unchanged.
 
   **PR #35 review follow-up.** A configuration at depth 64 can become depth 65 when the legacy JCS
   suites nest it under the document's `proof` member. These transformation failures now throw
