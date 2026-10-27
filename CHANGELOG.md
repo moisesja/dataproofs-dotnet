@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-26
+
+### Fixed
+
+- **A JWS protected header that is not valid UTF-8 is now rejected on every entry point** (issue
+  [#28](https://github.com/moisesja/dataproofs-dotnet/issues/28)). RFC 7515 §5.2 step 3 requires
+  the verifier to check that the base64url-decoded header "is a UTF-8-encoded representation of a
+  completely valid JSON object". Nothing did. `JwsParser.Parse` happened to reject a member *name*
+  that was not UTF-8 — a side effect of enumerating member names for the §5.2 step 4 disjointness
+  check — but `JwsParser.ParseCompact` and `VcJose.VerifyCredential` skip that enumeration and
+  verified the same signed header, and a non-UTF-8 string *value* in an extension member verified
+  on all three. The decoded octets are now validated once, before JSON parsing, in the shared
+  decode path, so compact, Flattened, General, detached, and VC-JOSE all fail as
+  `MalformedJoseException` ("… is not valid UTF-8") before key resolution. The compact path's
+  no-enumeration performance choice is unchanged.
+
+  **Accept-set note.** Every newly rejected input was invalid under RFC 7515 and RFC 8259 §8.1,
+  and this library has never emitted one: headers are serialized from .NET strings, which cannot
+  carry invalid UTF-8. No conformant peer's output changes category. Only a signer deliberately
+  producing a malformed header is affected, and strict verifiers were already rejecting it.
+
 ## [1.3.0] - 2026-08-05
 
 ### Added
@@ -183,6 +204,14 @@ which remains the default for every non-DIDComm media type.
   non-object-root variant was introduced *by* the `kid` check above and caught by a second
   adversarial pass before it shipped. Both now route through the documented contract on all three
   entry points — `JwsParser.Parse`, `JwsParser.ParseCompact`, and `VcJose.VerifyCredential`.
+
+  > **Correction (2026-10-26, issue [#28](https://github.com/moisesja/dataproofs-dotnet/issues/28)).**
+  > The invalid-UTF-8 half of this claim was wrong for two of the three entry points. In 1.3.0
+  > only `JwsParser.Parse` rejected a non-UTF-8 member name; `ParseCompact` and
+  > `VcJose.VerifyCredential` accepted and verified the same signed header, because the rejection
+  > was a side effect of member-name enumeration that the compact path skips, not a UTF-8 check. A
+  > non-UTF-8 extension *value* was accepted on all three. No test covered the input class on any
+  > entry point. Fixed in 1.4.0.
 - **The unprotected `header` is now written with the same JSON encoder as the protected one.**
   `JsonObject.ToJsonString()` defaulted to HTML-escaping while `DeterministicJsonWriter` uses
   `JoseJson.Default`'s relaxed encoder, so one envelope could render the same `kid` two ways —
