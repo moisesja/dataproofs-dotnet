@@ -190,6 +190,13 @@ rejects: a JWT or SD-JWT issuer JWT whose payload bytes the caller passed to `Jw
 carrying such an escape. The point worth keeping: **"invalid under the RFC" means the governing RFC, not a stricter
 profile of it.** Rejecting what only a profile such as I-JSON forbids is a spec-valid narrowing.
 
+The Data Integrity counterpart (issue #33) applies the same rule per suite. For the JCS suites, RFC
+8785 itself forbids duplicate names and lone surrogates, and their canonicalizer already refused both,
+so only the exception contract and the result shape changed. The RDFC and legacy suites had been signing
+both, and RFC 8259 admits them, so that half is a spec-valid narrowing: minor material, inside a release
+that was already a minor. It also rejects this library's own earlier output — documents those suites
+secured from input with a nested duplicate — which the CHANGELOG names, as the policy requires.
+
 ## Downstream consumers
 
 Other repositories pin this package family and move in lockstep with it, so a release here is what

@@ -93,6 +93,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so that a consumer can list `DataIntegrityProof` in its own `JsonSerializerContext`, which the source
   generator refuses (SYSLIB1220) when the converter is inaccessible. `System.Type`, from its `Read`
   signature, joins the AC-7 BCL allowlist with that justification.
+- **A secured document whose JSON cannot be read is one document-level `PROOF_TRANSFORMATION_ERROR`**
+  (issue [#33](https://github.com/moisesja/dataproofs-dotnet/issues/33); see **Fixed**).
+  `DataIntegrityProofPipeline.Verify` and `VerifyAsync` now check the document before parsing any proof
+  or calling the resolver. A document that fails the check returns `Verified = false`, an empty
+  `ProofResults` and a single entry in `Problems`, for example `PROOF_TRANSFORMATION_ERROR: The secured
+  document has a duplicate member name.` Some of these documents already failed before, but per proof,
+  after the resolver had been called. They failed as `PROOF_TRANSFORMATION_ERROR`, as "The proof could not
+  be parsed." or as "Verification failed unexpectedly", depending on where the content sat; others threw.
+  A caller that reads only `ProofResults` must also read `Problems`, or `Verified`.
 - Pre-existing and unchanged, now written down: `JweBuilder` renders the General JSON serialization with
   the default HTML-safe encoder (an unprotected `kid` containing `+` is emitted as `\u002B`), while
   `JwsBuilder` uses the relaxed encoder. The anonymous-type rendering, which source generation cannot
@@ -244,19 +253,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pair included) and this library's own non-BMP output still verify, their controls, and the
   `null`-root case, which already failed correctly.
 
+- **The Data Integrity pipeline checks the JSON it is given before reading it, and keeps its
+  contracts for JSON it cannot process** (issue
+  [#33](https://github.com/moisesja/dataproofs-dotnet/issues/33)). `DataIntegrityProofPipeline.Verify`
+  and `VerifyAsync` are documented never to throw for an invalid document. `AddProofAsync` is documented
+  to throw `ProofGenerationException` for an invalid document or invalid options. Four kinds of JSON broke
+  both contracts:
+
+  - a JSON escape for an unpaired UTF-16 surrogate (`\uD800`);
+  - a member name repeated in one object;
+  - text that is not valid UTF-8;
+  - nesting deeper than 64 levels.
+
+  System.Text.Json accepts all four into a `JsonElement` and fails only when a later step reads the
+  content. So the exception, and the step that threw it, depended on where the content sat.
+
+  - A `\uD800` member name threw `InvalidOperationException` out of `Verify` and `VerifyAsync` before any
+    signature check. So did a non-UTF-8 member name, and a `\uD800` in the `id` of a proof that
+    `previousProof` references.
+  - `AddProofAsync` threw `InvalidOperationException`, `JsonException` or `ArgumentException`.
+
+  No forged proof verified: every case failed closed. But a verifier that relied on the documented
+  result-only contract, with no catch-all, crashed on one crafted document.
+
+  Every Data Integrity entry point that takes a document now makes one pass over its UTF-8 first. The pass
+  rejects all four. Member names are compared after unescaping, so `"a"` and its escaped spelling are the
+  same name. Comments and trailing commas left in a leniently parsed element are not faults.
+
+  - `Verify` and `VerifyAsync` report a failing document as one document-level
+    `PROOF_TRANSFORMATION_ERROR`, before any proof is parsed and before the resolver is called (see
+    **Changed**). The message names the fault and quotes no content: "The secured document has a
+    duplicate member name."
+  - `AddProofAsync` throws `ProofGenerationException`: "The document to secure contains a JSON escape for
+    an unpaired UTF-16 surrogate." It also checks the proof options. Their raw JSON (`@context` and
+    extension members) is checked as given, because serialization would rewrite non-UTF-8 text as U+FFFD
+    or throw. Their serialized form is checked too: "The proof options object has a duplicate member
+    name."
+  - The pipeline's own transformation steps also map any remaining System.Text.Json fault to the contract.
+    On verification that is a failed result; on creation it is `ProofGenerationException` with the cause
+    attached. One such fault is reachable today: a document at the 64-level limit whose object-form proof
+    becomes an array element when a second proof is added ("The secured document could not be
+    assembled."). The call into the suite is not wrapped, so a signer's exceptions keep their types.
+
+- **The same check guards the suites' own create entry points.** They are public and documented to throw
+  only `ProofGenerationException` for invalid input. None of them was in the report.
+
+  | Entry point | Before 1.4.0 |
+  | --- | --- |
+  | `CreateProofAsync` of every suite: `eddsa-jcs-2022`, `ecdsa-jcs-2019`, `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, and `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019` in both variants | Proof options whose `@context` or extension members held an unpaired-surrogate escape threw a raw `JsonException`. A `default(JsonElement)` there threw `InvalidOperationException`. An extension member named like a modelled one (`proofPurpose`) was written twice. The JCS suites then refused the configuration; the others signed a proof carrying both members. |
+  | The legacy suites' `CreateProofAsync`, JCS variant | A hostile document threw a raw `InvalidOperationException`, `JsonException` or `ArgumentException`. A nested duplicate was signed, with the last value winning. Non-UTF-8 text was signed as U+FFFD. |
+  | The RDFC suites, and the legacy suites' RDFC variant | Duplicate members and unpaired-surrogate escapes were signed: the JSON-LD processor silently picked a value. Non-UTF-8 text threw a raw `InvalidOperationException`. |
+  | `Bbs2023Cryptosuite.CreateBaseProofAsync` and `DeriveProof` | Every kind threw a raw exception (`InvalidOperationException`, `JsonException`, `ArgumentException` or `JsonReaderException`), except one: `DeriveProof` accepted a non-UTF-8 string value. `DeriveProof` is the holder's boundary over a document an issuer sent. |
+
+  They now throw `ProofGenerationException`, with "The document to secure …", "The secured base document
+  …" (`DeriveProof`) or "The proof configuration …". Rdfc and Legacy carry a verbatim copy of the internal
+  check, so neither reaches into Core's internals. The suites' `VerifyProof` methods already failed closed,
+  and are unchanged.
+
+  **Upgrade note.** A caller that caught `InvalidOperationException`, `JsonException` or
+  `ArgumentException` from any method above now gets `ProofGenerationException`, or, from `Verify` and
+  `VerifyAsync`, a failed result.
+
+  **Accept-set note.** What this narrows depends on the suite.
+
+  - **`eddsa-jcs-2022` and `ecdsa-jcs-2019`.** Their canonicalizer already refused duplicates, unpaired
+    surrogates and depth beyond 64. RFC 8785 requires this: "JSON objects MUST NOT exhibit duplicate
+    property names" (§3.1), and a lone surrogate "MUST cause a compliant JCS implementation to terminate
+    with an appropriate error" (§3.2.2.2). For these the exception type and the result shape change; the
+    accept-set does not.
+  - **Non-UTF-8 text.** Through `AddProofAsync` it used to be signed, for every suite, after the
+    serializer had rewritten it as U+FFFD, so the secured document differed from the caller's. Called
+    directly, the suites refused it, threw, or (the legacy JCS variant) signed it the same way. It is now
+    rejected everywhere. RFC 8259 §8.1 requires UTF-8.
+  - **The RDFC suites and the legacy suites' RDFC variant** newly reject duplicate member names and
+    unpaired-surrogate escapes, which they used to sign. **The legacy JCS variant** newly rejects nested
+    duplicates, which it signed with the last value winning. RFC 8259 admits both: names "SHOULD be
+    unique" (§4), and the receiver's behaviour is "unpredictable" (§4, §8.2). I-JSON (RFC 7493 §2.1, §2.3)
+    forbids both. Under `RELEASING.md` this is a spec-valid narrowing.
+
+  **This library's own earlier output is among what is now rejected.** Before this release,
+  `eddsa-rdfc-2022`, `ecdsa-rdfc-2019` and the legacy suites signed caller input that carried a nested
+  duplicate member, and `AddProofAsync` kept the duplicate in the secured document. Such a document now
+  fails verification with `PROOF_TRANSFORMATION_ERROR`. Re-issue it from deduplicated input. The same
+  suites also signed proof options whose extension member repeated a modelled name, and the proof they
+  emitted carried both members. That proof is now rejected the same way. Earlier output made from
+  non-UTF-8 input carries U+FFFD instead, and still verifies.
+
+  The regression suites run each placement above on each entry point named, with the same four escapes as
+  #30.
+
+  - A shared pipeline matrix runs through `eddsa-jcs-2022` and `eddsa-rdfc-2022`.
+  - A shared create matrix runs through all eight suite create paths.
+  - Separate matrices cover `bbs-2023`.
+
+  Against the pre-fix code, 625 cases fail. The 44 that pass are over-rejection guards, controls, and unit
+  tests of the check itself. The guards prove that well-formed escapes, comments and trailing commas,
+  depth 64, a name repeated across sibling objects, and proof chains still sign and verify.
+
 ### Known limitations
 
 The JOSE decoders now hold their never-throws and `MalformedJoseException` contracts for the four
 input classes this release's reviews found: invalid decoded octets (#28), unpaired-surrogate
-escapes, non-object JWT claims roots and an empty JWE `protected` member (#30). Each is pinned by
-tests on every entry point named above. That is a statement about those input classes, not proof
-that the contracts hold for every input.
-
-The Data Integrity pipeline in Core has the same class of escape, found by the adversarial review
-of the native-AOT work: an unpaired-surrogate escape in a member name throws
-`InvalidOperationException` out of `DataIntegrityProofPipeline.Verify` before any signature check,
-and malformed documents escape `AddProofAsync`'s `ProofGenerationException` contract. It predates
-this release. Tracked in [#33](https://github.com/moisesja/dataproofs-dotnet/issues/33).
+escapes, non-object JWT claims roots and an empty JWE `protected` member (#30). The Data Integrity
+entry points hold theirs for the four input classes of #33: unpaired-surrogate escapes, duplicate
+member names, invalid UTF-8 and nesting past 64 levels. Each is pinned by tests on every entry point
+named above. That is a statement about those input classes, not proof that the contracts hold for
+every input.
 
 Separately, the COSE package has the CBOR counterpart of this release's JWE fix. It reads text
 strings in `CborConformanceMode.Lax`, which decodes a non-UTF-8 text string lossily, with U+FFFD
@@ -287,7 +389,9 @@ input class. A consumer could have been depending on that behaviour, however wro
 catch-all. The version number is there to make that consumer read this entry. Recorded as a worked
 example in `RELEASING.md`. The unpaired-surrogate narrowing (#30) does not qualify for a patch at
 all: the escapes it rejects are valid RFC 8259 grammar, forbidden only by I-JSON, so by the policy's
-own terms it is minor material. The native-AOT work in this release is minor material on its own: a feature,
+own terms it is minor material. So is the Data Integrity narrowing (#33) for the RDFC and legacy suites,
+which signed duplicate member names and unpaired-surrogate escapes that RFC 8259 admits; it also rejects
+the two kinds of this library's own earlier output named above. The native-AOT work in this release is minor material on its own: a feature,
 two public members loosened from `init` to `set` and one type made public — all source-compatible — and
 a change to `DataProofsJsonOptions.Default`'s resolution of consumer types, which a consumer's own types
 observe only in hosts that disable reflection-based serialization.
