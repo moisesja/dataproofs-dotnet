@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.0] - 2026-10-26
 
+### Added
+
+- **Native AOT and trimming support** (issue [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27)). All six packages declare `IsAotCompatible` and
+  build with zero trim, single-file and AOT analyzer warnings, which the repo-wide warnings-as-errors
+  makes fatal. Every System.Text.Json (de)serialization in the packages goes through source-generated
+  metadata: one internal `JsonSerializerContext` per package, covering `DataIntegrityProof`, the
+  `JsonNode` family, the JWS and JWE protected headers and `Jwk`. **Emitted bytes are unchanged.**
+  Member order, null omission, escaping and extension-data placement are pinned by
+  reflection-versus-source-generation identity tests in Core and Jose, and every conformance, vector
+  and cross-stack byte-identity suite passes unchanged. A new CI job, `ac-12`, native-AOT publishes
+  `tasks/aot-smoke` on linux-x64 — Data Integrity with the JCS, RDFC and `bbs-2023` suites, the legacy
+  suites, JWS, JWE, SD-JWT with Key Binding, COSE_Sign1 and CWT, VC-JOSE-COSE, RDFC canonicalization
+  through the offline loader, JWK conversion and `AddDataProofs` — runs it, and requires its
+  deterministic outputs to be byte-identical to the same program under JIT and under JIT with
+  reflection-based serialization disabled (the condition a .NET 10 file-based app runs in), cross-verifies
+  the randomized artifacts in both directions, and fails on any `IL2xxx`/`IL3xxx` warning attributed to a
+  DataProofs assembly. The RDFC canonicalizer (dotNetRdf.Core and its Newtonsoft.Json dependency) was
+  shown to work under native AOT in the issue; the job keeps proving it at run time. Unblocks
+  [moisesja/zcap-dotnet#154](https://github.com/moisesja/zcap-dotnet/issues/154).
+
+### Changed
+
+- **`DataProofsJsonOptions.Default` resolves this library's types through source-generated metadata
+  first** (issue [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27)). Its resolver chain is the Core context followed by the reflection resolver,
+  and the reflection resolver is present only when the host enables reflection-based serialization
+  (`JsonSerializer.IsReflectionEnabledByDefault`, which is true in an ordinary JIT application), so JIT
+  consumers see no change for their own types. In a trimmed or native-AOT application, and in any
+  project that sets `PublishAot` (the SDK turns the switch off there even under `dotnet run`), a consumer
+  type without source-generated metadata now fails with System.Text.Json's `NotSupportedException`
+  naming the type: register such types in your own `JsonSerializerContext`. `DataIntegrityProof` can be
+  listed there directly.
+- **`DataIntegrityProof.Type` and `DataIntegrityProof.AdditionalProperties` are settable** (`set`
+  instead of `init`). The .NET 10 source generator models `init`-only members as constructor
+  parameters: an `init`-only extension-data bag is rejected at first use, and an `init`-only member with
+  an initializer loses its default when the member is absent from the payload, which would have turned
+  the `Type` of a proof without a `type` member from `"DataIntegrityProof"` into `null`. Source-compatible:
+  object initializers and `with` expressions compile unchanged. **Not binary-compatible:** each setter's
+  method token changes, so already-compiled dependents must be rebuilt (binary compatibility is out of
+  scope per `RELEASING.md`; this is the migration step).
+- **`PreviousProofReferenceJsonConverter` is public** (it was internal). It is still applied through
+  the `[JsonConverter]` attribute on `PreviousProofReference` and never needs registering; it is public
+  so that a consumer can list `DataIntegrityProof` in its own `JsonSerializerContext`, which the source
+  generator refuses (SYSLIB1220) when the converter is inaccessible. `System.Type`, from its `Read`
+  signature, joins the AC-7 BCL allowlist with that justification.
+- Pre-existing and unchanged, now written down: `JweBuilder` renders the General JSON serialization with
+  the default HTML-safe encoder (an unprotected `kid` containing `+` is emitted as `\u002B`), while
+  `JwsBuilder` uses the relaxed encoder. The anonymous-type rendering, which source generation cannot
+  describe, was replaced by a `JsonObject` with the same member order and escaping, pinned by a test.
+
 ### Fixed
 
 - **A JWS protected header that is not valid UTF-8 is now rejected on every entry point** (issue
@@ -110,7 +159,10 @@ On the SD-JWT issuer JWT, Key Binding JWT and Disclosure paths, it also replaces
 `InvalidOperationException` escaping a never-throws API with a structured failure, for this input
 class. A consumer could have been depending on that behaviour, however wrongly, through a
 catch-all. The version number is there to make that consumer read this entry. Recorded as a worked
-example in `RELEASING.md`.
+example in `RELEASING.md`. The native-AOT work in this release is minor material on its own: a feature,
+two public members loosened from `init` to `set` and one type made public — all source-compatible — and
+a change to `DataProofsJsonOptions.Default`'s resolution of consumer types that is observable only in
+hosts that disable reflection-based serialization.
 
 ## [1.3.0] - 2026-08-05
 

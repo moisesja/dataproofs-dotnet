@@ -7,7 +7,7 @@ SemVer — e.g. `v0.1.0-preview.1` — which NuGet treats as a prerelease (consu
 `--prerelease`). Cut a stable `v1.0.0` only once the line is ready (and the bbs-2023 conformant
 binding has landed — see `docs/dependencies/netcrypto-bbs-header.md`).
 
-1. Ensure `main` is green: all `ac-1` … `ac-11` jobs in `ci.yml` pass.
+1. Ensure `main` is green: all `ac-1` … `ac-12` jobs in `ci.yml` pass.
 2. Update `CHANGELOG.md`: move `[Unreleased]` content under a new `## [x.y.z] - YYYY-MM-DD`
    (for the first release, `## [0.1.0-preview.1] - YYYY-MM-DD`).
 3. Tag: `git tag v0.1.0-preview.1 && git push origin v0.1.0-preview.1` (or the next preview/stable).
@@ -33,7 +33,7 @@ configuration (2026-08-04, issue
 | Deployment branch/tag policy | none | Any `v*` tag may reach the gate; the reviewer, not a ref filter, is the control. |
 
 **Who approves, and when.** The repo owner approves, and only after confirming on the tagged
-commit that: `main`'s `ac-1`…`ac-11` jobs are green, `CHANGELOG.md` has the matching version
+commit that: `main`'s `ac-1`…`ac-12` jobs are green, `CHANGELOG.md` has the matching version
 section, and the tag's SemVer matches the [versioning policy](#versioning-policy) below. Reject
 the deployment if any of those fail — a rejected deployment runs nothing and publishes nothing.
 
@@ -174,3 +174,17 @@ a catch-all around that crash sees different behaviour after upgrading, and the 
 what makes them read the CHANGELOG. The rule this adds: **an accept-set narrowing that also changes
 the exception contract on a path reachable with unauthenticated input is treated as minor, even
 when the patch rule's conditions all hold.**
+
+## Downstream consumers
+
+Other repositories pin this package family and move in lockstep with it, so a release here is what
+unblocks their work:
+
+| Repository | Packages | Open dependency on a release |
+| --- | --- | --- |
+| [moisesja/zcap-dotnet](https://github.com/moisesja/zcap-dotnet) (`ZcapLd.Core`, `ZcapLd.AspNetCore`) | `Core`, `Rdfc`, `Legacy` | [#154](https://github.com/moisesja/zcap-dotnet/issues/154) (native AOT) waits for the release that closes [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27) — v1.4.0 — and then bumps to it. |
+
+When a CHANGELOG entry names a downstream issue, tagging the release is the signal that issue waits
+for: after the publish job succeeds, note the released version on the downstream issue. A release
+that changes a public member's binary shape (such as 1.4.0's `init` → `set` setters) requires those
+consumers to rebuild, which the CHANGELOG migration note states.

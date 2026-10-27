@@ -30,6 +30,23 @@ dotnet test DataProofsDotnet.sln
 Runnable, narrated examples for every feature live under [samples/](samples/) — each doubles as
 a CI smoke test. Start with `samples/README.md`.
 
+## Native AOT and trimming
+
+All six packages declare `IsAotCompatible`: they build with zero trim, single-file and AOT analyzer
+warnings, and every System.Text.Json (de)serialization uses source-generated metadata, so they run
+unchanged in trimmed and native-AOT applications and in .NET 10 file-based apps. CI job `ac-12`
+native-AOT publishes [`tasks/aot-smoke`](tasks/aot-smoke/README.md), which exercises every package,
+and requires its output to be byte-identical to the same program under JIT. Two things to know as a
+consumer:
+
+- `DataProofsJsonOptions.Default` serializes the library's own types through source-generated metadata
+  in every host. For *your* types it falls back to reflection only where the host enables it; in a
+  trimmed or AOT application (or any project with `PublishAot`), register them in your own
+  `JsonSerializerContext`.
+- `DataIntegrityProof` can be listed in your own context directly
+  (`[JsonSerializable(typeof(DataIntegrityProof))]`); its `previousProof` converter is public for that
+  reason.
+
 ## Design documents
 
 - [`dataproofs-concept.md`](dataproofs-concept.md) — vision and decisions log (binding)

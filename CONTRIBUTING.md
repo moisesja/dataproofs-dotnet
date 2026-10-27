@@ -36,6 +36,12 @@ docs/       supplementary documentation
 - Nullable reference types and warnings-as-errors are on repo-wide
 - Public API changes must be declared in the package's `PublicAPI.Unshipped.txt`
   (PublicApiAnalyzers, FR-24)
+- Serialization in `src/` is source-generated (native AOT, NFR-7): never call a reflection-based
+  `JsonSerializer` overload — the AOT analyzers fail the build. Use the typed `JsonTypeInfo<T>`
+  accessors (`DataProofsJsonOptions.*TypeInfo`, `JoseJson.*TypeInfo`, `RdfcJson`, `LegacyJson`) and add
+  any newly serialized type to that package's `JsonSerializerContext`. Build JSON with
+  `JsonObject`/`JsonNode`, and cast to `JsonNode` when passing a derived node or a string to
+  `JsonArray.Add` (the generic overload is reflection-based)
 
 ## Tests
 
