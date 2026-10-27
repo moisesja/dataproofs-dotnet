@@ -5,6 +5,113 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-26
+
+### Fixed
+
+- **A JWS protected header that is not valid UTF-8 is now rejected on every entry point** (issue
+  [#28](https://github.com/moisesja/dataproofs-dotnet/issues/28)). RFC 7515 §5.2 step 3 requires
+  the verifier to check that the base64url-decoded header "is a UTF-8-encoded representation of a
+  completely valid JSON object". Nothing did. `JwsParser.Parse` happened to reject a member *name*
+  that was not UTF-8 — a side effect of enumerating member names for the §5.2 step 4 disjointness
+  check — but `JwsParser.ParseCompact` and `VcJose.VerifyCredential` skip that enumeration and
+  verified the same signed header, and a non-UTF-8 string *value* in an extension member verified
+  on all three. The decoded octets are now validated once, before JSON parsing, in the shared
+  decode path, so compact, Flattened, General, detached, and VC-JOSE all fail as
+  `MalformedJoseException` ("… is not valid UTF-8") before key resolution. The compact path's
+  no-enumeration performance choice is unchanged.
+
+  **Accept-set note.** Every newly rejected header was already invalid under RFC 7515 §5.2 step 3.
+  No header this library emits is affected: `JwsBuilder` and `VcJose` serialize headers from .NET
+  strings, which encode only to valid UTF-8. Only a signer that hand-assembles a malformed header
+  is affected.
+
+- **The same UTF-8 check now guards every other decoder in the package — two of which were
+  reachable before any signature check.** Found while tracing #28 to its root cause; none of these
+  were in the report.
+
+  | Decoder | Before 1.4.0 | Reachable before a signature check? |
+  | --- | --- | --- |
+  | SD-JWT issuer JWT and Key Binding JWT header/payload (`CompactJwt`) | A non-UTF-8 member name threw a raw `InvalidOperationException` out of `SdJwtVerifier.Verify` and the Key Binding check, both documented as never throwing. | **Yes** — step 1 of the verifier. |
+  | SD-JWT Disclosure (`Disclosure.Parse`, via `SdJwtComponents.Parse`) | A non-UTF-8 claim name threw a raw `InvalidOperationException` out of `SdJwtVerifier.Verify`; a non-UTF-8 array-element value was accepted. | **Yes** — Disclosures are presented by the holder and parsed in step 1. |
+  | JWT claims set (`JwtClaims.Parse`) | A non-UTF-8 claim name or registered string claim threw a raw `InvalidOperationException`, through `JwtHandler.Verify`'s never-throws promise; a non-UTF-8 unregistered string value was accepted. | After the signature via `JwtHandler`; directly, through the public `Parse`. |
+  | JWE protected header (`JweProtectedHeader.Decode`) | A non-UTF-8 member name was accepted with the name replaced by U+FFFD; a non-UTF-8 extension string value was accepted. | Before decryption. A tampered header fails the AEAD tag, so only an envelope its sender built with this header could have been accepted. |
+
+  All four now fail as `MalformedJoseException` ("… is not valid UTF-8"). The structured-result APIs
+  translate that into a failure result: `MALFORMED` from `SdJwtVerifier.Verify` and
+  `JwtHandler.Verify`, and `KB_JWT_MALFORMED` from the Key Binding check. The governing text is:
+
+  - RFC 7515 §5.2 step 3 and RFC 7519 §7.2 step 10 for the SD-JWT issuer and Key Binding JWTs.
+  - RFC 9901 §4.2.1 and §4.2.2 for Disclosures.
+  - RFC 7519 §7.2 step 10 for the JWT claims set.
+  - RFC 7516 §5.2 step 3 for the JWE protected header.
+
+  **Upgrade note: one kind of this library's own output is now rejected.** `JwsBuilder` signs a
+  caller-supplied payload as-is, without checking its encoding. A JWT built that way, with a
+  non-UTF-8 string in an *unregistered* claim, passed 1.3.x `JwtHandler.Verify`. 1.4.0 rejects it
+  with `MALFORMED: JWT claims set is not valid UTF-8.` A non-UTF-8 claim *name* or registered claim
+  already threw in 1.3.x. Such a token was never valid under RFC 7519 §7.2 step 10, and
+  `JwtHandler.SignAsync` cannot produce one, because it serializes claims from .NET strings. SD-JWT
+  issuance, Key Binding JWTs and Disclosures are serialized the same way and are unaffected.
+  `VcJose.VerifyCredential` returns the credential bytes opaquely, as before.
+
+  One layer up, a .NET string that is not well-formed UTF-16 (a lone surrogate) handed to
+  `JwsParser.Parse` or `JweParser.Parse` made `JsonDocument.Parse` throw `ArgumentException`
+  through the same contract; it now fails as `MalformedJoseException` too. That input cannot arise
+  from decoding wire bytes with .NET — invalid sequences become U+FFFD — only from a caller's own
+  text. A JSON *escape* for a lone surrogate, such as `\uD800`, is a different case: it is plain
+  ASCII on the wire, and it is not fixed here (see Known limitations).
+
+### Known limitations
+
+This release closes **invalid decoded octets** only. It does not establish that the never-throws
+and `MalformedJoseException` contracts hold in general. Three pre-existing input classes, found by
+this release's adversarial review, still escape them. All three are tracked in [#30](https://github.com/moisesja/dataproofs-dotnet/issues/30):
+
+- **A JSON escape for an unpaired surrogate** (`\uD800`, `\uDC00`). Those six bytes are valid
+  UTF-8, so the new check passes them, and System.Text.Json throws `InvalidOperationException` when
+  the string is later read. Before any signature check, this reaches `SdJwtVerifier.Verify`,
+  `SdJwtVcVerifier.VerifyAsync`, `JwsParser.Parse`, `JweParser.Parse`, `JweParser.PeekRecipients`
+  and `VcJose.VerifyCredential` (through `cty`), as well as `JwtClaims.Parse` and
+  `Disclosure.Parse` directly. Signed into a JWT's unregistered claim, it passes
+  `JwtHandler.Verify` and throws later, when the consumer reads the claim. The JWS and JWE
+  protected-header decoders reject it in a member name or a modelled field (`alg`, `kid`, `typ`,
+  …). They still accept it in an extension member's value, which nothing reads until a caller
+  does; `VcJose`'s `cty` read is one such caller.
+- **`JwtClaims.Parse` with a non-object JSON root** (`[]`, `42`, `"x"`, `true`) throws
+  `InvalidOperationException`, including through `JwtHandler.Verify` on a validly signed token.
+- **`JweParser` with an empty `"protected"` member** throws `ArgumentException` from `Parse`,
+  `PeekRecipients` and `ParseAsync`.
+
+Separately, the COSE package has the CBOR counterpart of this release's JWE fix. It reads text
+strings in `CborConformanceMode.Lax`, which decodes a non-UTF-8 text string lossily, with U+FFFD
+substitution, instead of rejecting it (RFC 8949 §3.1). `VcCose.Verify` still fails closed on its
+fixed `typ` and content-type values, and no exception escapes; a text string that is not compared to
+a constant is accepted. Tracked in [#31](https://github.com/moisesja/dataproofs-dotnet/issues/31).
+
+### Security
+
+- **`Microsoft.SourceLink.GitHub` lifted 10.0.300 → 10.0.403** (build-time only, referenced with
+  `PrivateAssets="All"`; nothing ships to consumers). 10.0.300 pulled `Microsoft.Build.Tasks.Git`
+  10.0.300, which the newly published
+  [GHSA-23fw-v26w-5fgq](https://github.com/advisories/GHSA-23fw-v26w-5fgq) (CVE-2026-62900, .NET
+  information disclosure, patched in 10.0.303) covers, so the repo-wide NuGet audit (`NU1902` as
+  error) failed every restore — including the last CI run on `main` before this release.
+  Supply-chain hygiene only; no runtime code path changes.
+
+### Why this is a minor and not a patch
+
+Per the versioning policy in [`RELEASING.md`](RELEASING.md), an accept-set narrowing whose every
+newly rejected input was already invalid ships as a patch, and this one qualifies: no public API
+changed, no emitted bytes changed, and every newly rejected input was invalid under its RFC. That
+includes the one kind of this library's own output now rejected, described in the upgrade note
+above. It is a minor by the owner's decision, because the narrowing spans four decoders at once.
+On the SD-JWT issuer JWT, Key Binding JWT and Disclosure paths, it also replaces a raw
+`InvalidOperationException` escaping a never-throws API with a structured failure, for this input
+class. A consumer could have been depending on that behaviour, however wrongly, through a
+catch-all. The version number is there to make that consumer read this entry. Recorded as a worked
+example in `RELEASING.md`.
+
 ## [1.3.0] - 2026-08-05
 
 ### Added
@@ -183,6 +290,14 @@ which remains the default for every non-DIDComm media type.
   non-object-root variant was introduced *by* the `kid` check above and caught by a second
   adversarial pass before it shipped. Both now route through the documented contract on all three
   entry points — `JwsParser.Parse`, `JwsParser.ParseCompact`, and `VcJose.VerifyCredential`.
+
+  > **Correction (2026-10-26, issue [#28](https://github.com/moisesja/dataproofs-dotnet/issues/28)).**
+  > The invalid-UTF-8 half of this claim was wrong for two of the three entry points. In 1.3.0
+  > only `JwsParser.Parse` rejected a non-UTF-8 member name; `ParseCompact` and
+  > `VcJose.VerifyCredential` accepted and verified the same signed header, because the rejection
+  > was a side effect of member-name enumeration that the compact path skips, not a UTF-8 check. A
+  > non-UTF-8 extension *value* was accepted on all three. No test covered the input class on any
+  > entry point. Fixed in 1.4.0.
 - **The unprotected `header` is now written with the same JSON encoder as the protected one.**
   `JsonObject.ToJsonString()` defaulted to HTML-escaping while `DeterministicJsonWriter` uses
   `JoseJson.Default`'s relaxed encoder, so one envelope could render the same `kid` two ways —

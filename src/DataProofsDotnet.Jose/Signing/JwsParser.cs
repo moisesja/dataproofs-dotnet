@@ -149,6 +149,15 @@ public static class JwsParser
         {
             throw new MalformedJoseException("JWS is not valid JSON.", ex);
         }
+        catch (ArgumentException ex)
+        {
+            // JsonDocument.Parse(string) transcodes to UTF-8 first and reports a string that is not
+            // well-formed UTF-16 (a lone surrogate) as ArgumentException, not JsonException. Such a
+            // string cannot come from decoding wire bytes with .NET (invalid sequences become
+            // U+FFFD), only from a caller's own text, but it must still fail through the documented
+            // contract (issue #28).
+            throw new MalformedJoseException("JWS is not valid JSON text: the string is not well-formed UTF-16.", ex);
+        }
 
         using (doc)
         {

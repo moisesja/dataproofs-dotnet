@@ -52,7 +52,10 @@ internal sealed class JwsProtectedHeader
 
     /// <summary>Parse a base64url-encoded protected header back into a <see cref="JwsProtectedHeader"/>.</summary>
     /// <param name="encoded">Base64url string (no padding) carrying the JSON header.</param>
-    /// <exception cref="MalformedJoseException">When <paramref name="encoded"/> is not valid base64url-encoded JSON.</exception>
+    /// <exception cref="MalformedJoseException">
+    /// When <paramref name="encoded"/> is not valid base64url, does not decode to valid UTF-8
+    /// (RFC 7515 §5.2 step 3), or is not a JSON object.
+    /// </exception>
     public static JwsProtectedHeader Decode(string encoded)
         => DecodeCore(encoded, collectMemberNames: false).Header;
 
@@ -76,6 +79,13 @@ internal sealed class JwsProtectedHeader
         string encoded, bool collectMemberNames)
     {
         var bytes = DecodeBytes(encoded);
+
+        // RFC 7515 §5.2 step 3: the decoded octets MUST be UTF-8. Checked once here, before any
+        // JSON parsing, so every caller — compact, both JSON serializations, VC-JOSE — rejects the
+        // same inputs. The JSON path used to reject an invalid member *name* only as a side effect
+        // of the EnumerateObject transcoding below, which the compact path deliberately skips, and
+        // an invalid extension *value* was accepted on every path (issue #28).
+        JoseJson.RequireUtf8(bytes, "JWS protected header");
 
         try
         {
@@ -117,10 +127,12 @@ internal sealed class JwsProtectedHeader
         }
         catch (InvalidOperationException ex)
         {
-            // JsonElement reports some structural and encoding faults as InvalidOperationException
-            // rather than JsonException — notably a property name that is not valid UTF-8, which
-            // only fails when transcoded to a string. Fail closed through the documented contract
-            // so a caller's catch (MalformedJoseException) is never bypassed (issue #15).
+            // Load-bearing. JsonElement reports some faults as InvalidOperationException rather than
+            // JsonException. The root-kind and UTF-8 checks above remove two causes, but not a member
+            // name written as a JSON escape for an unpaired surrogate ("\uD800"): it is valid UTF-8
+            // and parses, and TryGetProperty / EnumerateObject throw when they transcode it to compare
+            // names. This catch keeps that on the documented contract, so a caller's
+            // catch (MalformedJoseException) is never bypassed (issues #15, #28).
             throw new MalformedJoseException("JWS protected header is malformed.", ex);
         }
     }

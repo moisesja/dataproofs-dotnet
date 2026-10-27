@@ -78,8 +78,9 @@ public sealed class Disclosure
     /// </summary>
     /// <param name="encoded">The base64url-no-pad Disclosure string (one tilde-separated segment).</param>
     /// <exception cref="MalformedJoseException">
-    /// When the value is not valid base64url, does not decode to a JSON array, or the array does
-    /// not have 2 (array element) or 3 (object property) elements with the expected shapes.
+    /// When the value is not valid base64url, does not decode to valid UTF-8, does not decode to a
+    /// JSON array, or the array does not have 2 (array element) or 3 (object property) elements
+    /// with the expected shapes.
     /// </exception>
     public static Disclosure Parse(string encoded)
     {
@@ -94,6 +95,14 @@ public sealed class Disclosure
         {
             throw new MalformedJoseException("SD-JWT Disclosure is not valid base64url.", ex);
         }
+
+        // RFC 9901 §4.2.1 / §4.2.2: a Disclosure is the base64url encoding of UTF-8 JSON. JsonNode.Parse
+        // does not check encoding; a claim name that cannot be transcoded throws a raw
+        // InvalidOperationException from GetValue<string>() below — before any signature check and
+        // outside the MalformedJoseException contract SdJwtVerifier relies on (issue #28). This
+        // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") is
+        // valid UTF-8 and still reaches that transcode (a known 1.4.0 limitation, tracked in issue #30).
+        Json.JoseJson.RequireUtf8(bytes, "SD-JWT Disclosure");
 
         JsonNode? node;
         try

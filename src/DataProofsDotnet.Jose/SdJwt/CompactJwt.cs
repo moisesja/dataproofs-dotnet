@@ -52,7 +52,7 @@ internal sealed class CompactJwt
     /// <see cref="Verify"/> afterward.
     /// </summary>
     /// <param name="compact">The compact JWS (three base64url segments).</param>
-    /// <exception cref="MalformedJoseException">When the structure or JSON is invalid.</exception>
+    /// <exception cref="MalformedJoseException">When the structure or JSON is invalid, or a segment does not decode to valid UTF-8.</exception>
     public static CompactJwt Decode(string compact)
     {
         ArgumentException.ThrowIfNullOrEmpty(compact);
@@ -155,6 +155,15 @@ internal sealed class CompactJwt
         {
             throw new MalformedJoseException($"Compact JWT {what} is not valid base64url.", ex);
         }
+
+        // RFC 7515 §5.2 step 3 / RFC 7519 §7.2 step 10: the decoded octets MUST be UTF-8.
+        // JsonNode.Parse is lazy and does not check encoding; a member name that cannot be
+        // transcoded throws a raw InvalidOperationException at first access — here, reading 'alg'
+        // — which is before signature verification and outside the MalformedJoseException contract
+        // SdJwtVerifier and KeyBindingJwt rely on (issue #28). This removes the invalid-octet cause
+        // only: a JSON escape for an unpaired surrogate ("\uD800") is valid UTF-8 and still reaches
+        // that lazy transcode (a known 1.4.0 limitation, tracked in issue #30).
+        JoseJson.RequireUtf8(bytes, $"Compact JWT {what}");
 
         JsonNode? node;
         try

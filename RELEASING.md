@@ -157,3 +157,20 @@ The rule these two examples together imply, stated for the next time: **an emitt
 earns a major only when a conformant peer could plausibly be depending on the old bytes today.**
 Ask who is actually reading the output, and whether they were succeeding. "The old bytes were
 technically legal" is not enough on its own.
+
+**Worked example — 1.4.0 (issue #28).** Every decoder in `DataProofsDotnet.Jose` that base64url-decodes
+bytes and parses them as JSON — the JWS and JWE protected headers, the JWT claims set, the SD-JWT
+issuer and Key Binding JWTs and the Disclosures — started validating the decoded octets as UTF-8, as
+RFC 7515 §5.2 step 3, RFC 7516 §5.2 step 3, RFC 7519 §7.2 step 10 and RFC 9901 §4.2.1 require. By
+the letter of the accept-set rule this is a **patch**: no public API changed, no emitted bytes
+changed, and every newly rejected input was invalid under its RFC. One kind of this library's own
+output is among what is now rejected, and the CHANGELOG names it as the policy requires: a JWT
+whose payload bytes the caller passed to `JwsBuilder` already non-UTF-8. Headers, and every payload
+the library serializes itself, come from .NET strings and are unaffected. The owner elected
+**minor**. The reasoning: the narrowing spans four decoders at once, and on two of them (the SD-JWT
+issuer JWT and the Disclosures) the previous behaviour was not "accept" but a raw
+`InvalidOperationException` escaping a never-throws API before any signature check. A consumer with
+a catch-all around that crash sees different behaviour after upgrading, and the version number is
+what makes them read the CHANGELOG. The rule this adds: **an accept-set narrowing that also changes
+the exception contract on a path reachable with unauthenticated input is treated as minor, even
+when the patch rule's conditions all hold.**

@@ -24,7 +24,10 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
     <!-- Build-time only -->
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <!-- 10.0.300 pulled Microsoft.Build.Tasks.Git 10.0.300, covered by GHSA-23fw-v26w-5fgq
+         (CVE-2026-62900, patched in 10.0.303) and failing the NU1902-as-error audit on every
+         restore since 2026-09-08. Lifted to the current stable of the same major. -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.403" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
     <!-- AC-6 banned-symbol scan: bans direct System.Security.Cryptography primitives in src/
          method bodies (a shared BannedSymbols.txt at repo root is added to each src csproj). -->

@@ -700,6 +700,12 @@ public static class JweParser
         {
             throw new MalformedJoseException("JWE is not valid JSON.", ex);
         }
+        catch (ArgumentException ex)
+        {
+            // See JwsParser.ParseJsonCore: a lone surrogate in the caller's string surfaces from
+            // JsonDocument.Parse(string) as ArgumentException, not JsonException (issue #28).
+            throw new MalformedJoseException("JWE is not valid JSON text: the string is not well-formed UTF-16.", ex);
+        }
 
         using (doc)
         {

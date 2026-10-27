@@ -93,9 +93,18 @@ public sealed class JwtClaims
     /// differential defense); registered claims with the wrong JSON type are rejected.
     /// </summary>
     /// <param name="utf8Json">The claims-set JSON bytes (a JWS payload).</param>
-    /// <exception cref="MalformedJoseException">When the bytes are not a valid claims-set object.</exception>
+    /// <exception cref="MalformedJoseException">When the bytes are not valid UTF-8 (RFC 7519 §7.2 step 10) or not a valid claims-set object.</exception>
     public static JwtClaims Parse(ReadOnlySpan<byte> utf8Json)
     {
+        // RFC 7519 §7.2 step 10: the payload MUST be a UTF-8 encoded JSON object. JsonDocument does
+        // not check encoding, and a claim name or string value that cannot be transcoded would
+        // surface from the JsonObject below as a raw InvalidOperationException — outside this
+        // method's documented contract and JwtHandler.Verify's never-throws promise (issue #28). This
+        // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") and
+        // a non-object root still throw InvalidOperationException (known 1.4.0 limitations, tracked
+        // in issue #30).
+        JoseJson.RequireUtf8(utf8Json, "JWT claims set");
+
         JsonNode? node;
         try
         {
