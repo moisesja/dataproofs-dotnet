@@ -26,6 +26,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carry invalid UTF-8. No conformant peer's output changes category. Only a signer deliberately
   producing a malformed header is affected, and strict verifiers were already rejecting it.
 
+- **The same UTF-8 check now guards every other decoder in the package — two of which were
+  reachable before any signature check.** Found while tracing #28 to its root cause; none of these
+  were in the report.
+
+  | Decoder | Before 1.4.0 | Reachable before a signature check? |
+  | --- | --- | --- |
+  | SD-JWT issuer JWT and Key Binding JWT header/payload (`CompactJwt`) | A non-UTF-8 member name threw a raw `InvalidOperationException` out of `SdJwtVerifier.Verify` and the Key Binding check, both documented as never throwing. | **Yes** — step 1 of the verifier. |
+  | SD-JWT Disclosure (`Disclosure.Parse`, via `SdJwtComponents.Parse`) | A non-UTF-8 claim name threw a raw `InvalidOperationException` out of `SdJwtVerifier.Verify`; a non-UTF-8 array-element value was accepted. | **Yes** — Disclosures are presented by the holder and parsed in step 1. |
+  | JWT claims set (`JwtClaims.Parse`) | A non-UTF-8 claim name or registered string claim threw a raw `InvalidOperationException`, through `JwtHandler.Verify`'s never-throws promise; a non-UTF-8 unregistered string value was accepted. | After the signature via `JwtHandler`; directly, through the public `Parse`. |
+  | JWE protected header (`JweProtectedHeader.Decode`) | A non-UTF-8 member name was accepted with the name replaced by U+FFFD; a non-UTF-8 extension string value was accepted. | Before decryption, but the header is AEAD-authenticated, so only the sender can produce it. |
+
+  All four now fail as `MalformedJoseException` ("… is not valid UTF-8"), which the structured-result
+  APIs (`SdJwtVerifier.Verify`, `JwtHandler.Verify`, Key Binding) already translate into a
+  `MALFORMED` failure. The governing text is RFC 7516 §5.2 step 3, RFC 7519 §7.2 step 10 and
+  RFC 9901 §4.2.1 respectively, and the accept-set note above applies: none of this library's own
+  output is affected.
+
+  One layer up, a .NET string that is not well-formed UTF-16 (a lone surrogate) handed to
+  `JwsParser.Parse` or `JweParser.Parse` made `JsonDocument.Parse` throw `ArgumentException`
+  through the same contract; it now fails as `MalformedJoseException` too. That input cannot arise
+  from decoding wire bytes with .NET — invalid sequences become U+FFFD — only from a caller's own
+  text.
+
 ## [1.3.0] - 2026-08-05
 
 ### Added
