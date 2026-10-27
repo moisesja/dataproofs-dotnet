@@ -16,7 +16,8 @@ namespace DataProofsDotnet.Core.Tests.Unit;
 /// path reported it as a <c>JcsFormatException</c>, not as the generic verification error.
 /// Only that conversion is mapped: the same untranscodable value in a proof member keeps the generic
 /// verification error it had before #27, so broadening the mapping is a visible decision, not a side
-/// effect (PR #32 review).
+/// effect (PR #32 review). Through the pipeline, issue #33 made that decision: the pipeline's input
+/// check now rejects the whole secured document first, as a document-level transformation error.
 /// </summary>
 public sealed class JcsTransformationFailureTests
 {
@@ -68,10 +69,12 @@ public sealed class JcsTransformationFailureTests
     }
 
     [Fact]
-    public async Task Verify_UntranscodableProofExtension_ThroughThePipeline_KeepsTheGenericVerificationError()
+    public async Task Verify_UntranscodableProofExtension_ThroughThePipeline_IsADocumentLevelTransformationError()
     {
         // End to end through the public pipeline: a secured document whose proof carries the
-        // untranscodable value (the review's reproduction).
+        // untranscodable value (the PR #32 review's reproduction). Until issue #33 this reached the
+        // suite and kept the generic verification error; the pipeline now rejects the document
+        // before parsing any proof, the deliberate broadening the review asked to be visible.
         var key = Fx.SeedKey(0x01);
         var pipeline = new DataIntegrityProofPipeline();
         var secured = await pipeline.AddProofAsync(Parse(SignedDocument), Options(), Fx.Signer(key));
@@ -80,9 +83,10 @@ public sealed class JcsTransformationFailureTests
         var result = pipeline.Verify(hostile, PublicKeyMaterial.FromRaw(key.KeyType, key.PublicKey));
 
         result.Verified.Should().BeFalse();
-        var problem = result.ProofResults.Should().ContainSingle().Subject.Problems.Should().ContainSingle().Subject;
-        problem.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
-        problem.Message.Should().StartWith("Verification failed unexpectedly");
+        result.ProofResults.Should().BeEmpty();
+        var problem = result.Problems.Should().ContainSingle().Subject;
+        problem.Code.Should().Be(ProofProblemCodes.ProofTransformationError);
+        problem.Message.Should().Be("The secured document contains a JSON escape for an unpaired UTF-16 surrogate.");
     }
 
     private const string SignedDocument = "{\"@context\":[\"" + Context + "\"],\"k\":\"v\"}";

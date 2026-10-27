@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Issue #33 regression matrix, shared with Rdfc.Tests (and its builders with Legacy.Tests) -->
+    <Compile Include="../Shared/HostileJson.cs" Link="Shared/HostileJson.cs" />
+    <Compile Include="../Shared/Issue33PipelineTestsBase.cs" Link="Shared/Issue33PipelineTestsBase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Vendored conformance fixtures (PRD §9 conventions): copied beside the test binaries -->
     <Content Include="../fixtures/**/*" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

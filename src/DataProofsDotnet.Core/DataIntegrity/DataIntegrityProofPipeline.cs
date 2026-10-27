@@ -26,6 +26,15 @@ namespace DataProofsDotnet.DataIntegrity;
 /// malformed inputs and misconfiguration on the creation path (FR-23). Instances are
 /// immutable and thread-safe after construction (NFR-4).
 /// </para>
+/// <para>
+/// Both directions first check the JSON they are given, before any step reads it: it must be
+/// valid UTF-8, contain no JSON escape for an unpaired UTF-16 surrogate, repeat no member name
+/// in any object, and nest no deeper than 64 levels (issue #33). A secured document that fails
+/// the check is one document-level <see cref="ProofProblemCodes.ProofTransformationError"/>,
+/// returned before any proof is parsed or any resolver is called; a document or proof options
+/// that fail it on creation throw <see cref="ProofGenerationException"/>. Comments and trailing
+/// commas left by a lenient parse are not faults.
+/// </para>
 /// </remarks>
 public sealed class DataIntegrityProofPipeline
 {
@@ -61,7 +70,8 @@ public sealed class DataIntegrityProofPipeline
     /// <param name="signer">The NetCrypto signer.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
     /// <returns>The secured document carrying the new proof.</returns>
-    /// <exception cref="ProofGenerationException">The options, document, or signer are invalid.</exception>
+    /// <exception cref="ProofGenerationException">The options, document, or signer are invalid,
+    /// including JSON in the document or options that fails the check in the type remarks.</exception>
     public async Task<JsonElement> AddProofAsync(
         JsonElement document,
         DataIntegrityProof proofOptions,
@@ -89,52 +99,76 @@ public sealed class DataIntegrityProofPipeline
             throw new ProofGenerationException("Proof options must not carry a proofValue.");
         }
 
-        var existingProofs = ReadExistingProofs(document);
+        // Every step below, and the suite, reads member names and strings: reject what they
+        // cannot read before the first one does (issue #33).
+        JsonInputCheck.RequireValid(document, "The document to secure");
+        _ = JsonInputCheck.SerializeChecked(proofOptions, DataProofsJsonOptions.ProofTypeInfo, "The proof options object");
 
-        // Build the signing input: the document without its proof member; for chains,
-        // with the matching previous proofs re-embedded as an array (spec §4.5 shape).
-        var signingInput = JsonObject.Create(document)!;
-        signingInput.Remove(ProofMemberName);
-
-        if (proofOptions.PreviousProof is { } previousProof)
+        JsonElement signingElement;
+        try
         {
-            var matching = new JsonArray();
-            foreach (var reference in previousProof.Values)
+            var existingProofs = ReadExistingProofs(document);
+
+            // Build the signing input: the document without its proof member; for chains,
+            // with the matching previous proofs re-embedded as an array (spec §4.5 shape).
+            var signingInput = JsonObject.Create(document)!;
+            signingInput.Remove(ProofMemberName);
+
+            if (proofOptions.PreviousProof is { } previousProof)
             {
-                var match = existingProofs.FirstOrDefault(p => string.Equals(GetProofId(p), reference, StringComparison.Ordinal));
-                if (match.ValueKind != JsonValueKind.Object)
+                var matching = new JsonArray();
+                foreach (var reference in previousProof.Values)
                 {
-                    throw new ProofGenerationException($"previousProof references '{reference}', which matches no existing proof id.");
+                    var match = existingProofs.FirstOrDefault(p => string.Equals(GetProofId(p), reference, StringComparison.Ordinal));
+                    if (match.ValueKind != JsonValueKind.Object)
+                    {
+                        throw new ProofGenerationException($"previousProof references '{reference}', which matches no existing proof id.");
+                    }
+
+                    matching.Add(JsonNode.Parse(match.GetRawText()));
                 }
 
-                matching.Add(JsonNode.Parse(match.GetRawText()));
+                signingInput[ProofMemberName] = matching;
             }
 
-            signingInput[ProofMemberName] = matching;
+            signingElement = JsonSerializer.SerializeToElement(signingInput, DataProofsJsonOptions.JsonObjectTypeInfo);
+        }
+        catch (Exception ex) when (IsTransformationFault(ex))
+        {
+            throw new ProofGenerationException("The document could not be prepared for signing.", ex);
         }
 
-        var signingElement = JsonSerializer.SerializeToElement(signingInput, DataProofsJsonOptions.JsonObjectTypeInfo);
+        // The suite call stays outside the mapping: its own contract covers it, and a signer
+        // fault must not be relabelled as a document fault.
         var proof = await suite.CreateProofAsync(signingElement, proofOptions, signer, cancellationToken).ConfigureAwait(false);
-        var proofNode = JsonSerializer.SerializeToNode(proof, DataProofsJsonOptions.ProofTypeInfo)!;
 
-        // Append the proof: none -> object form; existing object -> two-element array;
-        // existing array -> append.
-        var output = JsonObject.Create(document)!;
-        if (!document.TryGetProperty(ProofMemberName, out var proofMember))
+        try
         {
-            output[ProofMemberName] = proofNode;
-        }
-        else if (proofMember.ValueKind == JsonValueKind.Object)
-        {
-            output[ProofMemberName] = new JsonArray(JsonNode.Parse(proofMember.GetRawText()), proofNode);
-        }
-        else
-        {
-            var array = (JsonArray)output[ProofMemberName]!;
-            array.Add(proofNode);
-        }
+            var proofNode = JsonSerializer.SerializeToNode(proof, DataProofsJsonOptions.ProofTypeInfo)!;
 
-        return JsonSerializer.SerializeToElement(output, DataProofsJsonOptions.JsonObjectTypeInfo);
+            // Append the proof: none -> object form; existing object -> two-element array;
+            // existing array -> append.
+            var output = JsonObject.Create(document)!;
+            if (!document.TryGetProperty(ProofMemberName, out var proofMember))
+            {
+                output[ProofMemberName] = proofNode;
+            }
+            else if (proofMember.ValueKind == JsonValueKind.Object)
+            {
+                output[ProofMemberName] = new JsonArray(JsonNode.Parse(proofMember.GetRawText()), proofNode);
+            }
+            else
+            {
+                var array = (JsonArray)output[ProofMemberName]!;
+                array.Add(proofNode);
+            }
+
+            return JsonSerializer.SerializeToElement(output, DataProofsJsonOptions.JsonObjectTypeInfo);
+        }
+        catch (Exception ex) when (IsTransformationFault(ex))
+        {
+            throw new ProofGenerationException("The secured document could not be assembled.", ex);
+        }
     }
 
     /// <summary>
@@ -255,6 +289,14 @@ public sealed class DataIntegrityProofPipeline
         if (securedDocument.ValueKind != JsonValueKind.Object)
         {
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.");
+        }
+
+        // FR-3: a document whose member names or strings cannot be read, or whose members repeat,
+        // fails here as a result — before any proof is parsed or any resolver is called — rather
+        // than throwing from whichever later step reads it first (issue #33).
+        if (JsonInputCheck.FindProblem(securedDocument) is { } problem)
+        {
+            return DocumentFailure(ProofProblemCodes.ProofTransformationError, $"The secured document {problem}.");
         }
 
         if (!securedDocument.TryGetProperty(ProofMemberName, out var proofMember))
@@ -401,20 +443,27 @@ public sealed class DataIntegrityProofPipeline
         JsonArray? matchingProofs = null;
         if (proof.PreviousProof is { } previousProof)
         {
-            matchingProofs = [];
-            foreach (var reference in previousProof.Values)
+            try
             {
-                var match = allProofs.FirstOrDefault(
-                    p => p.ValueKind == JsonValueKind.Object
-                        && string.Equals(GetProofId(p), reference, StringComparison.Ordinal));
-                if (match.ValueKind != JsonValueKind.Object)
+                matchingProofs = [];
+                foreach (var reference in previousProof.Values)
                 {
-                    return ProofVerificationResult.Failure(
-                        ProofProblemCodes.ProofVerificationError,
-                        $"previousProof references '{reference}', which matches no proof id in the document.", proof);
-                }
+                    var match = allProofs.FirstOrDefault(
+                        p => p.ValueKind == JsonValueKind.Object
+                            && string.Equals(GetProofId(p), reference, StringComparison.Ordinal));
+                    if (match.ValueKind != JsonValueKind.Object)
+                    {
+                        return ProofVerificationResult.Failure(
+                            ProofProblemCodes.ProofVerificationError,
+                            $"previousProof references '{reference}', which matches no proof id in the document.", proof);
+                    }
 
-                matchingProofs.Add(JsonNode.Parse(match.GetRawText()));
+                    matchingProofs.Add(JsonNode.Parse(match.GetRawText()));
+                }
+            }
+            catch (Exception ex) when (IsTransformationFault(ex))
+            {
+                return TransformationFailure(ex, proof);
             }
         }
 
@@ -441,18 +490,25 @@ public sealed class DataIntegrityProofPipeline
             var inputElement = JsonSerializer.SerializeToElement(inputDocument, DataProofsJsonOptions.JsonObjectTypeInfo);
             return suite.VerifyProof(inputElement, proof, publicKey);
         }
-        catch (Exception ex) when (ex is JsonException or ArgumentException)
+        catch (Exception ex) when (IsTransformationFault(ex))
         {
-            // FR-3: hostile documents fail the transformation step as a result, never as an
-            // exception. JsonException covers oversized/over-nested input; ArgumentException covers
-            // a duplicate top-level member name, which surfaces from JsonObject.Create(...).Remove(...)
-            // when its backing dictionary is materialized (a verifier must fail closed on this,
-            // not crash — it is attacker-controlled input).
-            return ProofVerificationResult.Failure(
-                ProofProblemCodes.ProofTransformationError,
-                $"The secured document could not be transformed for verification: {ex.Message}", proof);
+            return TransformationFailure(ex, proof);
         }
     }
+
+    // The exceptions System.Text.Json raises for content it cannot transform: an over-nested or
+    // unwritable value (JsonException), a duplicate member materialized by a JsonObject
+    // (ArgumentException), a name or string that cannot be read (InvalidOperationException).
+    // JsonInputCheck rejects all of them up front (issue #33); the mapping stays so that a gap in it
+    // still fails through the documented contract — a failed result on verification (FR-3), never a
+    // crash on attacker-controlled input, and ProofGenerationException on creation (FR-23).
+    private static bool IsTransformationFault(Exception ex)
+        => ex is JsonException or ArgumentException or InvalidOperationException;
+
+    private static ProofVerificationResult TransformationFailure(Exception ex, DataIntegrityProof proof)
+        => ProofVerificationResult.Failure(
+            ProofProblemCodes.ProofTransformationError,
+            $"The secured document could not be transformed for verification: {ex.Message}", proof);
 
     private static List<JsonElement> ReadExistingProofs(JsonElement document)
     {

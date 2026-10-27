@@ -61,6 +61,9 @@ internal abstract class JcsCryptosuite : ICryptosuite
             throw new ProofGenerationException("The document to secure must be a JSON object.");
         }
 
+        // Before the @context lookup below, which compares member names (issue #33).
+        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+
         if (!IsSupportedKeyType(signer.KeyType))
         {
             throw new ProofGenerationException($"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
@@ -110,12 +113,16 @@ internal abstract class JcsCryptosuite : ICryptosuite
             ProofValue = null,
         };
 
+        // The configuration carries the caller's raw JSON (@context, extension members), which
+        // serialization cannot always write (issue #33).
+        var proofConfigElement = JsonInputCheck.SerializeChecked(
+            proofConfig, DataProofsJsonOptions.ProofTypeInfo, "The proof configuration");
+
         byte[] canonicalProofConfig;
         byte[] canonicalDocument;
         try
         {
-            canonicalProofConfig = JcsCanonicalizer.Canonicalize(
-                JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.ProofTypeInfo));
+            canonicalProofConfig = JcsCanonicalizer.Canonicalize(proofConfigElement);
             canonicalDocument = JcsCanonicalizer.Canonicalize(unsecuredDocument);
         }
         catch (JcsFormatException ex)
