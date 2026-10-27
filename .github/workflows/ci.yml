@@ -9,8 +9,11 @@ on:
 permissions:
   contents: read
 
-# PRD §9: one CI job per acceptance criterion, ac-1 … ac-12, each exiting 0/non-zero, all
-# required for merge to main. ac-11 (package-identity publish gate) lives in publish.yml.
+# PRD §9: one CI job per acceptance criterion, ac-1 … ac-12, each exiting 0/non-zero, all to be green
+# before a merge to main. Correction (2026-10-27, PR #32 review): GitHub does not enforce this — main has
+# no branch protection or rulesets — so it is a maintainer procedure until the jobs are configured as
+# required status checks (an owner action; see PRD §9). ac-11 (package-identity publish gate) lives in
+# publish.yml.
 # ac-5 (didcomm behavior-parity diff) has been retired — see the note where it used to sit, below.
 #
 # The build-test job is the comprehensive gate: it builds the whole solution with
@@ -235,7 +238,7 @@ jobs:
       # NFR-7 / AC-12 (issue #27). tasks/aot-smoke exercises every package with fixed keys and timestamps
       # and writes a report whose `deterministic` section must be byte-identical across four legs.
       # Each run builds into its own output directory and is checked for the runtime it claims to be,
-      # so a mix-up between the three cannot pass silently. PublishAot is passed on the command line,
+      # so a mix-up between the legs cannot pass silently. PublishAot is passed on the command line,
       # not set in the csproj, so ordinary solution restores never download the ILCompiler and
       # `dotnet run` stays a true JIT baseline (see tasks/aot-smoke/README.md).
       - name: emit — JIT, reflection-based serialization enabled (today's ordinary host)
@@ -257,7 +260,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dotnet run tasks/aot-smoke/file-based-app/aot-smoke.cs --configuration Release -- emit "$SMOKE/filebased.json"
+          # --no-cache: dotnet run skips the rebuild when only #:project-referenced code changed.
+          dotnet run tasks/aot-smoke/file-based-app/aot-smoke.cs --no-cache --configuration Release -- emit "$SMOKE/filebased.json"
           jq -e '.runtime.reflectionEnabled == false and .runtime.isDynamicCodeSupported == false' "$SMOKE/filebased.json" > /dev/null
       - name: publish — native AOT, linux-x64
         shell: bash
@@ -282,8 +286,9 @@ jobs:
           "$SMOKE/aot/AotSmoke" verify "$SMOKE/filebased.json"
       # Every IL warning must be on tasks/aot-smoke/known-il-warnings.txt, whichever assembly it names:
       # hidden reflection in an unannotated dependency surfaces as that dependency's warning (NetCid's did).
-      # The self-test proves the scan rejects a DataProofs warning, an unknown dependency warning, and an
-      # empty or skipped (no native compilation) log before the real log is trusted.
+      # The tool's IlCanary warnings must be present, which proves the analysis ran and was not suppressed.
+      # The self-test proves the scan rejects a DataProofs warning, an unknown dependency warning, a missing
+      # canary, and an empty or skipped (no native compilation) log before the real log is trusted.
       - name: IL warnings — only known, unreachable third-party ones (scan self-test first)
         shell: bash
         run: |

@@ -27,6 +27,7 @@ public static class SmokeMain
     /// <summary>Runs one mode (<c>emit</c>, <c>verify</c> or <c>compare</c>) and returns the exit code.</summary>
     public static async Task<int> RunAsync(string[] args)
     {
+        IlCanary.Run();
         ISmokePath[] paths =
         [
             new JcsPath(),

@@ -61,7 +61,7 @@ bad usage. The report has three sections:
 | --- | --- | --- |
 | JIT | `dotnet build -o jit` then `dotnet jit/AotSmoke.dll` | an ordinary application: dynamic code on, reflection on |
 | Reflection disabled | build with `-p:JsonSerializerIsReflectionEnabledByDefault=false` | the serializer condition of a trimmed host |
-| File-based app | `dotnet run file-based-app/aot-smoke.cs` (`#:project ../AotSmoke.csproj`) | a .NET 10 file-based app: the SDK's native-AOT defaults under `dotnet run`, with dynamic code and reflection both off |
+| File-based app | `dotnet run file-based-app/aot-smoke.cs --no-cache` (`#:project ../AotSmoke.csproj`) | a .NET 10 file-based app: the SDK's native-AOT defaults under `dotnet run`, with dynamic code and reflection both off |
 | Native AOT | `dotnet publish -r <rid> -p:PublishAot=true` | a native binary |
 
 ```bash
@@ -69,7 +69,7 @@ S=$(mktemp -d)
 dotnet build tasks/aot-smoke -c Release -o "$S/jit" && dotnet "$S/jit/AotSmoke.dll" emit "$S/jit.json"
 dotnet build tasks/aot-smoke -c Release --no-incremental -p:JsonSerializerIsReflectionEnabledByDefault=false -o "$S/noreflect"
 dotnet "$S/noreflect/AotSmoke.dll" emit "$S/trimmed.json"
-dotnet run tasks/aot-smoke/file-based-app/aot-smoke.cs -c Release -- emit "$S/filebased.json"
+dotnet run tasks/aot-smoke/file-based-app/aot-smoke.cs --no-cache -c Release -- emit "$S/filebased.json"   # --no-cache: otherwise edits to the referenced project are not rebuilt
 dotnet publish tasks/aot-smoke -c Release -r osx-arm64 -p:PublishAot=true -o "$S/aot" > "$S/publish.log"   # needs clang; use your RID
 "$S/aot/AotSmoke" emit "$S/aot.json"
 dotnet "$S/jit/AotSmoke.dll" compare "$S/jit.json" "$S/trimmed.json" "$S/filebased.json" "$S/aot.json"
@@ -86,18 +86,31 @@ acceptable. The tool's own Roslyn analyzers remain errors.
 
 ## The IL-warning scan
 
-`scan-il-warnings.sh <publish.log>` fails in three cases:
+`scan-il-warnings.sh <publish.log>` fails in four cases:
 
 - the log is missing or empty;
 - the log shows no native compilation (`Generating native code`), as with a publish that was skipped
   as up to date;
-- any `IL2xxx`/`IL3xxx` line does not contain an entry of `known-il-warnings.txt`.
+- the tool's own canary warnings are absent. `IlCanary.cs` makes one deliberate `RequiresUnreferencedCode`
+  and `RequiresDynamicCode` call, which a `#pragma` hides from the build's analyzers but not from the
+  ILCompiler. A publish with the analysis switched off (`SuppressTrimAnalysisWarnings`,
+  `SuppressAotAnalysisWarnings`) logs no IL warnings at all, and would otherwise pass;
+- any `IL2xxx`/`IL3xxx` warning does not start with an entry of `known-il-warnings.txt`. Each line is
+  matched from its first `ILxxxx:`, so text quoted inside a message cannot borrow a match.
 
-The known list names each warning's code and member, with the reason it is unreachable. Today it
-holds only Newtonsoft.Json's `dynamic` support and `JValue.IConvertible.ToType`, which dotNetRdf's
-JSON-LD parser never takes. `--self-test` proves the scan rejects a DataProofs warning, an unknown
-dependency warning (the NetCid case), a log without native compilation, and an empty or missing log,
-and accepts a known warning.
+Each entry on the known list names the warning's code and the member whose body raises it, with the
+reason it is unreachable. Today the list holds the two canaries plus Newtonsoft.Json's `dynamic`
+support and `JValue.IConvertible.ToType`, which dotNetRdf's JSON-LD parser never takes.
+
+The list has a limit. ILC attributes a warning to the member that makes the call, so a *new caller* of
+a listed member, which could make a listed path reachable, produces no new line. A new message at a
+listed member also matches. An entry is only as good as its reason, and the runtime legs prove only
+the paths this tool exercises.
+
+`--self-test` proves the scan's verdict on each input class. It must reject a DataProofs warning, an
+unknown dependency warning (the NetCid case), a missing or half canary, a message that quotes a known
+entry, a log without native compilation, and an empty or missing log. It must accept known warnings
+with the canary, including CRLF line endings.
 
 If `ac-12` reports a new warning, trace it before touching the list. If the path is reachable, stop
 using it and ban it in `BannedSymbols.txt` with the reason. Only a warning shown to be unreachable goes

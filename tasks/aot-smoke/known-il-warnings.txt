@@ -5,14 +5,27 @@
 # shows up (NetCid's JcsCanonicalizer.Canonicalize(JsonNode) appeared in exactly this log), so they are
 # not informational: each one is either listed here, with the reason it is unreachable, or a failure.
 #
-# Format: one fixed string per line, matched as a substring of the normalized warning
-# ("ILxxxx: <member>: <message>"). Lines starting with '#' and blank lines are ignored. Each entry must
-# name the warning code and the member, never a bare code or assembly.
+# Format: one entry per line, matched as a PREFIX of the normalized warning ("ILxxxx: <origin member>:
+# <message>"), so an entry names the code and the member whose body raises the warning. Lines starting
+# with '#' and blank lines are ignored.
+#   <prefix>           an allowed warning
+#   require <prefix>   a canary: allowed, and at least one warning must match it, or the scan fails
+#
+# What an entry cannot catch: ILC attributes a warning to the member whose body makes the call, so a
+# new caller of a listed member produces no new line, and a different message at a listed member also
+# matches. An entry is therefore only as good as its reason; the runtime legs of ac-12 prove only the
+# paths tasks/aot-smoke exercises.
+
+# The canary (IlCanary.cs): proves the ILCompiler's trim and AOT analysis ran and reached this log. A
+# publish with the analysis suppressed logs no IL warnings and would otherwise pass.
+require IL2026: DataProofsDotnet.Tools.AotSmoke.IlCanary.Run(): Using member 'DataProofsDotnet.Tools.AotSmoke.IlCanary.Annotated()'
+require IL3050: DataProofsDotnet.Tools.AotSmoke.IlCanary.Run(): Using member 'DataProofsDotnet.Tools.AotSmoke.IlCanary.Annotated()'
 
 # Newtonsoft.Json (transitive through dotNetRdf.Core, Rdfc only): its `dynamic` support
 # (IDynamicMetaObjectProvider.GetMetaObject) and IConvertible.ToType on JValue. dotNetRdf's JSON-LD
 # parser reads JToken trees through the typed LINQ-to-JSON API and never takes either path; the issue
-# verified RDFC output byte-identical to JIT under native AOT, and ac-12 re-proves it on every run.
+# verified RDFC output byte-identical to JIT under native AOT, and ac-12's runtime legs re-check the RDFC
+# paths tasks/aot-smoke exercises on every run.
 IL2026: Newtonsoft.Json.Linq.JObject.GetMetaObject(Expression):
 IL3050: Newtonsoft.Json.Linq.JObject.GetMetaObject(Expression):
 IL2026: Newtonsoft.Json.Linq.JToken.GetMetaObject(Expression):

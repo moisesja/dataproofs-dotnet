@@ -12,14 +12,14 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <EnableAotAnalyzer>true</EnableAotAnalyzer>
     <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
-    <!-- Itemize third-party ILC warnings in the publish log instead of one line per assembly, so
-         the AC-12 log scan can tell a DataProofsDotnet warning from a dotNetRdf/Newtonsoft one. -->
+    <!-- Itemize third-party ILC warnings in the publish log instead of one collapsed IL2104/IL3053 line
+         per assembly, so the AC-12 scan can match each warning against known-il-warnings.txt by member. -->
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
-    <!-- The ILCompiler inherits the repo-wide TreatWarningsAsErrors by default, which turns the
-         expected third-party warnings (Newtonsoft.Json's unreachable `dynamic` support, pulled in by
-         dotNetRdf.Core) into publish errors. They are reported, not fatal: the AC-12 job fails only on
-         an IL warning attributed to a DataProofsDotnet assembly. The Roslyn analyzers on this tool's own
-         code above are unaffected and stay errors. -->
+    <!-- The ILCompiler inherits the repo-wide TreatWarningsAsErrors by default, which turns the known
+         third-party warnings (Newtonsoft.Json's unreachable `dynamic` support, pulled in by
+         dotNetRdf.Core) and the IlCanary warnings into publish errors. They are reported, not fatal:
+         scan-il-warnings.sh decides, and it fails on any IL warning not on known-il-warnings.txt and on
+         a log without the canary. The Roslyn analyzers on this tool's own code stay errors. -->
     <IlcTreatWarningsAsErrors>false</IlcTreatWarningsAsErrors>
   </PropertyGroup>
 
@@ -30,7 +30,7 @@
         for every contributor and every CI job that merely builds the solution; and
       * `dotnet run` on this project stays a true JIT baseline — in a project that sets PublishAot the
         SDK turns JsonSerializer.IsReflectionEnabledByDefault off even under `dotnet run`, which would
-        make the "JIT with reflection" leg of the three-way comparison impossible.
+        make the "JIT with reflection" leg of the four-way comparison impossible.
   -->
 
   <ItemGroup>
