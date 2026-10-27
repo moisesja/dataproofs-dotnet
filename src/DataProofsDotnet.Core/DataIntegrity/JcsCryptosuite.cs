@@ -24,6 +24,8 @@ namespace DataProofsDotnet.DataIntegrity;
 /// </summary>
 internal abstract class JcsCryptosuite : ICryptosuite
 {
+    private const string CanonicalizationFailedMessage = "The document or proof configuration could not be JCS-canonicalized.";
+
     private protected static readonly DefaultCryptoProvider Crypto = new();
 
     /// <inheritdoc />
@@ -208,6 +210,28 @@ internal abstract class JcsCryptosuite : ICryptosuite
                 rewrittenDocument["@context"] = JsonNode.Parse(proofContext.GetRawText());
             }
 
+            // Canonicalize an element, never a node: NetCid's JsonNode overloads of
+            // JcsCanonicalizer.Canonicalize serialize through reflection-based System.Text.Json, which
+            // trimmed and native-AOT hosts disable, so every proof carrying @context failed to verify
+            // there (issue #27; the overloads are banned in BannedSymbols.txt). The conversion is a
+            // transformation step: a document the node path rejected as untranscodable or over-deep
+            // (JcsFormatException there) is rejected here as a JsonException, and both are the same
+            // transformation failure. Only this conversion is mapped, so every other failure keeps the
+            // problem code it had before.
+            var documentToCanonicalize = unsecuredDocument;
+            if (rewrittenDocument is not null)
+            {
+                try
+                {
+                    documentToCanonicalize = JsonSerializer.SerializeToElement(rewrittenDocument, DataProofsJsonOptions.JsonObjectTypeInfo);
+                }
+                catch (JsonException)
+                {
+                    return ProofVerificationResult.Failure(
+                        ProofProblemCodes.ProofTransformationError, CanonicalizationFailedMessage, proof);
+                }
+            }
+
             byte[] canonicalProofConfig;
             byte[] canonicalDocument;
             try
@@ -215,22 +239,12 @@ internal abstract class JcsCryptosuite : ICryptosuite
                 var proofConfig = proof with { ProofValue = null };
                 canonicalProofConfig = JcsCanonicalizer.Canonicalize(
                     JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.ProofTypeInfo));
-                // Canonicalize an element, never a node: NetCid's JsonNode overloads of
-                // JcsCanonicalizer.Canonicalize serialize through reflection-based System.Text.Json,
-                // which trimmed and native-AOT hosts disable, so every proof carrying @context failed
-                // to verify there (issue #27; the overloads are banned in BannedSymbols.txt). The
-                // conversion stays inside this try: a document the node path rejected as
-                // untranscodable or over-deep (JcsFormatException there) is rejected here as a
-                // JsonException, and both are the same transformation failure.
-                canonicalDocument = JcsCanonicalizer.Canonicalize(rewrittenDocument is null
-                    ? unsecuredDocument
-                    : JsonSerializer.SerializeToElement(rewrittenDocument, DataProofsJsonOptions.JsonObjectTypeInfo));
+                canonicalDocument = JcsCanonicalizer.Canonicalize(documentToCanonicalize);
             }
-            catch (Exception ex) when (ex is JcsFormatException or JsonException)
+            catch (JcsFormatException)
             {
                 return ProofVerificationResult.Failure(
-                    ProofProblemCodes.ProofTransformationError,
-                    "The document or proof configuration could not be JCS-canonicalized.", proof);
+                    ProofProblemCodes.ProofTransformationError, CanonicalizationFailedMessage, proof);
             }
 
             var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, publicKey.KeyType);
