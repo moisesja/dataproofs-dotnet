@@ -16,7 +16,7 @@ Decisions:
 - [x] Update NetCrypto and restore; investigate compatibility differences.
 - [x] Run full Release build/tests, relevant gates, samples and AOT parity.
 - [x] Adversarially review fixes and resolve valid findings.
-- [ ] Commit and push to PR #35; update PR description/review response and verify checks.
+- [x] Commit and push to PR #35; update PR description/review response and inspect the new CI run.
 
 ## Review
 
@@ -26,4 +26,6 @@ The independent adversarial reviewer reran the original depth probe and actual d
 
 All 15 samples exited zero. Dependency hygiene (project and packed graphs), public API scan and samples coverage passed. All four AOT legs (JIT, reflection-disabled, file-based and osx-arm64 native) passed 50 checks each; 28 deterministic values matched, and cross-runtime verification passed 32 checks in each direction. IL scanner self-tests and publish scan passed, with only the reviewed Newtonsoft warnings and canary. The native linker also reported unavailable cached module debug information; executable validation passed.
 
-PR publication in progress. Validation logs: /tmp/pr35-before.log, /tmp/pr35-after.log, /tmp/pr35-full-tests.log and /tmp/pr35-validation/.
+Published fixes in `56a4d7b` and the dependency bump in `eab4316` to PR #35. Updated the PR title/description and posted the response at https://github.com/moisesja/dataproofs-dotnet/pull/35#issuecomment-6455683986. The CI run on those commits started successfully; six checks had passed at the first inspection, with the remaining jobs running. Final CI status is tracked on the PR. No merge, tag or package publication.
+
+Validation logs: /tmp/pr35-before.log, /tmp/pr35-after.log, /tmp/pr35-full-tests.log and /tmp/pr35-validation/.
