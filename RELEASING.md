@@ -186,8 +186,8 @@ The same release also rejects JSON escapes for unpaired surrogates (`\uD800`) in
 forbidden by I-JSON (RFC 7493 §2.1) but by no JSON or JOSE RFC, so a conformant peer could in
 principle send one. It is minor material under the accept-set rule as written. It rode in a release
 that was already a minor, and the CHANGELOG names the one kind of this library's own output it
-rejects: a JWT whose payload bytes the caller passed to `JwsBuilder` already carrying such an
-escape. The point worth keeping: **"invalid under the RFC" means the governing RFC, not a stricter
+rejects: a JWT or SD-JWT issuer JWT whose payload bytes the caller passed to `JwsBuilder` already
+carrying such an escape. The point worth keeping: **"invalid under the RFC" means the governing RFC, not a stricter
 profile of it.** Rejecting what only a profile such as I-JSON forbids is a spec-valid narrowing.
 
 ## Downstream consumers
