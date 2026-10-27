@@ -222,13 +222,14 @@ jobs:
   ac-12:
     name: ac-12 native AOT publish + JIT parity
     runs-on: ubuntu-latest
-    env:
-      SMOKE: ${{ runner.temp }}/aot-smoke
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # The runner context is not available to job-level env, so the scratch path is exported here.
+      - name: Scratch directory for the three reports
+        run: echo "SMOKE=$RUNNER_TEMP/aot-smoke" >> "$GITHUB_ENV"
       - name: Native toolchain for the ILCompiler
         run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
       # NFR-7 / AC-12 (issue #27). tasks/aot-smoke exercises every package with fixed keys and timestamps
