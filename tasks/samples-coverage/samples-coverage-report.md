@@ -1,11 +1,16 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **543**
-- Covered by at least one sample: **543**
-- Allowlisted (excused, with justification): **0**
+- Public members across 6 packages: **547**
+- Covered by at least one sample: **545**
+- Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
 Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt`
+
+## Allowlisted members
+
+- `DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter (type)`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter..ctor()`
 
 ## Covered members
 
@@ -140,6 +145,8 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.DataIntegrity.PreviousProofReference.FromValues`
 - `DataProofsDotnet.DataIntegrity.PreviousProofReference.IsArrayForm`
 - `DataProofsDotnet.DataIntegrity.PreviousProofReference.Values`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter.Read`
+- `DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter.Write`
 - `DataProofsDotnet.DataIntegrity.ProofProblem (type)`
 - `DataProofsDotnet.DataIntegrity.ProofProblem..ctor()`
 - `DataProofsDotnet.DataIntegrity.ProofProblem.Code`
