@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This release closes **invalid decoded octets** only. It does not establish that the never-throws
 and `MalformedJoseException` contracts hold in general. Three pre-existing input classes, found by
-this release's adversarial review, still escape them and are planned as a follow-up:
+this release's adversarial review, still escape them. All three are tracked in [#30](https://github.com/moisesja/dataproofs-dotnet/issues/30):
 
 - **A JSON escape for an unpaired surrogate** (`\uD800`, `\uDC00`). Those six bytes are valid
   UTF-8, so the new check passes them, and System.Text.Json throws `InvalidOperationException` when
@@ -82,6 +82,12 @@ this release's adversarial review, still escape them and are planned as a follow
   `InvalidOperationException`, including through `JwtHandler.Verify` on a validly signed token.
 - **`JweParser` with an empty `"protected"` member** throws `ArgumentException` from `Parse`,
   `PeekRecipients` and `ParseAsync`.
+
+Separately, the COSE package has the CBOR counterpart of this release's JWE fix. It reads text
+strings in `CborConformanceMode.Lax`, which decodes a non-UTF-8 text string lossily, with U+FFFD
+substitution, instead of rejecting it (RFC 8949 §3.1). `VcCose.Verify` still fails closed on its
+fixed `typ` and content-type values, and no exception escapes; a text string that is not compared to
+a constant is accepted. Tracked in [#31](https://github.com/moisesja/dataproofs-dotnet/issues/31).
 
 ### Security
 

@@ -101,8 +101,8 @@ public sealed class JwtClaims
         // surface from the JsonObject below as a raw InvalidOperationException — outside this
         // method's documented contract and JwtHandler.Verify's never-throws promise (issue #28). This
         // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") and
-        // a non-object root still throw InvalidOperationException (known 1.4.0 limitations; see the
-        // CHANGELOG).
+        // a non-object root still throw InvalidOperationException (known 1.4.0 limitations, tracked
+        // in issue #30).
         JoseJson.RequireUtf8(utf8Json, "JWT claims set");
 
         JsonNode? node;

@@ -101,7 +101,7 @@ public sealed class Disclosure
         // InvalidOperationException from GetValue<string>() below — before any signature check and
         // outside the MalformedJoseException contract SdJwtVerifier relies on (issue #28). This
         // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") is
-        // valid UTF-8 and still reaches that transcode (a known 1.4.0 limitation; see the CHANGELOG).
+        // valid UTF-8 and still reaches that transcode (a known 1.4.0 limitation, tracked in issue #30).
         Json.JoseJson.RequireUtf8(bytes, "SD-JWT Disclosure");
 
         JsonNode? node;

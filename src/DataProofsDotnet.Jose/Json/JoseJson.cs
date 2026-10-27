@@ -45,7 +45,7 @@ internal static class JoseJson
     /// It does <b>not</b> cover a JSON escape for an unpaired surrogate (<c>\uD800</c>). Those six
     /// bytes are valid UTF-8 and the reader accepts them, so the lazy transcode still throws
     /// <see cref="InvalidOperationException"/> when the string is read. That class is a known 1.4.0
-    /// limitation; see the CHANGELOG.
+    /// limitation, tracked in issue #30.
     /// </para>
     /// </remarks>
     /// <param name="utf8">The decoded octets.</param>
