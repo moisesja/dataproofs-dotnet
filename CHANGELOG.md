@@ -238,7 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `JwsParser` and `JweParser` return payloads and plaintexts opaquely, without parsing them.
 
   The regression suite covers each placement above on each entry point named, with four escapes
-  (`\uD800`, `\uDC00`, `\uD800A`, `\uD800\uD800`), plus the key-agreement cases: 788 cases in
+  (`\uD800`, `\uDC00`, `\uD800A`, `\uD800\uD800`), plus the key-agreement cases: 816 cases in
   all. Every case that feeds one of these inputs fails against the pre-fix code. The ones that
   pass on both are the over-rejection guards, which prove that well-formed escapes (a surrogate
   pair included) and this library's own non-BMP output still verify, their controls, and the

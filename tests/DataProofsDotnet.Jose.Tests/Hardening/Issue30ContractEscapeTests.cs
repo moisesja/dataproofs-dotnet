@@ -1090,15 +1090,8 @@ public sealed class Issue30ContractEscapeTests
     // escaped JweParser's documented contract. No key is needed to send one. It is now the uniform
     // decrypt failure: same type, same message, no inner cause, held key or decoy (issue #12).
 
-    /// <summary>X25519 u-coordinates of small order (RFC 7748 §6.1): 0 and 1.</summary>
-    public static TheoryData<string, string> LowOrderEpkCases()
-    {
-        var data = new TheoryData<string, string>();
-        foreach (var entryPoint in new[] { "parse", "parse-unheld", "parse-async", "compact", "compact-async" })
-            foreach (var u in new[] { "u=0", "u=1" })
-                data.Add(entryPoint, u);
-        return data;
-    }
+    /// <summary>X25519 u-coordinates of small order (RFC 7748 §6.1).</summary>
+    private static readonly string[] LowOrderPoints = ["u=0", "u=1"];
 
     private static string LowOrderX25519(string u)
         => Base64Url.Encode(u == "u=0" ? new byte[32] : [1, .. new byte[31]]);
@@ -1109,54 +1102,87 @@ public sealed class Issue30ContractEscapeTests
 
     private static RawEcdhKey BobEcdhKey() => new(Bob.PrivateJwk.Crv!, Base64Url.Decode(Bob.PrivateJwk.D!), Jose);
 
+    /// <summary>A key on P-256, not the envelope's X25519, so the async parsers substitute their decoy.</summary>
+    private static RawEcdhKey OffCurveEcdhKey() => new(BobP256.PrivateJwk.Crv!, Base64Url.Decode(BobP256.PrivateJwk.D!), Jose);
+
+    /// <summary>
+    /// Every JWE entry point, with the recipient key held and with the parser falling back to its
+    /// per-process decoy (issue #12): <c>parse-unheld</c> gives <c>Parse</c> no key at all, and the
+    /// <c>-decoy</c> variants give the async parsers a key on another curve. <c>ParseCompact</c> has
+    /// no decoy; it uses the caller's key as given.
+    /// </summary>
+    private static readonly string[] KeyAgreementEntryPoints =
+        ["parse", "parse-unheld", "parse-async", "parse-async-decoy", "compact", "compact-async", "compact-async-decoy"];
+
+    /// <summary>Runs one <see cref="KeyAgreementEntryPoints"/> entry over an envelope addressed to Bob (X25519).</summary>
+    private static Func<Task> InvokeKeyAgreement(string entryPoint, JweParts parts, IJweSenderKeyResolver? senders)
+    {
+        var json = JweJson(parts, placement: null, escape: null);
+        var compact = CompactJwe(parts);
+        return entryPoint switch
+        {
+            "parse" => () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([Bob.PrivateJwk]), senders, Jose)),
+            "parse-unheld" => () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([]), senders, Jose)),
+            "parse-async" => () => JweParser.ParseAsync(json, BobEcdhKey(), senders, Jose),
+            "parse-async-decoy" => () => JweParser.ParseAsync(json, OffCurveEcdhKey(), senders, Jose),
+            "compact" => () => Task.FromResult(JweParser.ParseCompact(compact, Bob.PrivateJwk, senders, Jose)),
+            "compact-async" => () => JweParser.ParseCompactAsync(compact, BobEcdhKey(), senders, Jose),
+            "compact-async-decoy" => () => JweParser.ParseCompactAsync(compact, OffCurveEcdhKey(), senders, Jose),
+            _ => throw new ArgumentOutOfRangeException(nameof(entryPoint), entryPoint, "unknown entry point"),
+        };
+    }
+
+    public static TheoryData<string, string> LowOrderEpkCases()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var entryPoint in KeyAgreementEntryPoints)
+            foreach (var u in LowOrderPoints)
+                data.Add(entryPoint, u);
+        return data;
+    }
+
     [Theory]
     [MemberData(nameof(LowOrderEpkCases))]
     public async Task Jwe_EcdhEsWithLowOrderEpk_IsUniformDecryptFailure(string entryPoint, string u)
     {
         var header = Obj(M("alg", S(JoseAlgorithms.EcdhEsA256Kw)), M("enc", S(JoseAlgorithms.A256Gcm)), M("epk", X25519Jwk(LowOrderX25519(u))));
-        var parts = BaseJwe.Value with { Protected = B64(header) };
-        var json = JweJson(parts, placement: null, escape: null);
 
-        Func<Task> act = entryPoint switch
-        {
-            "parse" => () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([Bob.PrivateJwk]), senderKeys: null, Jose)),
-            "parse-unheld" => () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([]), senderKeys: null, Jose)),
-            "parse-async" => () => JweParser.ParseAsync(json, BobEcdhKey(), senderKeys: null, Jose),
-            "compact" => () => Task.FromResult(JweParser.ParseCompact(CompactJwe(parts), Bob.PrivateJwk, senderKeys: null, Jose)),
-            "compact-async" => () => JweParser.ParseCompactAsync(CompactJwe(parts), BobEcdhKey(), senderKeys: null, Jose),
-            _ => throw new ArgumentOutOfRangeException(nameof(entryPoint)),
-        };
+        var act = InvokeKeyAgreement(entryPoint, BaseJwe.Value with { Protected = B64(header) }, senders: null);
 
         (await act.Should().ThrowExactlyAsync<JoseCryptoException>().WithMessage("JWE could not be decrypted."))
             .Which.InnerException.Should().BeNull("an inner cause would distinguish this failure from the held-key and decoy unwrap failures");
     }
 
-    [Theory]
-    [InlineData("parse", "epk")]
-    [InlineData("parse-async", "epk")]
-    [InlineData("parse", "sender-key")]
-    [InlineData("parse-async", "sender-key")]
-    public async Task Jwe_Ecdh1PuWithLowOrderKey_IsUniformDecryptFailure(string entryPoint, string lowOrderKey)
+    public static TheoryData<string, string, string> LowOrderEcdh1PuCases()
     {
-        // ECDH-1PU's Z = Ze || Zs: a small-order ephemeral key zeroes Ze, a small-order sender key Zs.
-        var epk = lowOrderKey == "epk" ? LowOrderX25519("u=0") : Alice.PublicJwk.X!;
+        var data = new TheoryData<string, string, string>();
+        foreach (var entryPoint in KeyAgreementEntryPoints)
+            foreach (var lowOrderKey in new[] { "epk", "sender-key" })
+                foreach (var u in LowOrderPoints)
+                    data.Add(entryPoint, lowOrderKey, u);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(LowOrderEcdh1PuCases))]
+    public async Task Jwe_Ecdh1PuWithLowOrderKey_IsUniformDecryptFailure(string entryPoint, string lowOrderKey, string u)
+    {
+        // ECDH-1PU derives two secrets, Z = Ze || Zs, in a KDF branch of its own: a small-order
+        // ephemeral key zeroes Ze, a small-order sender key Zs. Held key and decoy must fail alike.
+        var epk = lowOrderKey == "epk" ? LowOrderX25519(u) : Alice.PublicJwk.X!;
         var senderKey = lowOrderKey == "sender-key"
-            ? new Jwk { Kty = "OKP", Crv = "X25519", X = LowOrderX25519("u=0"), Kid = "alice-key" }
+            ? new Jwk { Kty = "OKP", Crv = "X25519", X = LowOrderX25519(u), Kid = "alice-key" }
             : Alice.PublicJwk;
         var header = Obj(
             M("alg", S(JoseAlgorithms.Ecdh1PuA256Kw)),
             M("enc", S(JoseAlgorithms.A256CbcHs512)),
             M("skid", S("alice-key")),
             M("epk", X25519Jwk(epk)));
-        var json = JweJson(BaseJwe.Value with { Protected = B64(header) }, placement: null, escape: null);
-        var senders = new DictionarySenderKeyLookup([senderKey]);
 
-        Func<Task> act = entryPoint == "parse"
-            ? () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([Bob.PrivateJwk]), senders, Jose))
-            : () => JweParser.ParseAsync(json, BobEcdhKey(), senders, Jose);
+        var act = InvokeKeyAgreement(entryPoint, BaseJwe.Value with { Protected = B64(header) }, new DictionarySenderKeyLookup([senderKey]));
 
         (await act.Should().ThrowExactlyAsync<JoseCryptoException>().WithMessage("JWE could not be decrypted."))
-            .Which.InnerException.Should().BeNull();
+            .Which.InnerException.Should().BeNull("an inner cause would distinguish this failure from the held-key and decoy unwrap failures");
     }
 
     [Theory]
