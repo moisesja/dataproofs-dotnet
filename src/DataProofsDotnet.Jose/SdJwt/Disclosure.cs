@@ -111,7 +111,7 @@ public sealed class Disclosure
         }
         catch (JsonException ex)
         {
-            throw new MalformedJoseException("SD-JWT Disclosure does not decode to valid JSON.", ex);
+            throw new MalformedJoseException("SD-JWT Disclosure is not valid JSON.", ex);
         }
 
         if (node is not JsonArray array)

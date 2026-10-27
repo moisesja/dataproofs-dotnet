@@ -316,9 +316,10 @@ public static class JweParser
 
     /// <summary>
     /// The single, recipient-agnostic message every post-selection decrypt failure throws (issue
-    /// #12, "uniform failure"). A key-unwrap failure (wrong/decoy key), an AEAD-integrity failure
-    /// (held key, tampered content), and a malformed <c>iv</c>/<c>tag</c>/<c>encrypted_key</c> length
-    /// must be indistinguishable — same type (<see cref="JoseCryptoException"/>), same message, no
+    /// #12, "uniform failure"). A key-agreement failure (a low-order X25519 <c>epk</c> or sender key,
+    /// which yields the all-zero shared secret RFC 7748 §6.1 says to reject — issue #30), a key-unwrap
+    /// failure (wrong/decoy key), an AEAD-integrity failure (held key, tampered content), and a
+    /// malformed <c>iv</c>/<c>tag</c>/<c>encrypted_key</c> length must be indistinguishable — same type (<see cref="JoseCryptoException"/>), same message, no
     /// recipient kid, no inner cause — or the exception itself re-leaks recipient-key possession that
     /// the constant-work timing defense already closes. A failure here means the JWE did not decrypt;
     /// it is intentionally not a finer diagnostic.
@@ -364,6 +365,10 @@ public static class JweParser
                         apvBytes,
                         keyDataLen: 32);
                 }
+                catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+                {
+                    throw new JoseCryptoException(DecryptFailureMessage);
+                }
                 finally
                 {
                     CryptographicOperations.ZeroMemory(recipientPrivBytes);
@@ -390,6 +395,10 @@ public static class JweParser
                         apvBytes,
                         jwe.Tag,
                         keyDataLen: 32);
+                }
+                catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+                {
+                    throw new JoseCryptoException(DecryptFailureMessage);
                 }
                 finally
                 {
@@ -473,18 +482,35 @@ public static class JweParser
         {
             senderKid = string.Empty;
             var apuBytes = string.IsNullOrEmpty(header.Apu) ? [] : DecodeB64u(header.Apu, "apu");
-            kek = await EcdhEsKdf.DeriveKeyForReceiverAsync(
-                ecdhKey, ephemeralPubBytes, algId, apuBytes, apvBytes, 32, ct).ConfigureAwait(false);
+            kek = await DeriveOrFailUniformlyAsync(EcdhEsKdf.DeriveKeyForReceiverAsync(
+                ecdhKey, ephemeralPubBytes, algId, apuBytes, apvBytes, 32, ct)).ConfigureAwait(false);
         }
         else
         {
             var (skid, senderPubBytes, apuBytes) = ResolveSender(header, senderKeys, ecdhKey.Crv);
             senderKid = skid;
-            kek = await Ecdh1PuKdf.DeriveKeyForReceiverAsync(
-                ecdhKey, ephemeralPubBytes, senderPubBytes, algId, apuBytes, apvBytes, jwe.Tag, 32, ct).ConfigureAwait(false);
+            kek = await DeriveOrFailUniformlyAsync(Ecdh1PuKdf.DeriveKeyForReceiverAsync(
+                ecdhKey, ephemeralPubBytes, senderPubBytes, algId, apuBytes, apvBytes, jwe.Tag, 32, ct)).ConfigureAwait(false);
         }
 
         return UnwrapAnyAndDecrypt(jwe, header, kek, senderKid, aad, cryptoProvider);
+    }
+
+    /// <summary>
+    /// Awaits a key derivation, reporting a key-agreement failure as the uniform
+    /// <see cref="DecryptFailureMessage"/> (issue #12) rather than letting it escape the parser's
+    /// documented contract (issue #30), exactly as the synchronous path does.
+    /// </summary>
+    private static async Task<byte[]> DeriveOrFailUniformlyAsync(ValueTask<byte[]> derivation)
+    {
+        try
+        {
+            return await derivation.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+        {
+            throw new JoseCryptoException(DecryptFailureMessage);
+        }
     }
 
     /// <summary>
@@ -680,7 +706,19 @@ public static class JweParser
             throw new JoseCryptoException(
                 $"ECDH-1PU sender key curve ({senderPublicJwk.Crv}) does not match recipient curve ({recipientCrv}).");
 
-        var (_, senderPubBytes) = JwkConversion.ExtractPublicKey(senderPublicJwk);
+        // The sender key comes from the caller's resolver, typically the sender's own DID document, so
+        // it is as attacker-controlled as the envelope: an off-curve point or a malformed JWK must fail
+        // through the documented contract, as the epk does (issue #30).
+        byte[] senderPubBytes;
+        try
+        {
+            (_, senderPubBytes) = JwkConversion.ExtractPublicKey(senderPublicJwk);
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+        {
+            throw new JoseCryptoException($"ECDH-1PU sender public key for skid '{skid}' is malformed or not on its curve.", ex);
+        }
+
         // 1PU draft-04 §2.3: PartyUInfo is the UTF-8 bytes of the sender skid (the decoded 'apu');
         // fall back to utf8(skid) when the peer omitted 'apu'.
         var apuBytes = string.IsNullOrEmpty(header.Apu)

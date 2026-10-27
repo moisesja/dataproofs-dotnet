@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.Jose.Encryption;
@@ -28,8 +29,19 @@ namespace DataProofsDotnet.Jose.Tests.Hardening;
 /// </list>
 /// Every negative case asserts the exact fixed message, so each fails against the pre-fix code
 /// whichever way that code mishandled it (raw exception, a different message, or acceptance). The
-/// over-rejection guards prove that well-formed escapes — a surrogate <em>pair</em>, <c>é</c>,
-/// <c>\/</c> — still read back on every path.
+/// over-rejection guards prove that well-formed escapes — a surrogate <em>pair</em>, a BMP escape,
+/// an escaped solidus, an escaped member name — still read back on every path.
+/// <para>
+/// Every well-formed escape is built at run time by <see cref="Esc"/> from its code unit, so the
+/// source never carries one: an editor or tool that decodes <c>\u</c> sequences would otherwise turn
+/// a guard into a test of the literal character and leave the escape path untested (it happened
+/// while this file was written). A mutation that rejects <em>every</em> surrogate escape, paired or
+/// not, must fail the guards.
+/// </para>
+/// <para>
+/// Sections 11 and 12 cover two JWE key-agreement escapes the adversarial review of this fix found:
+/// a low-order X25519 key and a malformed ECDH-1PU sender key.
+/// </para>
 /// </summary>
 public sealed class Issue30ContractEscapeTests
 {
@@ -44,10 +56,18 @@ public sealed class Issue30ContractEscapeTests
         @"\uD800\uD800", // high surrogate followed by another high surrogate
     ];
 
-    /// <summary>Well-formed escapes the check must let through: a surrogate pair, a BMP escape, an escaped solidus.</summary>
-    private const string WellFormedEscapes = @"😀 é a\/b";
+    /// <summary>The six-character JSON escape for one UTF-16 code unit, built at run time (see the class remarks).</summary>
+    private static string Esc(int codeUnit) => @"\u" + codeUnit.ToString("X4", CultureInfo.InvariantCulture);
 
-    private const string WellFormedDecoded = "\U0001F600 é a/b";
+    /// <summary>U+1F600 written as its escaped surrogate pair — the form this library's own encoder emits.</summary>
+    private static readonly string PairEscape = Esc(0xD83D) + Esc(0xDE00);
+
+    private static readonly string Grinning = char.ConvertFromUtf32(0x1F600);
+
+    /// <summary>Well-formed escapes the check must let through: a surrogate pair, a BMP escape, an escaped solidus.</summary>
+    private static readonly string WellFormedEscapes = PairEscape + " " + Esc(0xE9) + @" a\/b";
+
+    private static readonly string WellFormedDecoded = Grinning + " " + char.ConvertFromUtf32(0xE9) + " a/b";
 
     private static readonly TestKeyMaterial Signer = TestKeyMaterial.Generate(KeyType.Ed25519, "k1");
 
@@ -128,7 +148,7 @@ public sealed class Issue30ContractEscapeTests
     }
 
     private static readonly string[] JwsEntryPoints =
-        ["flattened", "general", "compact", "vcjose", "flattened-detached", "compact-detached"];
+        ["flattened", "general", "compact", "vcjose", "flattened-detached", "general-detached", "compact-detached"];
 
     public static TheoryData<string, JwsHeaderPlacement, string> JwsHeaderCases()
         => CasesByEntryPoint(Cross<JwsHeaderPlacement>(JwsEntryPoints));
@@ -170,17 +190,19 @@ public sealed class Issue30ContractEscapeTests
     [InlineData("compact")]
     [InlineData("vcjose")]
     [InlineData("flattened-detached")]
+    [InlineData("general-detached")]
     [InlineData("compact-detached")]
     public async Task JwsProtectedHeader_WithWellFormedEscapes_StillVerifies(string entryPoint)
     {
-        // Every placement above, escaped well: "vc" and "k1" spelled with \u escapes, plus an
-        // escaped member name carrying a surrogate pair.
+        // Every placement above, escaped well: "vc" and "k1" spelled with \u escapes, plus member
+        // names escaped as a surrogate pair and as a BMP character.
         var header = Obj(
             M("alg", S("EdDSA")),
             M("typ", S("vc+jwt")),
-            M("cty", S(@"vc")),
-            M("kid", S(@"k1")),
-            M(@"é", S(WellFormedEscapes)));
+            M("cty", S(Esc('v') + "c")),
+            M("kid", S("k" + Esc('1'))),
+            M(Esc(0xE9), S(WellFormedEscapes)),
+            M(PairEscape, "1"));
         var compact = await SignCompactAsync(Signer, header, CredentialPayload);
         string? resolvedKid = null;
 
@@ -204,6 +226,7 @@ public sealed class Issue30ContractEscapeTests
             "compact" => JwsParser.ParseCompact(compact, resolver, Jose).PayloadBytes,
             "vcjose" => VcJose.VerifyCredential(compact, resolver, Jose),
             "flattened-detached" => JwsParser.Parse(Obj(M("protected", S(p)), M("signature", S(s))), Base64Url.Decode(pl), resolver, Jose).PayloadBytes,
+            "general-detached" => JwsParser.Parse(Obj(M("signatures", Arr(Obj(M("protected", S(p)), M("signature", S(s)))))), Base64Url.Decode(pl), resolver, Jose).PayloadBytes,
             "compact-detached" => JwsParser.ParseCompact($"{p}..{s}", Base64Url.Decode(pl), resolver, Jose).PayloadBytes,
             _ => throw new ArgumentOutOfRangeException(nameof(entryPoint), entryPoint, "unknown entry point"),
         };
@@ -231,13 +254,13 @@ public sealed class Issue30ContractEscapeTests
         SignatureEntryMemberName,
     }
 
-    private static readonly string[] JwsJsonEntryPoints = ["flattened", "general", "flattened-detached"];
+    private static readonly string[] JwsJsonEntryPoints = ["flattened", "general", "flattened-detached", "general-detached"];
 
     public static TheoryData<string, JwsJsonPlacement, string> JwsJsonCases()
         => CasesByEntryPoint(Cross<JwsJsonPlacement>(JwsJsonEntryPoints, (entryPoint, placement) => placement switch
         {
-            JwsJsonPlacement.PayloadValue => entryPoint != "flattened-detached",
-            JwsJsonPlacement.SignatureEntryMemberName => entryPoint == "general",
+            JwsJsonPlacement.PayloadValue => !entryPoint.EndsWith("-detached", StringComparison.Ordinal),
+            JwsJsonPlacement.SignatureEntryMemberName => entryPoint.StartsWith("general", StringComparison.Ordinal),
             _ => true,
         }));
 
@@ -257,11 +280,12 @@ public sealed class Issue30ContractEscapeTests
     [InlineData("flattened")]
     [InlineData("general")]
     [InlineData("flattened-detached")]
+    [InlineData("general-detached")]
     public async Task JwsJson_WithWellFormedEscapes_StillVerifies(string entryPoint)
     {
         // Escapes in the unprotected kid, an unprotected member, and an extra top-level member.
         var compact = await SignCompactAsync(Signer, """{"alg":"EdDSA"}""", CredentialPayload);
-        var json = JwsJson(entryPoint, compact, placement: null, WellFormedEscapes, kid: @"k1");
+        var json = JwsJson(entryPoint, compact, placement: null, WellFormedEscapes, kid: "k" + Esc('1'));
 
         var result = InvokeJwsJson(entryPoint, json, compact, kid => kid == "k1" ? Signer.PublicJwk : null);
 
@@ -297,15 +321,15 @@ public sealed class Issue30ContractEscapeTests
             JwsJsonPlacement.TopLevelMemberValue or null => M("x", S(escape)),
             _ => "",
         };
-        var payload = entryPoint == "flattened-detached" ? "" : M("payload", S(At(JwsJsonPlacement.PayloadValue, pl)));
+        var payload = entryPoint.EndsWith("-detached", StringComparison.Ordinal) ? "" : M("payload", S(At(JwsJsonPlacement.PayloadValue, pl)));
 
-        return entryPoint == "general"
+        return entryPoint.StartsWith("general", StringComparison.Ordinal)
             ? Obj(payload, M("signatures", Arr(Obj(signature))), topLevel)
             : Obj([payload, .. signature, topLevel]);
     }
 
     private static JwsParseResult InvokeJwsJson(string entryPoint, string json, string compact, Func<string, Jwk?> resolver)
-        => entryPoint == "flattened-detached"
+        => entryPoint.EndsWith("-detached", StringComparison.Ordinal)
             ? JwsParser.Parse(json, Base64Url.Decode(Split3(compact).Payload), resolver, Jose)
             : JwsParser.Parse(json, resolver, Jose);
 
@@ -387,7 +411,7 @@ public sealed class Issue30ContractEscapeTests
     {
         // The recipient kid spelled with a \u escape (it feeds key lookup and the apv commitment),
         // plus escapes in an unread recipient-header member and an unread top-level member.
-        var parts = BaseJwe.Value with { Kid = @"bob-key" };
+        var parts = BaseJwe.Value with { Kid = Esc('b') + "ob-key" };
 
         var kids = await InvokeJweAsync(entryPoint, JweJson(parts, placement: null, WellFormedEscapes));
 
@@ -506,7 +530,7 @@ public sealed class Issue30ContractEscapeTests
     {
         // Control for the test above, and an over-rejection guard: the same sealing, with
         // well-formed escapes in the modelled kid and in an extension value.
-        var (compact, kek) = SealA256KwA256Gcm(Obj(M("alg", S("A256KW")), M("enc", S("A256GCM")), M("kid", S(@"kek-1")), M("x", S(WellFormedEscapes))));
+        var (compact, kek) = SealA256KwA256Gcm(Obj(M("alg", S("A256KW")), M("enc", S("A256GCM")), M("kid", S("kek" + Esc('-') + "1")), M("x", S(WellFormedEscapes))));
 
         var result = JweParser.ParseCompact(compact, kek, senderKeys: null, Jose);
 
@@ -646,7 +670,11 @@ public sealed class Issue30ContractEscapeTests
         result.Errors.Should().ContainSingle().Which.Should().Be("MALFORMED: JWS protected header contains an unpaired UTF-16 surrogate escape.");
     }
 
-    private const string WellFormedClaims = """{"iss":"i","aud":["😀"],"x":"😀 é a\/b","é":{"y":["a\/b"]}}""";
+    private static readonly string WellFormedClaims = Obj(
+        M("iss", S(Esc('i'))),
+        M("aud", Arr(S(PairEscape))),
+        M("x", S(WellFormedEscapes)),
+        M(Esc(0xE9), Obj(M("y", Arr(S(@"a\/b"))))));
 
     [Fact]
     public void JwtClaims_Parse_WithWellFormedEscapes_ReadsBack()
@@ -654,9 +682,9 @@ public sealed class Issue30ContractEscapeTests
         var claims = JwtClaims.Parse(U8(WellFormedClaims));
 
         claims.Issuer.Should().Be("i");
-        claims.Audiences.Should().Equal("\U0001F600");
+        claims.Audiences.Should().Equal(Grinning);
         claims.AdditionalClaims["x"]!.GetValue<string>().Should().Be(WellFormedDecoded);
-        claims.AdditionalClaims["é"]!["y"]![0]!.GetValue<string>().Should().Be("a/b");
+        claims.AdditionalClaims[char.ConvertFromUtf32(0xE9)]!["y"]![0]!.GetValue<string>().Should().Be("a/b");
         var roundTrip = () => JwtClaims.Parse(claims.ToJsonBytes());
         roundTrip.Should().NotThrow();
     }
@@ -737,7 +765,7 @@ public sealed class Issue30ContractEscapeTests
     }
 
     public static TheoryData<string, SdJwtPlacement, string> SdJwtCases()
-        => CasesByEntryPoint(Cross<SdJwtPlacement>(["sd-jwt", "sd-jwt-vc"]));
+        => CasesByEntryPoint(Cross<SdJwtPlacement>(SdJwtVerifiers));
 
     [Theory]
     [MemberData(nameof(SdJwtCases))]
@@ -783,26 +811,38 @@ public sealed class Issue30ContractEscapeTests
             return Signer.PublicJwk;
         };
 
-        bool? isValid = null;
-        IReadOnlyList<string> errors = [];
+        var result = await VerifyPresentationNeverThrowsAsync(verifier, presentation, resolver);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("MALFORMED: ").And.EndWith("contains an unpaired UTF-16 surrogate escape.");
+        resolverCalled.Should().BeFalse("the presentation is rejected before the issuer key is resolved");
+    }
+
+    private sealed record PresentationOutcome(bool IsValid, IReadOnlyList<string> Errors, bool KeyBindingVerified);
+
+    private static readonly string[] SdJwtVerifiers = ["sd-jwt", "sd-jwt-vc"];
+
+    /// <summary>Runs <c>SdJwtVerifier.Verify</c> or <c>SdJwtVcVerifier.VerifyAsync</c>, asserting the never-throws contract.</summary>
+    private static async Task<PresentationOutcome> VerifyPresentationNeverThrowsAsync(
+        string verifier, string presentation, Func<string, Jwk?> resolver, SdJwtVerificationOptions? options = null)
+    {
+        PresentationOutcome? outcome = null;
         var act = async () =>
         {
             if (verifier == "sd-jwt")
             {
-                var r = SdJwtVerifier.Verify(presentation, resolver);
-                (isValid, errors) = (r.IsValid, r.Errors);
+                var r = SdJwtVerifier.Verify(presentation, resolver, options);
+                outcome = new PresentationOutcome(r.IsValid, r.Errors, r.KeyBindingVerified);
             }
             else
             {
-                var r = await SdJwtVcVerifier.VerifyAsync(presentation, resolver);
-                (isValid, errors) = (r.IsValid, r.Errors);
+                var r = await SdJwtVcVerifier.VerifyAsync(presentation, resolver, options);
+                outcome = new PresentationOutcome(r.IsValid, r.Errors, r.KeyBindingVerified);
             }
         };
 
-        await act.Should().NotThrowAsync("an unauthenticated presentation must never crash the verifier");
-        isValid.Should().BeFalse();
-        errors.Should().ContainSingle().Which.Should().StartWith("MALFORMED: ").And.EndWith("contains an unpaired UTF-16 surrogate escape.");
-        resolverCalled.Should().BeFalse("the presentation is rejected before the issuer key is resolved");
+        await act.Should().NotThrowAsync("a presentation must never crash the verifier");
+        return outcome!;
     }
 
     public enum DisclosurePlacement { Salt, ClaimName, Value, NestedMemberName, ArrayElementValue }
@@ -851,12 +891,13 @@ public sealed class Issue30ContractEscapeTests
         CnfJwkMemberValue,
     }
 
-    public static TheoryData<IssuerSignedPlacement, string> IssuerSignedCases() => Cases(Enum.GetValues<IssuerSignedPlacement>());
+    public static TheoryData<string, IssuerSignedPlacement, string> IssuerSignedCases()
+        => CasesByEntryPoint(Cross<IssuerSignedPlacement>(SdJwtVerifiers));
 
     [Theory]
     [MemberData(nameof(IssuerSignedCases))]
     public async Task SdJwtVerifier_IssuerSignedPayloadWithUnpairedSurrogateEscape_IsMalformed_NeverThrows(
-        IssuerSignedPlacement placement, string escape)
+        string verifier, IssuerSignedPlacement placement, string escape)
     {
         var payload = placement switch
         {
@@ -864,17 +905,15 @@ public sealed class Issue30ContractEscapeTests
             IssuerSignedPlacement.ArrayPlaceholderDigest => Obj(M("a", Arr(Obj(M("...", S(escape))))), M("_sd_alg", S("sha-256"))),
             _ => Obj(M("_sd_alg", S("sha-256")), M("cnf", Obj(M("jwk", Obj(M("kty", S("OKP")), M("crv", S("Ed25519")), M("x", S(escape))))))),
         };
-        var issuerJwt = await JwsBuilder.BuildCompactAsync(U8(payload), Signer.Signer, typ: "example+sd-jwt");
+        var issuerJwt = await JwsBuilder.BuildCompactAsync(U8(payload), Signer.Signer, typ: "dc+sd-jwt");
         // A Key Binding JWT is appended so the cnf case reaches the cnf read; its content is irrelevant.
         var presentation = issuerJwt + "~" + (placement == IssuerSignedPlacement.CnfJwkMemberValue
             ? $"{B64("""{"alg":"EdDSA","typ":"kb+jwt"}""")}.{B64("{}")}.{Base64Url.Encode(new byte[64])}"
             : "");
 
-        SdJwtVerificationResult? result = null;
-        var act = () => result = SdJwtVerifier.Verify(presentation, _ => Signer.PublicJwk);
+        var result = await VerifyPresentationNeverThrowsAsync(verifier, presentation, _ => Signer.PublicJwk);
 
-        act.Should().NotThrow();
-        result!.IsValid.Should().BeFalse();
+        result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle().Which.Should().Be("MALFORMED: Compact JWT payload contains an unpaired UTF-16 surrogate escape.");
     }
 
@@ -883,7 +922,7 @@ public sealed class Issue30ContractEscapeTests
     {
         // A hand-built issuance whose Disclosure value is spelled with escapes. The digest covers
         // the encoded Disclosure as presented, so the escaped form is what the issuer committed to.
-        var disclosure = B64(Arr(S("salt-0123456789abcdef"), S(@"n"), S(WellFormedEscapes)));
+        var disclosure = B64(Arr(S("salt-0123456789abcdef"), S(Esc('n')), S(WellFormedEscapes)));
         var digest = Disclosure.Parse(disclosure).ComputeDigest("sha-256");
         var issuerJwt = await JwsBuilder.BuildCompactAsync(
             U8(Obj(M("_sd", Arr(S(digest))), M("_sd_alg", S("sha-256")))), Signer.Signer, typ: "example+sd-jwt");
@@ -926,12 +965,13 @@ public sealed class Issue30ContractEscapeTests
         CurrentTime = Now,
     };
 
-    public static TheoryData<KeyBindingPlacement, string> KeyBindingCases() => Cases(Enum.GetValues<KeyBindingPlacement>());
+    public static TheoryData<string, KeyBindingPlacement, string> KeyBindingCases()
+        => CasesByEntryPoint(Cross<KeyBindingPlacement>(SdJwtVerifiers));
 
     [Theory]
     [MemberData(nameof(KeyBindingCases))]
     public async Task SdJwtVerifier_KeyBindingJwtWithUnpairedSurrogateEscape_IsKbJwtMalformed_NeverThrows(
-        KeyBindingPlacement placement, string escape)
+        string verifier, KeyBindingPlacement placement, string escape)
     {
         // A genuine issuance bound to the holder's key, and a KB-JWT genuinely signed by the holder:
         // before the fix the payload cases passed the signature check and then crashed on the read.
@@ -950,31 +990,31 @@ public sealed class Issue30ContractEscapeTests
         var kbJwt = await SignCompactAsync(Holder, header, U8(payload));
         var segment = placement is KeyBindingPlacement.HeaderTyp or KeyBindingPlacement.HeaderMemberName ? "header" : "payload";
 
-        SdJwtVerificationResult? result = null;
-        var act = () => result = SdJwtVerifier.Verify(sdJwt + kbJwt, _ => Signer.PublicJwk, KeyBindingPolicy);
+        var result = await VerifyPresentationNeverThrowsAsync(verifier, sdJwt + kbJwt, _ => Signer.PublicJwk, KeyBindingPolicy);
 
-        act.Should().NotThrow("a holder-supplied Key Binding JWT must never crash the verifier");
-        result!.IsValid.Should().BeFalse();
+        result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle().Which.Should().Be(
             $"KB_JWT_MALFORMED: Compact JWT {segment} contains an unpaired UTF-16 surrogate escape.");
     }
 
-    [Fact]
-    public async Task SdJwtVerifier_KeyBindingJwtWithWellFormedEscapes_Verifies()
+    [Theory]
+    [InlineData("sd-jwt")]
+    [InlineData("sd-jwt-vc")]
+    public async Task SdJwtVerifier_KeyBindingJwtWithWellFormedEscapes_Verifies(string verifier)
     {
         // Control for the test above (same issuance, header and signing), with nonce and aud
         // spelled with escapes that decode to the expected values.
         var sdJwt = await IssueBoundSdJwtAsync();
         var sdHash = SdHashAlgorithm.ComputeSdHash("sha-256", sdJwt);
         var payload = Obj(
-            M("nonce", S(@"n1")),
+            M("nonce", S("n" + Esc('1'))),
             M("aud", S(@"https:\/\/verifier.example.org")),
             M("iat", Now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
             M("sd_hash", S(sdHash)),
-            M(@"é", S(WellFormedEscapes)));
+            M(Esc(0xE9), S(WellFormedEscapes)));
         var kbJwt = await SignCompactAsync(Holder, """{"alg":"EdDSA","typ":"kb+jwt"}""", U8(payload));
 
-        var result = SdJwtVerifier.Verify(sdJwt + kbJwt, _ => Signer.PublicJwk, KeyBindingPolicy);
+        var result = await VerifyPresentationNeverThrowsAsync(verifier, sdJwt + kbJwt, _ => Signer.PublicJwk, KeyBindingPolicy);
 
         result.Errors.Should().BeEmpty();
         result.IsValid.Should().BeTrue();
@@ -983,10 +1023,200 @@ public sealed class Issue30ContractEscapeTests
 
     private static async Task<string> IssueBoundSdJwtAsync()
     {
-        var claims = new JsonObject { ["iss"] = "https://issuer.example.com", ["given_name"] = "John" };
-        var issued = await SdJwtIssuer.IssueAsync(
+        // An SD-JWT VC (typ dc+sd-jwt, vct), so the same issuance drives both verifiers.
+        var claims = new JsonObject
+        {
+            ["iss"] = "https://issuer.example.com",
+            ["vct"] = "https://credentials.example.com/identity",
+            ["given_name"] = "John",
+        };
+        var issued = await SdJwtVcIssuer.IssueAsync(
             claims, new DisclosureFrame().Disclose("given_name"), Signer.Signer,
             new SdJwtIssuerOptions { HolderConfirmationKey = Holder.PublicJwk });
         return SdJwtHolder.CreatePresentation(issued.Issuance, issued.Disclosures.Select(d => d.Encoded));
+    }
+
+    // ── Own output: this library's encoder writes a non-BMP character as an escaped surrogate pair ──
+
+    [Fact]
+    public async Task OwnOutput_JwtWithNonBmpClaims_RoundTrips()
+    {
+        var jwt = await JwtHandler.SignAsync(
+            new JwtClaims(issuer: Grinning, additionalClaims: new Dictionary<string, JsonNode?> { [Grinning] = Grinning }), Signer.Signer);
+        Encoding.UTF8.GetString(Base64Url.Decode(Split3(jwt).Payload)).Should().Contain(PairEscape, "the round trip must exercise the escape path");
+
+        var result = JwtHandler.Verify(jwt, _ => Signer.PublicJwk);
+
+        result.IsValid.Should().BeTrue();
+        result.Claims!.Issuer.Should().Be(Grinning);
+        result.Claims.AdditionalClaims[Grinning]!.GetValue<string>().Should().Be(Grinning);
+    }
+
+    [Fact]
+    public async Task OwnOutput_SdJwtWithNonBmpDisclosure_RoundTrips()
+    {
+        var claims = new JsonObject { ["iss"] = "https://issuer.example.com", ["given_name"] = Grinning };
+        var issued = await SdJwtIssuer.IssueAsync(claims, new DisclosureFrame().Disclose("given_name"), Signer.Signer);
+        Encoding.UTF8.GetString(Base64Url.Decode(issued.Disclosures[0].Encoded)).Should().Contain(PairEscape, "the round trip must exercise the escape path");
+
+        var result = SdJwtVerifier.Verify(issued.Issuance, _ => Signer.PublicJwk);
+
+        result.IsValid.Should().BeTrue();
+        result.DisclosedPayload!["given_name"]!.GetValue<string>().Should().Be(Grinning);
+    }
+
+    [Fact]
+    public async Task OwnOutput_JwsWithNonBmpKid_RoundTrips()
+    {
+        var key = TestKeyMaterial.Generate(KeyType.Ed25519, "k-" + Grinning);
+        var jws = await JwsBuilder.BuildCompactAsync(CredentialPayload, key.Signer);
+        Encoding.UTF8.GetString(Base64Url.Decode(Split3(jws).Protected)).Should().Contain(PairEscape, "the round trip must exercise the escape path");
+        string? resolvedKid = null;
+
+        var result = JwsParser.ParseCompact(jws, kid =>
+        {
+            resolvedKid = kid;
+            return key.PublicJwk;
+        }, Jose);
+
+        result.PayloadBytes.Should().Equal(CredentialPayload);
+        resolvedKid.Should().Be("k-" + Grinning);
+    }
+
+    // ── 11. JWE key agreement with a low-order X25519 key (found by this fix's adversarial review) ──
+    //
+    // A small-order X25519 point gives the all-zero shared secret, which RFC 7748 §6.1 says to reject;
+    // NetCrypto does, with CryptographicException, and the KDF call sat outside every catch, so it
+    // escaped JweParser's documented contract. No key is needed to send one. It is now the uniform
+    // decrypt failure: same type, same message, no inner cause, held key or decoy (issue #12).
+
+    /// <summary>X25519 u-coordinates of small order (RFC 7748 §6.1): 0 and 1.</summary>
+    public static TheoryData<string, string> LowOrderEpkCases()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var entryPoint in new[] { "parse", "parse-unheld", "parse-async", "compact", "compact-async" })
+            foreach (var u in new[] { "u=0", "u=1" })
+                data.Add(entryPoint, u);
+        return data;
+    }
+
+    private static string LowOrderX25519(string u)
+        => Base64Url.Encode(u == "u=0" ? new byte[32] : [1, .. new byte[31]]);
+
+    private static string X25519Jwk(string x) => Obj(M("kty", S("OKP")), M("crv", S("X25519")), M("x", S(x)));
+
+    private static readonly TestKeyMaterial Alice = TestKeyMaterial.Generate(KeyType.X25519, "alice-key");
+
+    private static RawEcdhKey BobEcdhKey() => new(Bob.PrivateJwk.Crv!, Base64Url.Decode(Bob.PrivateJwk.D!), Jose);
+
+    [Theory]
+    [MemberData(nameof(LowOrderEpkCases))]
+    public async Task Jwe_EcdhEsWithLowOrderEpk_IsUniformDecryptFailure(string entryPoint, string u)
+    {
+        var header = Obj(M("alg", S(JoseAlgorithms.EcdhEsA256Kw)), M("enc", S(JoseAlgorithms.A256Gcm)), M("epk", X25519Jwk(LowOrderX25519(u))));
+        var parts = BaseJwe.Value with { Protected = B64(header) };
+        var json = JweJson(parts, placement: null, escape: null);
+
+        Func<Task> act = entryPoint switch
+        {
+            "parse" => () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([Bob.PrivateJwk]), senderKeys: null, Jose)),
+            "parse-unheld" => () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([]), senderKeys: null, Jose)),
+            "parse-async" => () => JweParser.ParseAsync(json, BobEcdhKey(), senderKeys: null, Jose),
+            "compact" => () => Task.FromResult(JweParser.ParseCompact(CompactJwe(parts), Bob.PrivateJwk, senderKeys: null, Jose)),
+            "compact-async" => () => JweParser.ParseCompactAsync(CompactJwe(parts), BobEcdhKey(), senderKeys: null, Jose),
+            _ => throw new ArgumentOutOfRangeException(nameof(entryPoint)),
+        };
+
+        (await act.Should().ThrowExactlyAsync<JoseCryptoException>().WithMessage("JWE could not be decrypted."))
+            .Which.InnerException.Should().BeNull("an inner cause would distinguish this failure from the held-key and decoy unwrap failures");
+    }
+
+    [Theory]
+    [InlineData("parse", "epk")]
+    [InlineData("parse-async", "epk")]
+    [InlineData("parse", "sender-key")]
+    [InlineData("parse-async", "sender-key")]
+    public async Task Jwe_Ecdh1PuWithLowOrderKey_IsUniformDecryptFailure(string entryPoint, string lowOrderKey)
+    {
+        // ECDH-1PU's Z = Ze || Zs: a small-order ephemeral key zeroes Ze, a small-order sender key Zs.
+        var epk = lowOrderKey == "epk" ? LowOrderX25519("u=0") : Alice.PublicJwk.X!;
+        var senderKey = lowOrderKey == "sender-key"
+            ? new Jwk { Kty = "OKP", Crv = "X25519", X = LowOrderX25519("u=0"), Kid = "alice-key" }
+            : Alice.PublicJwk;
+        var header = Obj(
+            M("alg", S(JoseAlgorithms.Ecdh1PuA256Kw)),
+            M("enc", S(JoseAlgorithms.A256CbcHs512)),
+            M("skid", S("alice-key")),
+            M("epk", X25519Jwk(epk)));
+        var json = JweJson(BaseJwe.Value with { Protected = B64(header) }, placement: null, escape: null);
+        var senders = new DictionarySenderKeyLookup([senderKey]);
+
+        Func<Task> act = entryPoint == "parse"
+            ? () => Task.FromResult(JweParser.Parse(json, new DictionarySecretsLookup([Bob.PrivateJwk]), senders, Jose))
+            : () => JweParser.ParseAsync(json, BobEcdhKey(), senders, Jose);
+
+        (await act.Should().ThrowExactlyAsync<JoseCryptoException>().WithMessage("JWE could not be decrypted."))
+            .Which.InnerException.Should().BeNull();
+    }
+
+    // ── 12. ECDH-1PU with a malformed sender key (found by this fix's adversarial review) ──────
+    //
+    // The sender key comes from the caller's resolver — in DIDComm, from the sender's own DID
+    // document — so it is as attacker-controlled as the envelope. JwkConversion's off-curve and
+    // malformed-JWK exceptions escaped JweParser; the epk path already mapped them.
+
+    private static readonly TestKeyMaterial AliceP256 = TestKeyMaterial.Generate(KeyType.P256, "alice-p256");
+
+    private static readonly TestKeyMaterial BobP256 = TestKeyMaterial.Generate(KeyType.P256, "bob-p256");
+
+    private static readonly Lazy<string> AuthcryptP256 = new(() => JweBuilder.BuildEcdh1PuA256Kw(
+        Plaintext, [BobP256.PublicJwk], AliceP256.PrivateJwk, "alice-p256", JoseAlgorithms.A256CbcHs512, Jose));
+
+    public static TheoryData<string, string> MalformedSenderKeyCases()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var entryPoint in new[] { "parse", "parse-async" })
+            foreach (var shape in new[] { "off-curve", "okp-with-ec-curve", "missing-y" })
+                data.Add(entryPoint, shape);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(MalformedSenderKeyCases))]
+    public async Task Jwe_Ecdh1PuWithMalformedSenderKey_IsJoseCryptoException(string entryPoint, string shape)
+    {
+        var good = AliceP256.PublicJwk;
+        var senderKey = shape switch
+        {
+            "off-curve" => new Jwk { Kty = "EC", Crv = "P-256", X = good.X, Y = Base64Url.Encode(new byte[32]), Kid = "alice-p256" },
+            "okp-with-ec-curve" => new Jwk { Kty = "OKP", Crv = "P-256", X = good.X, Kid = "alice-p256" },
+            _ => new Jwk { Kty = "EC", Crv = "P-256", X = good.X, Kid = "alice-p256" },
+        };
+
+        var act = () => InvokeAuthcryptP256Async(entryPoint, senderKey);
+
+        await act.Should().ThrowExactlyAsync<JoseCryptoException>()
+            .WithMessage("ECDH-1PU sender public key for skid 'alice-p256' is malformed or not on its curve.");
+    }
+
+    [Theory]
+    [InlineData("parse")]
+    [InlineData("parse-async")]
+    public async Task Jwe_Ecdh1PuWithValidSenderKey_Decrypts(string entryPoint)
+    {
+        // Control for the test above: the same envelope and resolver shape, with the real sender key.
+        var plaintext = await InvokeAuthcryptP256Async(entryPoint, AliceP256.PublicJwk);
+
+        plaintext.Should().Equal(Plaintext);
+    }
+
+    private static async Task<byte[]> InvokeAuthcryptP256Async(string entryPoint, Jwk senderKey)
+    {
+        var senders = new DictionarySenderKeyLookup([senderKey]);
+        if (entryPoint == "parse")
+            return JweParser.Parse(AuthcryptP256.Value, new DictionarySecretsLookup([BobP256.PrivateJwk]), senders, Jose).Plaintext;
+
+        var key = new RawEcdhKey(BobP256.PrivateJwk.Crv!, Base64Url.Decode(BobP256.PrivateJwk.D!), Jose);
+        return (await JweParser.ParseAsync(AuthcryptP256.Value, key, senders, Jose)).Plaintext;
     }
 }
