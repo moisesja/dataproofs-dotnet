@@ -157,7 +157,7 @@ internal sealed class RdfcPath : ISmokePath
 /// <summary>bbs-2023: issuer base proof, holder derived proof, verifier. Required where NetCrypto ships BBS.</summary>
 internal sealed class Bbs2023Path : ISmokePath
 {
-    // Every RID for which NetCrypto 1.4.0 ships the native BBS library (runtimes/*/native/zkryptium_ffi).
+    // Every RID for which NetCrypto 1.7.1 ships the native BBS library (runtimes/*/native/zkryptium_ffi).
     private static readonly string[] RequiredOn = ["osx-arm64", "osx-x64", "linux-x64", "linux-arm64", "win-x64"];
     private static readonly string[] Mandatory = ["/issuer", "/credentialSubject/id"];
     private static readonly string[] Selective = ["/credentialSubject/gpa"];

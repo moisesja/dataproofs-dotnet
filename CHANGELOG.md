@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **NetCrypto dependency raised from 1.4.0 to 1.7.1**, the latest stable release on NuGet as of
+  2026-10-27. All packages now inherit the 1.7.1 minimum transitively. The update requires no source
+  migration here; the full tests, samples and four-runtime AOT parity gates pass with the new package.
+
 - **`DataProofsJsonOptions.Default` resolves this library's types through source-generated metadata
   first** (issue [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27)). Its resolver chain is the Core context followed by the reflection resolver. The
   reflection resolver is added only when `JsonSerializer.IsReflectionEnabledByDefault` is true, which it
