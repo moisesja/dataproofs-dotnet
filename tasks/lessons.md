@@ -201,3 +201,29 @@ criterion the owner had not set.
 - When downstream systems are owned and can move in lockstep, classify an intentional break as a
   migration/release note unless the user or project explicitly requires compatibility.
 - A waived compatibility constraint does not waive independent correctness or security findings.
+
+## 2026-10-26 — A CHANGELOG claim that names entry points is one claim per entry point (issue #28)
+
+**What happened:** The 1.3.0 CHANGELOG stated that a protected header with a non-UTF-8 member name
+"now route[s] through the documented contract on all three entry points — `JwsParser.Parse`,
+`JwsParser.ParseCompact`, and `VcJose.VerifyCredential`". Only `Parse` did. The rejection on the
+JSON path was a side effect of the member-name enumeration added for the #19 disjointness check,
+and the compact path skips that enumeration on purpose. No test exercised invalid UTF-8 on *any*
+of the three, and an invalid extension *value* passed on all of them. A downstream adversarial
+review (credentials-dotnet#20) found it, not ours. Tracing the root cause then found the same
+omission in four more decoders, two of them reachable before any signature check.
+
+**Why it happened:** The 1.3.0 adversarial pass observed the JSON path rejecting the input; I wrote
+down what I inferred ("all three"), and the suite stayed green because nothing covered the input
+class. This is the 2026-08-05 lesson ("a green suite means nothing if the suite never covered the
+input class") recurring as a *documentation* claim rather than a fix.
+
+**The rule for myself:**
+- A CHANGELOG or doc sentence that names N entry points is N claims. Each needs a test on the exact
+  input class the sentence describes, or the sentence names only the entry points that have one.
+- When a rejection is observed, find *which line* rejects it and whether every named path executes
+  that line. A rejection that is a side effect of an unrelated check is not a control, and the
+  paths that skip the check for performance are the ones to test.
+- An input-validation requirement stated in an RFC (here RFC 7515 §5.2 step 3) maps to an explicit
+  check with its own test, never to "the parser happens to throw". Before declaring an input class
+  closed, grep the sibling decoders for the same decode→parse shape; this time four had it.
