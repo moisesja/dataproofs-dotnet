@@ -49,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from decoding wire bytes with .NET — invalid sequences become U+FFFD — only from a caller's own
   text.
 
+### Security
+
+- **`Microsoft.SourceLink.GitHub` lifted 10.0.300 → 10.0.403** (build-time only, referenced with
+  `PrivateAssets="All"`; nothing ships to consumers). 10.0.300 pulled `Microsoft.Build.Tasks.Git`
+  10.0.300, which the newly published
+  [GHSA-23fw-v26w-5fgq](https://github.com/advisories/GHSA-23fw-v26w-5fgq) (CVE-2026-62900, .NET
+  information disclosure, patched in 10.0.303) covers, so the repo-wide NuGet audit (`NU1902` as
+  error) failed every restore — including the last CI run on `main` before this release.
+  Supply-chain hygiene only; no runtime code path changes.
+
 ## [1.3.0] - 2026-08-05
 
 ### Added
