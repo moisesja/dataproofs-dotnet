@@ -50,8 +50,10 @@ public sealed class InvalidUtf8SweepTests
     [Fact]
     public void CompactJwe_WithNonUtf8ProtectedHeaderMemberName_IsMalformed_BeforeDecryption()
     {
-        // The header is the AEAD's AAD, so only the sender can produce this shape — the same
-        // exposure class as the JWS report. Hand-sealed because JweBuilder cannot emit it.
+        // Anyone can send these bytes, and the check rejects them before any key work. The header
+        // is the AEAD's AAD, though, so before the fix only an envelope its sender sealed over this
+        // header could have decrypted — the same exposure class as the JWS report. Hand-sealed
+        // because JweBuilder cannot emit it.
         byte[] header = [.. U8("""{"alg":"A256KW","enc":"A256GCM","kid":"kek-1","""), (byte)'"', .. Bad, .. U8("\":1}")];
         var (compact, kek) = SealA256KwA256Gcm(header, U8("{}"));
 
@@ -179,6 +181,49 @@ public sealed class InvalidUtf8SweepTests
         act.Should().NotThrow("an unauthenticated presentation must never crash the verifier");
         result!.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle().Which.Should().StartWith("MALFORMED").And.Contain("not valid UTF-8");
+    }
+
+    [Theory]
+    [InlineData("header", "member-name")]
+    [InlineData("header", "extension-value")]
+    [InlineData("payload", "member-name")]
+    [InlineData("payload", "extension-value")]
+    public async Task SdJwtVerifier_Verify_KeyBindingJwtWithNonUtf8_IsKbJwtMalformed_NeverThrows(string segment, string placement)
+    {
+        // End to end through the Key Binding boundary: a genuinely issued SD-JWT carrying a cnf key,
+        // presented with a malformed KB-JWT. KeyBindingJwt.Verify is the only source of the
+        // KB_JWT_MALFORMED prefix, so the assertion proves the path is reached. Before the fix a
+        // header member name threw a raw InvalidOperationException out of the verifier, and a header
+        // extension value was decoded and failed later, at the signature check.
+        var issuer = TestKeyMaterial.Generate(KeyType.Ed25519, "issuer");
+        var holder = TestKeyMaterial.Generate(KeyType.P256, "holder");
+        var claims = new JsonObject { ["iss"] = "https://issuer.example.com", ["given_name"] = "John" };
+        var issued = await SdJwtIssuer.IssueAsync(
+            claims, new DisclosureFrame().Disclose("given_name"), issuer.Signer,
+            new SdJwtIssuerOptions { HolderConfirmationKey = holder.PublicJwk });
+        var sdJwt = SdJwtHolder.CreatePresentation(issued.Issuance, issued.Disclosures.Select(d => d.Encoded));
+
+        byte[] Malformed(string prefix) => placement == "member-name"
+            ? [.. U8(prefix), (byte)'"', .. Bad, .. U8("\":1}")]
+            : [.. U8(prefix), .. U8("\"x\":\""), .. Bad, .. U8("\"}")];
+        var header = segment == "header"
+            ? Malformed("""{"alg":"ES256","typ":"kb+jwt",""")
+            : U8("""{"alg":"ES256","typ":"kb+jwt"}""");
+        var payload = segment == "payload"
+            ? Malformed("""{"iat":1,"aud":"https://verifier.example.org","nonce":"n1",""")
+            : U8("""{"iat":1,"aud":"https://verifier.example.org","nonce":"n1"}""");
+        var kbJwt = $"{Base64Url.Encode(header)}.{Base64Url.Encode(payload)}.{Base64Url.Encode(new byte[64])}";
+
+        SdJwtVerificationResult? result = null;
+        var act = () => result = SdJwtVerifier.Verify(sdJwt + kbJwt, _ => issuer.PublicJwk, new SdJwtVerificationOptions
+        {
+            ExpectedAudience = "https://verifier.example.org",
+            ExpectedNonce = "n1",
+        });
+
+        act.Should().NotThrow("a holder-supplied Key Binding JWT must never crash the verifier");
+        result!.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("KB_JWT_MALFORMED").And.Contain("not valid UTF-8");
     }
 
     [Theory]

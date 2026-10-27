@@ -43,6 +43,20 @@ public sealed class Issue28InvalidUtf8Tests
         ("80", "lone continuation byte"),
     ];
 
+    private static readonly string[] EntryPoints =
+        ["flattened", "general", "compact", "vcjose", "flattened-detached", "compact-detached"];
+
+    /// <summary>Every entry point × placement × byte class, one case each, so one failure cannot hide another.</summary>
+    public static TheoryData<string, Placement, string> InvalidHeaderCases()
+    {
+        var data = new TheoryData<string, Placement, string>();
+        foreach (var entryPoint in EntryPoints)
+            foreach (var placement in Enum.GetValues<Placement>())
+                foreach (var (hex, _) in InvalidUtf8)
+                    data.Add(entryPoint, placement, hex);
+        return data;
+    }
+
     public enum Placement
     {
         /// <summary>The invalid bytes form a member name: <c>{…, "&lt;bad&gt;": 1}</c>.</summary>
@@ -53,37 +67,24 @@ public sealed class Issue28InvalidUtf8Tests
     }
 
     [Theory]
-    [InlineData("flattened", Placement.MemberName)]
-    [InlineData("flattened", Placement.ExtensionValue)]
-    [InlineData("general", Placement.MemberName)]
-    [InlineData("general", Placement.ExtensionValue)]
-    [InlineData("compact", Placement.MemberName)]
-    [InlineData("compact", Placement.ExtensionValue)]
-    [InlineData("vcjose", Placement.MemberName)]
-    [InlineData("vcjose", Placement.ExtensionValue)]
-    [InlineData("flattened-detached", Placement.MemberName)]
-    [InlineData("flattened-detached", Placement.ExtensionValue)]
-    [InlineData("compact-detached", Placement.MemberName)]
-    [InlineData("compact-detached", Placement.ExtensionValue)]
-    public async Task AProtectedHeaderThatIsNotValidUtf8_IsMalformed_BeforeKeyResolution(string entryPoint, Placement placement)
+    [MemberData(nameof(InvalidHeaderCases))]
+    public async Task AProtectedHeaderThatIsNotValidUtf8_IsMalformed_BeforeKeyResolution(string entryPoint, Placement placement, string hex)
     {
-        foreach (var (hex, why) in InvalidUtf8)
+        var why = InvalidUtf8.Single(v => v.Hex == hex).Why;
+        var signed = await SignAsync(HeaderWith(Convert.FromHexString(hex), placement));
+        var resolverCalled = false;
+        Func<string, Jwk?> resolver = _ =>
         {
-            var signed = await SignAsync(HeaderWith(Convert.FromHexString(hex), placement));
-            var resolverCalled = false;
-            Func<string, Jwk?> resolver = _ =>
-            {
-                resolverCalled = true;
-                return signed.Key.PublicJwk;
-            };
+            resolverCalled = true;
+            return signed.Key.PublicJwk;
+        };
 
-            var act = () => Invoke(entryPoint, signed, resolver);
+        var act = () => Invoke(entryPoint, signed, resolver);
 
-            act.Should().Throw<MalformedJoseException>(
-                    $"{entryPoint}: RFC 7515 §5.2 step 3 requires the decoded header to be UTF-8, and 0x{hex} ({why}) in the {placement} is not")
-                .WithMessage("*not valid UTF-8*");
-            resolverCalled.Should().BeFalse($"{entryPoint}: the header is rejected before any key resolution (0x{hex} in the {placement})");
-        }
+        act.Should().Throw<MalformedJoseException>(
+                $"RFC 7515 §5.2 step 3 requires the decoded header to be UTF-8, and 0x{hex} ({why}) in the {placement} is not")
+            .WithMessage("*not valid UTF-8*");
+        resolverCalled.Should().BeFalse("the header is rejected before any key resolution");
     }
 
     [Theory]
