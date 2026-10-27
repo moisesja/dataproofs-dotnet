@@ -59,6 +59,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error) failed every restore — including the last CI run on `main` before this release.
   Supply-chain hygiene only; no runtime code path changes.
 
+### Why this is a minor and not a patch
+
+Per the versioning policy in [`RELEASING.md`](RELEASING.md), an accept-set narrowing whose every
+newly rejected input was already invalid ships as a patch, and this one qualifies on every
+condition: no public API changed, no emitted bytes changed, and none of this library's own output
+is rejected. It is a minor by the owner's decision, because the narrowing spans four decoders at
+once and, on the SD-JWT issuer JWT and Disclosure paths, replaces a raw `InvalidOperationException`
+escaping a never-throws API with a structured failure — a behaviour change a consumer could have
+been depending on, however wrongly, through a catch-all. The version number is there to make that
+consumer read this entry. Recorded as a worked example in `RELEASING.md`.
+
 ## [1.3.0] - 2026-08-05
 
 ### Added
