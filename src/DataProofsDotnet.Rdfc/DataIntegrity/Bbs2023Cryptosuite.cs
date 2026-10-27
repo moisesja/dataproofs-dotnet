@@ -1,3 +1,5 @@
+using System.Formats.Cbor;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -140,11 +142,15 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException("The document to secure must be a JSON object.");
         }
 
+        // Before skolemization and the @context lookup, which read member names (issue #33).
+        unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+
         cancellationToken.ThrowIfCancellationRequested();
 
         var publicKey = KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, bbsPrivateKey.Span).PublicKey;
 
         var proofConfig = BuildProofConfig(unsecuredDocument, proofOptions);
+        _ = JsonInputCheck.SerializeChecked(proofConfig, RdfcJson.ProofTypeInfo, "The proof configuration");
         var transformed = Transform(unsecuredDocument, hmacKey.Span, mandatoryPointers);
 
         var proofHash = HashProofConfig(proofConfig);
@@ -188,6 +194,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException("The secured base document must be a JSON object.");
         }
 
+        // The holder derives over a document an issuer sent: check it before splitting off the
+        // proof, which reads member names (issue #33).
+        securedBaseDocument = JsonInputCheck.RequireValid(securedBaseDocument, "The secured base document");
+
         var (baseProof, unsecured) = SplitProof(securedBaseDocument);
         Bbs2023ProofValue.BaseProofComponents components;
         try
@@ -195,14 +205,31 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             components = Bbs2023ProofValue.ParseBaseProof(baseProof.ProofValue
                 ?? throw new ProofGenerationException("The base proof carries no proofValue."));
         }
-        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException or CborContentException)
         {
+            // CborReader reports an item of the wrong kind as InvalidOperationException and a
+            // malformed encoding as CborContentException (PR #35 review).
             throw new ProofGenerationException("The base proofValue is not a valid bbs-2023 base proof.", ex);
         }
 
+        // The mandatory pointers come from the issuer's document, the selective ones from the
+        // caller; both are parsed here so a malformed one fails as the documented exception.
+        RequirePointers(components.MandatoryPointers, "The base proof carries an invalid mandatory pointer.");
+        RequirePointers(selectivePointers, "A selective pointer is invalid.");
+
         var combinedPointers = components.MandatoryPointers.Concat(selectivePointers).ToList();
-        var disclosure = CreateDisclosureData(
-            unsecured, components, combinedPointers, presentationHeader.Span);
+        DisclosureData disclosure;
+        try
+        {
+            disclosure = CreateDisclosureData(
+                unsecured, components, combinedPointers, presentationHeader.Span);
+        }
+        catch (CryptographicException ex) when (ex is not BbsUnavailableException)
+        {
+            // The base proof parsed, but its signature is not valid over its own messages, so the
+            // BBS proof cannot be generated: an invalid base document, not an unavailable library.
+            throw new ProofGenerationException("The base proof's BBS signature could not be used to derive a proof.", ex);
+        }
 
         // Build the reveal document: the JSON-LD selection over the combined pointers,
         // re-secured with the derived proof carrying the same proof options.
@@ -421,6 +448,16 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Reveal the mandatory group AND the selected statements (ascending full-list order).
         var revealedIndexes = transformed.Mandatory.Indexes.Concat(selectiveIndexes).Distinct().OrderBy(x => x).ToList();
+
+        // No mandatory statements and a selection that is empty or matches nothing: the BBS
+        // provider refuses a proof revealing no message with ArgumentException, so reject it here
+        // as the documented exception (PR #35 review). An empty selection alongside mandatory
+        // statements is a valid mandatory-only disclosure and reaches the provider.
+        if (revealedIndexes.Count == 0)
+        {
+            throw new ProofGenerationException("The selective disclosure reveals no statements.");
+        }
+
         var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
         // The derived proof commits to the same BBS header the issuer bound at sign time
         // (bbsHeader = proofHash ‖ mandatoryHash, carried in the base proofValue); the verifier
@@ -548,12 +585,40 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException("The secured base document must carry a single proof object.");
         }
 
-        var proof = proofElement.Deserialize(RdfcJson.ProofTypeInfo)
-            ?? throw new ProofGenerationException("The base proof could not be parsed.");
+        DataIntegrityProof? proof;
+        try
+        {
+            proof = proofElement.Deserialize(RdfcJson.ProofTypeInfo);
+        }
+        catch (JsonException ex)
+        {
+            // A member of the wrong JSON kind ("type": 1, "previousProof": {}) (PR #35 review).
+            throw new ProofGenerationException("The base proof could not be parsed.", ex);
+        }
+
+        if (proof is null)
+        {
+            throw new ProofGenerationException("The base proof could not be parsed.");
+        }
 
         var unsecured = JsonObject.Create(securedDocument)!;
         unsecured.Remove("proof");
         return (proof, JsonSerializer.SerializeToElement(unsecured, RdfcJson.JsonObjectTypeInfo));
+    }
+
+    private static void RequirePointers(IReadOnlyList<string> pointers, string message)
+    {
+        try
+        {
+            foreach (var pointer in pointers)
+            {
+                _ = JsonPointer.Parse(pointer);
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ProofGenerationException(message, ex);
+        }
     }
 
     private void ValidateProofOptions(DataIntegrityProof proofOptions)

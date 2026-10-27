@@ -302,12 +302,11 @@ public class PipelineErrorPathTests
         // FR-3/FR-23 regression. A secured document with a DUPLICATE top-level member is hostile
         // input: when the pipeline materializes it via JsonObject.Create(securedDocument).Remove(...)
         // the backing dictionary build throws ArgumentException on the duplicate key. Before the
-        // fix that exception escaped Verify (it only caught JsonException) and crashed the verifier.
-        // Now ArgumentException is caught → PROOF_TRANSFORMATION_ERROR. This test exercises the
-        // pipeline's OWN parse path: the duplicate is preserved into the JsonElement (the test
-        // helper tolerates duplicates at parse), so the pipeline — not the helper — is what fails.
-        // Run against the unfixed Verify (catch covering only JsonException) this throws
-        // ArgumentException instead of returning a result.
+        // first fix that exception escaped Verify (it only caught JsonException) and crashed the
+        // verifier. The duplicate is preserved into the JsonElement (the test helper tolerates
+        // duplicates at parse), so the pipeline — not the helper — is what must fail. Since issue
+        // #33 the pipeline's input check rejects it up front, as one document-level
+        // PROOF_TRANSFORMATION_ERROR, before any proof is parsed.
         var signed = await SignedWith(ValidOptions());
 
         // Re-serialize the signed document and splice in a duplicate top-level member ("v":"a"/"v":"b").
@@ -321,15 +320,18 @@ public class PipelineErrorPathTests
 
         act.Should().NotThrow("a duplicate top-level member is attacker-controlled input and must fail closed (FR-23)");
         result!.Verified.Should().BeFalse();
-        result.ProofResults.Single().Problems.Single().Code
-            .Should().Be(ProofProblemCodes.ProofTransformationError);
+        result.ProofResults.Should().BeEmpty();
+        var problem = result.Problems.Should().ContainSingle().Subject;
+        problem.Code.Should().Be(ProofProblemCodes.ProofTransformationError);
+        problem.Message.Should().Be("The secured document has a duplicate member name.");
     }
 
     [Fact]
     public void Verify_OversizedHostileDocument_FailsWithTransformationError_NotThrow()
     {
-        // 70 levels of nesting exceeds the JCS canonicalizer's 64-level hard limit; the
-        // pipeline must map that to PROOF_TRANSFORMATION_ERROR, not an exception.
+        // 71 levels of nesting exceeds System.Text.Json's 64-level limit, which every
+        // transformation step enforces; the pipeline must report PROOF_TRANSFORMATION_ERROR, not
+        // throw. Since issue #33 the input check reports it at document level, up front.
         var deep = string.Concat(Enumerable.Repeat("{\"a\":", 70)) + "1" + new string('}', 70);
         var document = Doc($$$"""
             {"@context":["https://www.w3.org/ns/credentials/v2"],"nested":{{{deep}}},"proof":{"type":"DataIntegrityProof","cryptosuite":"eddsa-jcs-2022","created":"2026-01-01T00:00:00Z","verificationMethod":"did:example:a#1","proofPurpose":"assertionMethod","proofValue":"z3FXQ"}}
@@ -338,7 +340,9 @@ public class PipelineErrorPathTests
         var result = Pipeline.Verify(document, Ed25519Key);
 
         result.Verified.Should().BeFalse();
-        result.ProofResults.Single().Problems.Single().Code
-            .Should().Be(ProofProblemCodes.ProofTransformationError);
+        result.ProofResults.Should().BeEmpty();
+        var problem = result.Problems.Should().ContainSingle().Subject;
+        problem.Code.Should().Be(ProofProblemCodes.ProofTransformationError);
+        problem.Message.Should().Be("The secured document nests deeper than 64 levels.");
     }
 }

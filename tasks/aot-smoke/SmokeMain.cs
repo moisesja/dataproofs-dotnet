@@ -30,6 +30,7 @@ public static class SmokeMain
         IlCanary.Run();
         ISmokePath[] paths =
         [
+            new ProofInputPath(),
             new JcsPath(),
             new RdfcPath(),
             new Bbs2023Path(),

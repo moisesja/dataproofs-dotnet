@@ -70,6 +70,10 @@ internal static class Bbs2023ProofValue
         return Encode(BaseHeader, writer.Encode());
     }
 
+    private const int BbsSignatureLength = 80;
+
+    private const int BbsPublicKeyLength = 96;
+
     /// <summary>Parses a <c>u2V0C…</c> base proof <c>proofValue</c> (§3.3.2).</summary>
     public static BaseProofComponents ParseBaseProof(string proofValue)
     {
@@ -88,6 +92,14 @@ internal static class Bbs2023ProofValue
         var hmacKey = reader.ReadByteString();
         var mandatoryPointers = ReadStringArray(reader);
         reader.ReadEndArray();
+
+        // BLS12-381-SHA-256 fixes both sizes: a signature is a G1 point and a scalar (80 bytes), a
+        // public key a compressed G2 point (96 bytes). Checked here so a wrong size from the
+        // issuer's document fails as a malformed proofValue, not deep inside the BBS provider.
+        if (bbsSignature.Length != BbsSignatureLength || publicKey.Length != BbsPublicKeyLength)
+        {
+            throw new FormatException("A bbs-2023 base proofValue must carry an 80-byte BBS signature and a 96-byte public key.");
+        }
 
         return new BaseProofComponents(bbsSignature, bbsHeader, publicKey, hmacKey, mandatoryPointers);
     }

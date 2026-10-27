@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
+using DataProofsDotnet.Legacy.Internal;
 using DataProofsDotnet.Rdfc;
 using NetCid;
 using NetCrypto;
@@ -117,6 +118,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             throw new ProofGenerationException("The document to secure must be a JSON object.");
         }
 
+        // Before the proof-member and @context lookups and the JCS re-nesting below, which read
+        // member names and materialize the document (issue #33).
+        unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+
         if (!IsSupportedKeyType(signer.KeyType))
         {
             throw new ProofGenerationException(
@@ -161,6 +166,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             ProofValue = null,
         };
 
+        // The configuration carries the caller's raw JSON (@context, extension members), which
+        // serialization cannot always write (issue #33).
+        _ = JsonInputCheck.SerializeChecked(proofConfig, LegacyJson.ProofTypeInfo, "The proof configuration");
+
         // The JCS 2020-era convention nests the single current proof under "proof"; it has no
         // representation for a W3C proof chain. The pipeline injects predecessor proofs under the
         // document's "proof" member for chains (DataIntegrityProofPipeline), so a JCS create over
@@ -190,6 +199,14 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         {
             throw new ProofGenerationException(
                 "The document or proof configuration could not be RDFC-canonicalized.", ex);
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
+        {
+            // The separately valid document/configuration can exceed the JSON depth limit when
+            // JCS nests the configuration under "proof". Map only transformation faults here;
+            // the signer below must retain its own exception contract (PR #35 review).
+            throw new ProofGenerationException(
+                "The document or proof configuration could not be prepared for signing.", ex);
         }
 
         var rawSignature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);

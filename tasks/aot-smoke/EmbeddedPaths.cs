@@ -25,6 +25,50 @@ internal interface ISmokePath
     Task VerifyAsync(Report report);
 }
 
+/// <summary>PR #35: exercise all three packages' property-metadata guards, including on cold AOT metadata.</summary>
+internal sealed class ProofInputPath : ISmokePath
+{
+    public string Name => "Proof extension names — Core, Rdfc and Legacy metadata";
+
+    public async Task EmitAsync(Report report)
+    {
+        ICryptosuite[] suites =
+        [
+            new EddsaJcs2022Cryptosuite(),
+            new EddsaRdfc2022Cryptosuite(),
+            new Ed25519Signature2020Cryptosuite(),
+        ];
+        foreach (var suite in suites)
+        {
+            var options = Proof(suite.Name, Ed) with
+            {
+                AdditionalProperties = new Dictionary<string, JsonElement> { ["proofValue"] = Parse("\"zFake\"") },
+            };
+            var rejected = false;
+            try
+            {
+                _ = await suite.CreateProofAsync(Credential(), options, Signer(Ed));
+            }
+            catch (ProofGenerationException ex)
+            {
+                rejected = ex.Message == "The proof configuration has an extension member with a reserved proof name.";
+            }
+
+            Gate.Expect(rejected, $"{suite.Name} rejects an extension named proofValue before adding its signature");
+
+            var validOptions = options with
+            {
+                AdditionalProperties = new Dictionary<string, JsonElement> { ["ProofValue"] = Parse("\"metadata\"") },
+            };
+            var proof = await suite.CreateProofAsync(Credential(), validOptions, Signer(Ed));
+            Gate.Expect(suite.VerifyProof(Credential(), proof, Pk(Ed)).Verified,
+                $"{suite.Name} accepts the case-distinct extension and verifies its proof");
+        }
+    }
+
+    public Task VerifyAsync(Report report) => Task.CompletedTask;
+}
+
 /// <summary>Data Integrity with the JCS suites, including a proof chain (array-form previousProof).</summary>
 internal sealed class JcsPath : ISmokePath
 {
@@ -113,7 +157,7 @@ internal sealed class RdfcPath : ISmokePath
 /// <summary>bbs-2023: issuer base proof, holder derived proof, verifier. Required where NetCrypto ships BBS.</summary>
 internal sealed class Bbs2023Path : ISmokePath
 {
-    // Every RID for which NetCrypto 1.4.0 ships the native BBS library (runtimes/*/native/zkryptium_ffi).
+    // Every RID for which NetCrypto 1.7.1 ships the native BBS library (runtimes/*/native/zkryptium_ffi).
     private static readonly string[] RequiredOn = ["osx-arm64", "osx-x64", "linux-x64", "linux-arm64", "win-x64"];
     private static readonly string[] Mandatory = ["/issuer", "/credentialSubject/id"];
     private static readonly string[] Selective = ["/credentialSubject/gpa"];
