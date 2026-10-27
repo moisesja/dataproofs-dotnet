@@ -351,17 +351,18 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
     private static byte[] BuildJcsSigningInput(JsonElement unsecuredDocument, DataIntegrityProof proofConfig)
     {
         var docNode = JsonObject.Create(unsecuredDocument)!;
-        docNode["proof"] = JsonSerializer.SerializeToNode(proofConfig, DataProofsJsonOptions.Default);
-        var combined = JsonSerializer.SerializeToElement(docNode, DataProofsJsonOptions.Default);
+        docNode["proof"] = JsonSerializer.SerializeToNode(proofConfig, LegacyJson.ProofTypeInfo);
+        var combined = JsonSerializer.SerializeToElement(docNode, LegacyJson.JsonObjectTypeInfo);
 
         // Drop null object members (preserving null array elements) before canonicalizing, so a
         // JsonElement round-tripped from the wire canonicalizes identically to a WhenWritingNull-
         // serialized model. This mirrors zcap-dotnet's JsonCanonicalizer.StripNullMembers and is
         // load-bearing for cross-stack byte-identity on any document/proof carrying explicit nulls
         // (RFC 8785 itself keeps nulls; the legacy stacks strip object-member nulls before signing).
-        var stripped = StripNullMembers(combined);
+        // An object root never strips to null, hence the null-forgiving operator.
+        var stripped = StripNullMembers(combined)!;
         return JcsCanonicalizer.Canonicalize(
-            JsonSerializer.SerializeToElement(stripped, DataProofsJsonOptions.Default));
+            JsonSerializer.SerializeToElement(stripped, LegacyJson.JsonNodeTypeInfo));
     }
 
     /// <summary>Whether <paramref name="document"/> already carries a top-level <c>proof</c> member.</summary>
@@ -414,7 +415,7 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         JsonElement unsecuredDocument, DataIntegrityProof proofOptions, KeyType keyType)
     {
         var canonicalProofOptions = _rdfCanonicalizer!.CanonicalizeJsonLd(
-            JsonSerializer.SerializeToElement(proofOptions, DataProofsJsonOptions.Default),
+            JsonSerializer.SerializeToElement(proofOptions, LegacyJson.ProofTypeInfo),
             RdfCanonicalizationHashAlgorithm.Sha256);
         var canonicalDocument = _rdfCanonicalizer.CanonicalizeJsonLd(
             unsecuredDocument, RdfCanonicalizationHashAlgorithm.Sha256);

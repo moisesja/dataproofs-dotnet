@@ -227,3 +227,59 @@ input class") recurring as a *documentation* claim rather than a fix.
 - An input-validation requirement stated in an RFC (here RFC 7515 §5.2 step 3) maps to an explicit
   check with its own test, never to "the parser happens to throw". Before declaring an input class
   closed, grep the sibling decoders for the same decode→parse shape; this time four had it.
+
+## 2026-10-26 — Spike the toolchain's behaviour before designing around it (issue #27)
+
+**What happened:** The first design draft for the native-AOT migration rested on four assumptions,
+and a fifteen-minute scratch project in the scratchpad, built before the plan was written, showed
+three of them wrong and the fourth incomplete:
+1. A `JsonSerializerContext` bound to a `JsonSerializerOptions` **locks** that instance's resolver
+   chain — the planned "bind the context, then add the JIT reflection fallback" order throws.
+2. The `JsonSerializer.IsReflectionEnabledByDefault` guard does **not** silence the Roslyn trim/AOT
+   analyzers; the ASP.NET Core `[UnconditionalSuppressMessage]`-with-justification pattern is required.
+3. The .NET 10 source generator models `init`-only members as **constructor parameters**: an
+   `init`-only `[JsonExtensionData]` bag throws at first use, and an `init`-only member with an
+   initializer comes back `null` when absent from the payload. That forced a public-API change
+   (`init` → `set` on two `DataIntegrityProof` members) that belonged in the plan for the owner's
+   approval, not in a mid-implementation surprise — and a regression test for a behaviour (`Type`
+   defaulting) that *serialization* byte-identity tests would never have caught.
+4. An internal `[JsonConverter]` type blocks every downstream consumer's source generator
+   (SYSLIB1220), which turned "no public API change" into one deliberately public type.
+
+**The rule for myself:**
+- When a design depends on how a toolchain or library behaves — a source generator, an analyzer, a
+  trimmer feature switch, a serializer's constructor-selection rules — build a scratch project and
+  **observe** it before writing the plan. Recalled documentation is a hypothesis; compiler and
+  runtime output are facts. Budget the spike; it is cheaper than one re-plan and far cheaper than
+  an approved plan that later needs a public-API amendment.
+- For System.Text.Json source generation specifically: inspect the generated code
+  (`EmitCompilerGeneratedFiles=true`) for every model shape — `init`, `required`, initializers,
+  extension data, private setters, record copy constructors — and test a **deserialization with a
+  member absent**. Serialization byte identity says nothing about deserialization defaults.
+- State the version/release assumption as the **first** decision in a plan. The owner's one-line
+  rejection ("Version is still 1.4.0. We haven't deployed.") corrected an assumption I had reasoned
+  about at length; putting it first makes it the first thing the owner can strike.
+
+**Addendum, same day — "analyzer-clean" is a claim about annotated code only.** With all six
+packages building warning-free under `IsAotCompatible`, the first reflection-disabled run of the new
+`tasks/aot-smoke` still failed: NetCid's `JcsCanonicalizer.Canonicalize(JsonNode)` serializes through
+reflection internally, and NetCid carries no annotations, so every JCS proof with `@context` would
+have failed to verify in an AOT host. The rule: **zero trim/AOT warnings from the packages' own build
+proves nothing about unannotated dependencies.** Before claiming AOT support, run every public path
+with `JsonSerializerIsReflectionEnabledByDefault=false` (cheap, no native toolchain) and as a native
+binary, and turn each hidden-reflection dependency API found into a `BannedSymbols.txt` entry with
+the reason, so the compile step guards what the analyzers cannot.
+
+**Second addendum, after the adversarial review — and do not write a gate that ignores the evidence.**
+The ILCompiler's whole-program analysis *did* report the NetCid reflection, as a NetCid IL2026/IL3050
+in the publish log. My first `ac-12` scan treated every third-party IL warning as "informational" and
+failed only on DataProofs-attributed ones, so it would have passed the bug; only the runtime leg
+caught it, and only because that path happened to be exercised. I also wrote "no analyzer could see
+it" into the CHANGELOG, which the same log disproved. The rules:
+- A gate's allowlist is per finding, not per category. "Third-party warnings are expected" was a
+  category; the fix is a reviewed list of exact warnings (`known-il-warnings.txt`), each with the
+  reason it is unreachable, and failure on anything else.
+- Hidden problems in a dependency surface as *that dependency's* diagnostics. A filter that discards
+  diagnostics by attribution discards exactly those.
+- A scan needs negative controls for the input classes it must reject (unknown dependency warning,
+  empty log, a publish where the compiler did not run), not just a regex control.

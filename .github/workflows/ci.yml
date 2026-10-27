@@ -9,8 +9,11 @@ on:
 permissions:
   contents: read
 
-# PRD §9: one CI job per acceptance criterion, ac-1 … ac-11, each exiting 0/non-zero, all
-# required for merge to main. ac-11 (package-identity publish gate) lives in publish.yml.
+# PRD §9: one CI job per acceptance criterion, ac-1 … ac-12, each exiting 0/non-zero, all required for
+# merge to main. Enforced since 2026-10-27 by the ruleset "main: required CI" (id 25966034), which
+# requires every job in this file by its name — renaming a job here blocks every merge until the ruleset
+# is updated. The repository admin role may bypass it. Before that date nothing enforced it (PRD §9).
+# ac-11 (package-identity publish gate) lives in publish.yml.
 # ac-5 (didcomm behavior-parity diff) has been retired — see the note where it used to sit, below.
 #
 # The build-test job is the comprehensive gate: it builds the whole solution with
@@ -218,5 +221,88 @@ jobs:
               && { [ -z "${prereq[$id]:-}" ] || dotnet add package "${prereq[$id]%%:*}" --version "${prereq[$id]##*:}"; } \
               && dotnet run -c Release )
           done
+
+  ac-12:
+    name: ac-12 native AOT publish + JIT parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # The runner context is not available to job-level env, so the scratch path is exported here.
+      - name: Scratch directory for the four reports
+        run: echo "SMOKE=$RUNNER_TEMP/aot-smoke" >> "$GITHUB_ENV"
+      - name: Native toolchain for the ILCompiler
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      # NFR-7 / AC-12 (issue #27). tasks/aot-smoke exercises every package with fixed keys and timestamps
+      # and writes a report whose `deterministic` section must be byte-identical across four legs.
+      # Each run builds into its own output directory and is checked for the runtime it claims to be,
+      # so a mix-up between the legs cannot pass silently. PublishAot is passed on the command line,
+      # not set in the csproj, so ordinary solution restores never download the ILCompiler and
+      # `dotnet run` stays a true JIT baseline (see tasks/aot-smoke/README.md).
+      - name: emit — JIT, reflection-based serialization enabled (today's ordinary host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          dotnet build tasks/aot-smoke/AotSmoke.csproj --configuration Release /warnaserror -o "$SMOKE/jit"
+          dotnet "$SMOKE/jit/AotSmoke.dll" emit "$SMOKE/jit.json"
+          jq -e '.runtime.reflectionEnabled == true and .runtime.isDynamicCodeSupported == true' "$SMOKE/jit.json" > /dev/null
+      - name: emit — JIT with reflection-based serialization disabled (the serializer condition of a trimmed host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build tasks/aot-smoke/AotSmoke.csproj --configuration Release --no-incremental -p:JsonSerializerIsReflectionEnabledByDefault=false -o "$SMOKE/noreflect"
+          dotnet "$SMOKE/noreflect/AotSmoke.dll" emit "$SMOKE/trimmed.json"
+          jq -e '.runtime.reflectionEnabled == false' "$SMOKE/trimmed.json" > /dev/null
+      - name: emit — .NET 10 file-based app (`dotnet run app.cs`, native-AOT defaults under JIT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --no-cache: dotnet run skips the rebuild when only #:project-referenced code changed.
+          dotnet run tasks/aot-smoke/file-based-app/aot-smoke.cs --no-cache --configuration Release -- emit "$SMOKE/filebased.json"
+          jq -e '.runtime.reflectionEnabled == false and .runtime.isDynamicCodeSupported == false' "$SMOKE/filebased.json" > /dev/null
+      - name: publish — native AOT, linux-x64
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish tasks/aot-smoke/AotSmoke.csproj --configuration Release -r linux-x64 -p:PublishAot=true -o "$SMOKE/aot" 2>&1 | tee "$SMOKE/publish.log"
+      - name: emit — native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SMOKE/aot/AotSmoke" emit "$SMOKE/aot.json"
+          jq -e '.runtime.isDynamicCodeSupported == false and .runtime.reflectionEnabled == false and .runtime.bbsAvailable == true' "$SMOKE/aot.json" > /dev/null
+      - name: compare — deterministic output byte-identical across all four legs
+        run: dotnet "$SMOKE/jit/AotSmoke.dll" compare "$SMOKE/jit.json" "$SMOKE/trimmed.json" "$SMOKE/filebased.json" "$SMOKE/aot.json"
+      - name: cross-verify — the native binary verifies the JIT run's artifacts, and JIT verifies the native run's
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SMOKE/aot/AotSmoke" verify "$SMOKE/jit.json"
+          dotnet "$SMOKE/jit/AotSmoke.dll" verify "$SMOKE/aot.json"
+          dotnet "$SMOKE/jit/AotSmoke.dll" verify "$SMOKE/trimmed.json"
+          "$SMOKE/aot/AotSmoke" verify "$SMOKE/filebased.json"
+      # Every IL warning must be on tasks/aot-smoke/known-il-warnings.txt, whichever assembly it names:
+      # hidden reflection in an unannotated dependency surfaces as that dependency's warning (NetCid's did).
+      # The tool's IlCanary warnings must be present, which proves the analysis ran and was not suppressed.
+      # The self-test proves the scan rejects a DataProofs warning, an unknown dependency warning, a missing
+      # canary, and an empty or skipped (no native compilation) log before the real log is trusted.
+      - name: IL warnings — only known, unreachable third-party ones (scan self-test first)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tasks/aot-smoke/scan-il-warnings.sh --self-test
+          bash tasks/aot-smoke/scan-il-warnings.sh "$SMOKE/publish.log"
+      - name: Upload reports and publish log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aot-smoke-reports
+          path: |
+            ${{ runner.temp }}/aot-smoke/*.json
+            ${{ runner.temp }}/aot-smoke/publish.log
+          if-no-files-found: warn
 
   # ac-11 (package identity & publish readiness) is the publish gate — see publish.yml.

@@ -7,3 +7,11 @@
 # A line without a "# justification:" comment fails the tool (exit 2). Keep this list minimal and
 # honest: the default is that every public member is exercised by a sample. The label is exactly
 # the report's member label (e.g. "DataProofsDotnet.Foo.Bar" or "DataProofsDotnet.Foo..ctor(...)").
+
+# Issue #27 — PreviousProofReferenceJsonConverter is public only so that a consumer's System.Text.Json
+# source generator can instantiate it when the consumer lists DataIntegrityProof in its own
+# JsonSerializerContext (native AOT / trimming). It is applied through the [JsonConverter] attribute
+# on PreviousProofReference and invoked by the serializer; no caller constructs or references it, so
+# no sample can exercise the name. tasks/aot-smoke does exactly that consumer registration (ac-12).
+DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter (type) # justification: applied via [JsonConverter] on PreviousProofReference and instantiated by the System.Text.Json source generator of a consumer context; never referenced by caller code (issue #27)
+DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter..ctor() # justification: constructed only by System.Text.Json (attribute-applied converter) and by consumer source-generated contexts; never by caller code (issue #27)

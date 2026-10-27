@@ -5,6 +5,9 @@
     <AssemblyName>DataProofsDotnet.Jose</AssemblyName>
     <PackageId>DataProofsDotnet.Jose</PackageId>
     <Version>$(DataProofsVersion)</Version>
+    <!-- Native AOT and trimming support (issue #27): turns on the trim, single-file and AOT analyzers,
+         which the repo-wide TreatWarningsAsErrors makes fatal, and stamps the assembly IsTrimmable. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Enveloping proofs over JOSE: JWS (compact/JSON, detached, multi-signature), JWE (compact/General JSON, multi-recipient, ECDH-ES and ECDH-1PU), JWT claims validation, JWK with RFC 7638 thumbprints, SD-JWT (RFC 9901) with Key Binding, SD-JWT VC, and the JOSE half of VC-JOSE-COSE. All cryptography via NetCrypto.</Description>
   </PropertyGroup>
 

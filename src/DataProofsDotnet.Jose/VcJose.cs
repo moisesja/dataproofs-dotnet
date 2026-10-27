@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using DataProofsDotnet.Jose.Json;
 using DataProofsDotnet.Jose.Signing;
 
 namespace DataProofsDotnet.Jose;
@@ -57,7 +58,7 @@ public static class VcJose
             Typ = EnvelopeType,
             AdditionalMembers = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
             {
-                ["cty"] = JsonSerializer.SerializeToElement(CredentialContentType),
+                ["cty"] = JsonSerializer.SerializeToElement(CredentialContentType, JoseJson.StringTypeInfo),
             },
         };
 

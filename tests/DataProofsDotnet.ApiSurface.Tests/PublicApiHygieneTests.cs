@@ -6,7 +6,7 @@ namespace DataProofsDotnet.ApiSurface.Tests;
 
 /// <summary>
 /// AC-6/AC-7 reflection gate (the runtime complement to the text-file <c>api-surface-scan</c>):
-/// walks the exported surface of all five <c>DataProofsDotnet.*</c> assemblies and asserts no
+/// walks the exported surface of every <c>DataProofsDotnet.*</c> package assembly and asserts no
 /// public signature exposes a forbidden type — neither a backend/native assembly
 /// (dotNetRDF/VDS.RDF, Newtonsoft, Jose, SdJwt, NSec, NBitcoin, Nethermind) nor a forbidden
 /// namespace (System.Formats.Cbor, System.Security.Cryptography, System.Net, and any
@@ -43,8 +43,49 @@ public class PublicApiHygieneTests
         typeof(DataProofsDotnet.Jose.Signing.JwsBuilder).Assembly,                                  // Jose
         typeof(DataProofsDotnet.Cose.CoseSign1).Assembly,                                           // Cose
         typeof(DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer).Assembly,                           // Rdfc
+        typeof(DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization).Assembly,              // Legacy
         typeof(DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder).Assembly,         // DI
     ];
+
+    [Fact]
+    public void EveryPackageProject_SetsIsAotCompatible()
+    {
+        // The IsTrimmable stamp checked below is also produced by IsTrimmable alone, which does not turn
+        // on the AOT analyzer; the project files are the authoritative declaration.
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "DataProofsDotnet.sln")))
+            root = root.Parent;
+        root.Should().NotBeNull("the test runs from inside the repository");
+
+        var projects = Directory.GetFiles(Path.Combine(root!.FullName, "src"), "*.csproj", SearchOption.AllDirectories);
+        projects.Should().HaveCount(6, "the six packages");
+        foreach (var project in projects)
+        {
+            // Unconditional only: a Condition on the element or its PropertyGroup could switch it off.
+            var declared = System.Xml.Linq.XDocument.Load(project).Descendants("IsAotCompatible")
+                .Any(e => string.Equals(e.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase)
+                    && e.Attribute("Condition") is null
+                    && e.Parent?.Attribute("Condition") is null);
+            declared.Should().BeTrue($"{Path.GetFileName(project)} must set <IsAotCompatible>true</IsAotCompatible> unconditionally");
+        }
+    }
+
+    [Fact]
+    public void EveryPackage_DeclaresTrimAndAotCompatibility()
+    {
+        // Issue #27 (PRD NFR-7 / AC-12): IsAotCompatible=true in each package project turns the trim,
+        // single-file and AOT analyzers into build errors and stamps the assembly IsTrimmable. The stamp
+        // is the mechanical proof that the declaration is still in place; tasks/aot-smoke (ac-12) proves
+        // the behaviour at run time.
+        foreach (var assembly in PackageAssemblies())
+        {
+            var isTrimmable = assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(a => a.Key == "IsTrimmable")?.Value;
+
+            isTrimmable.Should().Be("True",
+                $"{assembly.GetName().Name} must declare <IsAotCompatible>true</IsAotCompatible> in its project file");
+        }
+    }
 
     [Fact]
     public void ExportedSurface_ContainsNoForbiddenTypes()

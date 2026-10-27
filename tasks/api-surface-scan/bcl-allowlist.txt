@@ -71,3 +71,10 @@ System.Action
 System.Exception
 System.Nullable
 System.ValueTuple
+
+# ---- System.Type: the typeToConvert parameter of JsonConverter<T>.Read ----
+# Appears only because PreviousProofReferenceJsonConverter is public (issue #27): a consumer that
+# lists DataIntegrityProof in its own JsonSerializerContext needs the System.Text.Json source
+# generator to instantiate the converter, and the override's signature is fixed by the BCL base type.
+# A reflection handle for a type identity, not a backend or encoding type.
+System.Type

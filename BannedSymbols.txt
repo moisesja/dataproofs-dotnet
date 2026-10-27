@@ -82,3 +82,15 @@ T:System.Security.Cryptography.ChaCha20Poly1305;AEAD via NetCrypto.XChaCha20Poly
 T:System.Security.Cryptography.Aes;Symmetric cipher / key wrap via NetCrypto (AesCbcHmacCipher / AesKeyWrap), never System.Security.Cryptography (AC-6).
 T:System.Security.Cryptography.AesManaged;Symmetric cipher via NetCrypto, never System.Security.Cryptography (AC-6).
 T:System.Security.Cryptography.TripleDES;Symmetric cipher via NetCrypto, never System.Security.Cryptography (AC-6).
+
+# --- Hidden reflection in unannotated dependencies (native AOT / trimming, PRD NFR-7, issue #27) ---
+# NetCid is not trim- or AOT-annotated, so the analyzers cannot see that these overloads serialize the
+# node through reflection-based System.Text.Json (JsonSerializer.SerializeToDocument<JsonNode> with no
+# type info). Trimmed and native-AOT hosts disable that, and the call throws InvalidOperationException
+# at run time — found by tasks/aot-smoke (ac-12): every JCS proof carrying @context failed to verify.
+# The JsonElement overloads are reflection-free; serialize a node through the package's typed metadata
+# first (JsonSerializer.SerializeToElement(node, ...TypeInfo)). Lift these when NetCid fixes it upstream.
+M:NetCid.JcsCanonicalizer.Canonicalize(System.Text.Json.Nodes.JsonNode);Reflection-based in NetCid; canonicalize a JsonElement (NFR-7, issue #27).
+M:NetCid.JcsCanonicalizer.Canonicalize(System.Text.Json.Nodes.JsonNode,System.Int32);Reflection-based in NetCid; canonicalize a JsonElement (NFR-7, issue #27).
+M:NetCid.JcsCanonicalizer.Canonicalize(System.Text.Json.Nodes.JsonNode,System.Buffers.IBufferWriter{System.Byte});Reflection-based in NetCid; canonicalize a JsonElement (NFR-7, issue #27).
+M:NetCid.JcsCanonicalizer.Canonicalize(System.Text.Json.Nodes.JsonNode,System.Buffers.IBufferWriter{System.Byte},System.Int32);Reflection-based in NetCid; canonicalize a JsonElement (NFR-7, issue #27).

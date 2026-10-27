@@ -5,6 +5,9 @@
     <AssemblyName>DataProofsDotnet.Rdfc</AssemblyName>
     <PackageId>DataProofsDotnet.Rdfc</PackageId>
     <Version>$(DataProofsVersion)</Version>
+    <!-- Native AOT and trimming support (issue #27): turns on the trim, single-file and AOT analyzers,
+         which the repo-wide TreatWarningsAsErrors makes fatal, and stamps the assembly IsTrimmable. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>RDF-canonicalization family for W3C Data Integrity: JSON-LD 1.1 processing and RDFC-1.0 behind the library's own canonicalizer interface, the offline-default document loader, the RDFC cryptosuites (eddsa-rdfc-2022, ecdsa-rdfc-2019), and bbs-2023 selective disclosure. Sole dotNetRDF reference in the stack; no dotNetRDF or Newtonsoft type in any public signature.</Description>
   </PropertyGroup>
 

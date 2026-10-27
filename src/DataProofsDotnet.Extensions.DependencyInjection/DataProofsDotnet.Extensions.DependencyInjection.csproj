@@ -5,6 +5,9 @@
     <AssemblyName>DataProofsDotnet.Extensions.DependencyInjection</AssemblyName>
     <PackageId>DataProofsDotnet.Extensions.DependencyInjection</PackageId>
     <Version>$(DataProofsVersion)</Version>
+    <!-- Native AOT and trimming support (issue #27): turns on the trim, single-file and AOT analyzers,
+         which the repo-wide TreatWarningsAsErrors makes fatal, and stamps the assembly IsTrimmable. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Dependency-injection composition for DataProofsDotnet: AddDataProofs(...) builder-style registration of the proof pipeline, cryptosuite registry, per-package suite registrations (JCS, RDFC, bbs-2023, JOSE, COSE), and caller-supplied verification-method resolvers.</Description>
   </PropertyGroup>
 

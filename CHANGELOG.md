@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.0] - 2026-10-26
 
+### Added
+
+- **Native AOT and trimming support** (issue [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27)). All six packages declare `IsAotCompatible` and
+  build with zero trim, single-file and AOT analyzer warnings, which the repo-wide warnings-as-errors
+  makes fatal. Every System.Text.Json (de)serialization in the packages goes through source-generated
+  metadata, from one internal `JsonSerializerContext` in each package that serializes JSON: Core, Jose,
+  Rdfc and Legacy (Cose and the DI package serialize none). Between them they cover `DataIntegrityProof`,
+  `JsonObject`, `JsonNode`, `JsonElement`, the JWS and JWE protected headers, `Jwk` and `string`.
+  **Emitted bytes are unchanged.** Member order, null omission, escaping and extension-data placement
+  are pinned by reflection-versus-source-generation identity tests in Core and Jose, and every
+  conformance, vector and cross-stack byte-identity suite passes unchanged.
+- **CI job `ac-12` proves it at run time.** `tasks/aot-smoke` exercises every package: Data Integrity
+  with the JCS, RDFC and `bbs-2023` suites and a proof chain; both legacy suites in their JCS and RDFC
+  variants; JWS, JWT, JWE, SD-JWT with Key Binding, COSE_Sign1, CWT and VC-JOSE-COSE; RDFC
+  canonicalization through the offline loader; JWK conversion; `AddDataProofs`; and a consumer
+  `JsonSerializerContext` that lists `DataIntegrityProof`. The job runs it four ways on linux-x64:
+  under JIT; under JIT with reflection-based serialization disabled, the serializer condition of a
+  trimmed host; as a .NET 10 file-based app (`dotnet run app.cs`, which applies the native-AOT defaults);
+  and as a native-AOT binary. The deterministic outputs must be byte-identical across all four, and the
+  randomized artifacts are verified across runtimes. The job also fails on any `IL2xxx`/`IL3xxx` warning
+  in the native publish that is not on a reviewed list of known, unreachable third-party warnings,
+  whichever assembly it names, and on a log that lacks the tool's own canary warning, which proves the
+  analysis ran and was not suppressed. The RDFC canonicalizer (dotNetRdf.Core and its Newtonsoft.Json
+  dependency) was shown to work under native AOT in the issue; the job keeps proving it. Unblocks
+  [moisesja/zcap-dotnet#154](https://github.com/moisesja/zcap-dotnet/issues/154).
+- **The JCS suites no longer depend on reflection inside NetCid.** `ac-12`'s first reflection-disabled
+  run found that NetCid's `JcsCanonicalizer.Canonicalize(JsonNode)` overloads serialize the node through
+  reflection-based System.Text.Json. NetCid carries no trim or AOT annotations, so the analyzers that
+  build the packages could not see it. Only the ILCompiler's whole-program analysis of an application
+  reports it, as a warning attributed to NetCid. `eddsa-jcs-2022` and `ecdsa-jcs-2019` verification
+  called that overload whenever the proof carries `@context`, which these suites copy from the
+  document's `@context`, so every proof over a JSON-LD document carries one. In a trimmed or native-AOT
+  host every such verification therefore failed closed, as
+  `PROOF_VERIFICATION_ERROR: Verification failed unexpectedly (InvalidOperationException)`. A JIT host
+  with reflection-based serialization enabled, the default, was not affected. The suite now
+  canonicalizes a `JsonElement`; the canonical bytes are unchanged, as the W3C vector suites confirm.
+  `BannedSymbols.txt` bans the four `JsonNode` overloads, so the build fails if one is reintroduced.
+- **Publishing `Rdfc` with native AOT: Newtonsoft.Json warnings.** An application that native-AOT
+  publishes `DataProofsDotnet.Rdfc`, or `Legacy` or the DI package, which reference it, gets trim and AOT
+  warnings from Newtonsoft.Json, dotNetRdf.Core's dependency, for its `dynamic` support, which
+  dotNetRdf's JSON-LD parser never reaches. They are collapsed into `IL2104` and `IL3053` for that
+  assembly. Under `TreatWarningsAsErrors` they fail the publish. To keep them visible but not fatal,
+  without relaxing your own code's analyzers, add:
+
+  ```xml
+  <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  ```
+
+  This makes **every** dependency's collapsed trim and AOT warnings non-fatal, not only
+  Newtonsoft.Json's. Hidden reflection in another dependency would then publish and fail at run time, so
+  check that each `IL2104`/`IL3053` in the publish log names `Newtonsoft.Json` and nothing else.
+  Applications that use only Core, Jose and Cose see no IL warnings.
+
+### Changed
+
+- **`DataProofsJsonOptions.Default` resolves this library's types through source-generated metadata
+  first** (issue [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27)). Its resolver chain is the Core context followed by the reflection resolver. The
+  reflection resolver is added only when `JsonSerializer.IsReflectionEnabledByDefault` is true, which it
+  is in an ordinary JIT application, so JIT consumers' own types serialize as before. Trimmed and
+  native-AOT builds, and any project that sets `PublishAot` (the SDK turns the switch off there even
+  under `dotnet run`), default the switch to false. There, a consumer type without source-generated
+  metadata now fails with System.Text.Json's `NotSupportedException` naming the type. Register such
+  types in your own `JsonSerializerContext`; `DataIntegrityProof` can be listed there directly. A host
+  that opts back in with `JsonSerializerIsReflectionEnabledByDefault=true` keeps the fallback for its own
+  types; the library's types never use it.
+- **Observable to JIT consumers, without changing any bytes:** `Default.TypeInfoResolver` and
+  `TypeInfoResolverChain` now hold the source-generated context (and the reflection resolver), and a
+  `JsonException` from a malformed proof can carry a different message and byte position (for example,
+  a non-string `cryptosuite` is now reported against `DataIntegrityProof` rather than `System.String`).
+  Exception types are unchanged.
+- **`DataIntegrityProof.Type` and `DataIntegrityProof.AdditionalProperties` are settable** (`set`
+  instead of `init`). The .NET 10 source generator models `init`-only members as constructor
+  parameters. An `init`-only extension-data bag is rejected at first use, and an `init`-only member with
+  an initializer loses its default when the member is absent from the payload, which would have turned
+  the `Type` of a proof without a `type` member from `"DataIntegrityProof"` into `null`.
+  Source-compatible: object initializers and `with` expressions compile unchanged. **Not
+  binary-compatible:** an `init` accessor's signature carries `modreq(IsExternalInit)` and a `set`
+  accessor's does not, so an already-compiled dependent fails with `MissingMethodException` on
+  `set_Type` or `set_AdditionalProperties` until it is rebuilt. Binary compatibility is out of scope per
+  `RELEASING.md`; this is the migration step. ZcapLd.Core 4.2.0 and 5.0.0 and ZcapLd.AspNetCore 5.0.0
+  reference neither setter.
+- **`PreviousProofReferenceJsonConverter` is public** (it was internal). It is still applied through
+  the `[JsonConverter]` attribute on `PreviousProofReference` and never needs registering. It is public
+  so that a consumer can list `DataIntegrityProof` in its own `JsonSerializerContext`, which the source
+  generator refuses (SYSLIB1220) when the converter is inaccessible. `System.Type`, from its `Read`
+  signature, joins the AC-7 BCL allowlist with that justification.
+- Pre-existing and unchanged, now written down: `JweBuilder` renders the General JSON serialization with
+  the default HTML-safe encoder (an unprotected `kid` containing `+` is emitted as `\u002B`), while
+  `JwsBuilder` uses the relaxed encoder. The anonymous-type rendering, which source generation cannot
+  describe, was replaced by a `JsonObject` with the same member order and escaping, pinned by a test.
+
 ### Fixed
 
 - **A JWS protected header that is not valid UTF-8 is now rejected on every entry point** (issue
@@ -110,7 +201,10 @@ On the SD-JWT issuer JWT, Key Binding JWT and Disclosure paths, it also replaces
 `InvalidOperationException` escaping a never-throws API with a structured failure, for this input
 class. A consumer could have been depending on that behaviour, however wrongly, through a
 catch-all. The version number is there to make that consumer read this entry. Recorded as a worked
-example in `RELEASING.md`.
+example in `RELEASING.md`. The native-AOT work in this release is minor material on its own: a feature,
+two public members loosened from `init` to `set` and one type made public — all source-compatible — and
+a change to `DataProofsJsonOptions.Default`'s resolution of consumer types, which a consumer's own types
+observe only in hosts that disable reflection-based serialization.
 
 ## [1.3.0] - 2026-08-05
 

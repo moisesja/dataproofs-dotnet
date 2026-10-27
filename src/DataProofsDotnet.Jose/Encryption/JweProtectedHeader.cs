@@ -45,7 +45,7 @@ internal sealed class JweProtectedHeader
     /// <summary>Canonical base64url encoding used for the JWE AAD input.</summary>
     public string EncodeBase64Url()
     {
-        var node = (JsonObject)JsonSerializer.SerializeToNode(this, JoseJson.Default)!;
+        var node = (JsonObject)JsonSerializer.SerializeToNode(this, JoseJson.JweHeaderTypeInfo)!;
         var bytes = DeterministicJsonWriter.WriteUtf8(node);
         return Base64Url.Encode(bytes);
     }
@@ -76,7 +76,7 @@ internal sealed class JweProtectedHeader
 
         try
         {
-            return JsonSerializer.Deserialize<JweProtectedHeader>(bytes, JoseJson.Default)
+            return JsonSerializer.Deserialize(bytes, JoseJson.JweHeaderTypeInfo)
                 ?? throw new MalformedJoseException("JWE protected header decoded to null.");
         }
         catch (JsonException ex)

@@ -36,6 +36,16 @@ docs/       supplementary documentation
 - Nullable reference types and warnings-as-errors are on repo-wide
 - Public API changes must be declared in the package's `PublicAPI.Unshipped.txt`
   (PublicApiAnalyzers, FR-24)
+- Serialization in `src/` is source-generated (native AOT, NFR-7): never call a reflection-based
+  `JsonSerializer` overload — the AOT analyzers fail the build. Use the typed `JsonTypeInfo<T>`
+  accessors (`DataProofsJsonOptions.*TypeInfo`, `JoseJson.*TypeInfo`, `RdfcJson`, `LegacyJson`) and add
+  any newly serialized type to that package's `JsonSerializerContext`. Build JSON with
+  `JsonObject`/`JsonNode`, and cast to `JsonNode` when passing a derived node or a string to
+  `JsonArray.Add` (the generic overload is reflection-based)
+- A dependency is not covered by those analyzers. If `ac-12` reports a new IL warning from a
+  dependency, trace it: if the path is reachable, stop using it (and ban it in `BannedSymbols.txt` with
+  the reason); only a warning shown unreachable goes on `tasks/aot-smoke/known-il-warnings.txt`, with
+  that reason
 
 ## Tests
 
@@ -47,5 +57,7 @@ docs/       supplementary documentation
 ## Pull requests
 
 - Keep changes minimal and focused; one concern per PR
-- All `ac-1` … `ac-11` CI jobs must be green to merge to `main`
+- All `ac-1` … `ac-12` CI jobs, and `build + test` on both platforms, must be green to merge to `main`.
+  Since 2026-10-27 the ruleset `main: required CI` enforces this (PRD §9). Renaming a CI job blocks
+  merges until the ruleset is updated to the new name
 - Update samples and docs alongside code changes

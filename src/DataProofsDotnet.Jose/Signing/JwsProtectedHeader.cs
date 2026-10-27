@@ -42,7 +42,7 @@ internal sealed class JwsProtectedHeader
     /// <summary>Emit the header as a canonical UTF-8 byte sequence and then base64url it for use in the JWS signing input.</summary>
     public string EncodeBase64Url()
     {
-        var node = (JsonObject)JsonSerializer.SerializeToNode(this, HeaderContext.Header)!;
+        var node = (JsonObject)JsonSerializer.SerializeToNode(this, JoseJson.JwsHeaderTypeInfo)!;
         // Drop the empty-string kid sentinel so headers built without a kid serialize without one.
         if (node.TryGetPropertyValue("kid", out var kidNode) && kidNode?.GetValue<string>() is "")
             node.Remove("kid");
@@ -109,7 +109,7 @@ internal sealed class JwsProtectedHeader
             if (hasKidMember && kid.ValueKind != JsonValueKind.String)
                 throw new MalformedJoseException("JWS protected header 'kid' must be a string.");
 
-            var header = document.RootElement.Deserialize<JwsProtectedHeader>(HeaderContext.Header)
+            var header = document.RootElement.Deserialize(JoseJson.JwsHeaderTypeInfo)
                 ?? throw new MalformedJoseException("JWS protected header decoded to null.");
             header.HasKidMember = hasKidMember;
 
@@ -150,11 +150,4 @@ internal sealed class JwsProtectedHeader
             throw new MalformedJoseException("JWS protected header is not valid base64url.", ex);
         }
     }
-}
-
-/// <summary>Serializer options shared by the JWS/JWE header DTOs.</summary>
-internal static class HeaderContext
-{
-    /// <summary>Alias of <see cref="JoseJson.Default"/> kept for call-site clarity.</summary>
-    public static JsonSerializerOptions Header => JoseJson.Default;
 }
