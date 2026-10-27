@@ -5,6 +5,9 @@
     <AssemblyName>DataProofsDotnet.Legacy</AssemblyName>
     <PackageId>DataProofsDotnet.Legacy</PackageId>
     <Version>$(DataProofsVersion)</Version>
+    <!-- Native AOT and trimming support (issue #27): turns on the trim, single-file and AOT analyzers,
+         which the repo-wide TreatWarningsAsErrors makes fatal, and stamps the assembly IsTrimmable. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Legacy Linked-Data-Signature cryptosuites for W3C Data Integrity: Ed25519Signature2020 and EcdsaSecp256r1Signature2019, JCS (default) and RDFC-1.0 variants, byte-compatible with zcap-dotnet's 2020-era JCS-nested wire convention. All cryptography via NetCrypto; multiformats/JCS via NetCid; RDFC via DataProofsDotnet.Rdfc.</Description>
   </PropertyGroup>
 

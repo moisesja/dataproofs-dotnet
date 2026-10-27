@@ -6,7 +6,7 @@ namespace DataProofsDotnet.ApiSurface.Tests;
 
 /// <summary>
 /// AC-6/AC-7 reflection gate (the runtime complement to the text-file <c>api-surface-scan</c>):
-/// walks the exported surface of all five <c>DataProofsDotnet.*</c> assemblies and asserts no
+/// walks the exported surface of every <c>DataProofsDotnet.*</c> package assembly and asserts no
 /// public signature exposes a forbidden type — neither a backend/native assembly
 /// (dotNetRDF/VDS.RDF, Newtonsoft, Jose, SdJwt, NSec, NBitcoin, Nethermind) nor a forbidden
 /// namespace (System.Formats.Cbor, System.Security.Cryptography, System.Net, and any
@@ -43,8 +43,26 @@ public class PublicApiHygieneTests
         typeof(DataProofsDotnet.Jose.Signing.JwsBuilder).Assembly,                                  // Jose
         typeof(DataProofsDotnet.Cose.CoseSign1).Assembly,                                           // Cose
         typeof(DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer).Assembly,                           // Rdfc
+        typeof(DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization).Assembly,              // Legacy
         typeof(DataProofsDotnet.Extensions.DependencyInjection.DataProofsBuilder).Assembly,         // DI
     ];
+
+    [Fact]
+    public void EveryPackage_DeclaresTrimAndAotCompatibility()
+    {
+        // Issue #27 (PRD NFR-7 / AC-12): IsAotCompatible=true in each package project turns the trim,
+        // single-file and AOT analyzers into build errors and stamps the assembly IsTrimmable. The stamp
+        // is the mechanical proof that the declaration is still in place; tasks/aot-smoke (ac-12) proves
+        // the behaviour at run time.
+        foreach (var assembly in PackageAssemblies())
+        {
+            var isTrimmable = assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(a => a.Key == "IsTrimmable")?.Value;
+
+            isTrimmable.Should().Be("True",
+                $"{assembly.GetName().Name} must declare <IsAotCompatible>true</IsAotCompatible> in its project file");
+        }
+    }
 
     [Fact]
     public void ExportedSurface_ContainsNoForbiddenTypes()

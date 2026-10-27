@@ -21,6 +21,7 @@
     <ProjectReference Include="../../src/DataProofsDotnet.Jose/DataProofsDotnet.Jose.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Cose/DataProofsDotnet.Cose.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Rdfc/DataProofsDotnet.Rdfc.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Legacy/DataProofsDotnet.Legacy.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Extensions.DependencyInjection/DataProofsDotnet.Extensions.DependencyInjection.csproj" />
   </ItemGroup>
 

@@ -5,6 +5,9 @@
     <AssemblyName>DataProofsDotnet.Cose</AssemblyName>
     <PackageId>DataProofsDotnet.Cose</PackageId>
     <Version>$(DataProofsVersion)</Version>
+    <!-- Native AOT and trimming support (issue #27): turns on the trim, single-file and AOT analyzers,
+         which the repo-wide TreatWarningsAsErrors makes fatal, and stamps the assembly IsTrimmable. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Enveloping proofs over COSE: COSE_Sign1 signing and verification (RFC 9052), CWT claims (RFC 8392), and the COSE half of VC-JOSE-COSE. CBOR via System.Formats.Cbor (never surfaced in public API); all cryptography via NetCrypto.</Description>
   </PropertyGroup>
 

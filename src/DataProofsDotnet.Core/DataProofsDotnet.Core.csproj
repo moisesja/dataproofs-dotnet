@@ -5,6 +5,9 @@
     <AssemblyName>DataProofsDotnet.Core</AssemblyName>
     <PackageId>DataProofsDotnet.Core</PackageId>
     <Version>$(DataProofsVersion)</Version>
+    <!-- Native AOT and trimming support (issue #27): turns on the trim, single-file and AOT analyzers,
+         which the repo-wide TreatWarningsAsErrors makes fatal, and stamps the assembly IsTrimmable. -->
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Embedded-proof core for W3C VC Data Integrity 1.0: proof model, add/verify proof pipeline, cryptosuite registry, JCS cryptosuites (eddsa-jcs-2022, ecdsa-jcs-2019), and the verification-method resolver abstraction. All cryptography via NetCrypto; multiformats and JCS via NetCid.</Description>
   </PropertyGroup>
 
