@@ -16,7 +16,7 @@ namespace DataProofsDotnet;
 /// <remarks>
 /// <para>
 /// Metadata for this library's own types — <see cref="DataIntegrityProof"/>, <see cref="JsonObject"/>,
-/// <see cref="JsonNode"/> and <see cref="JsonElement"/> — is source-generated, so the packages run unchanged in trimmed
+/// <see cref="JsonNode"/> and <see cref="JsonElement"/> — is source-generated, so the packages work in trimmed
 /// and native-AOT applications and never reflect over their own models, whatever the host.
 /// </para>
 /// <para>

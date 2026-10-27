@@ -264,8 +264,22 @@ three of them wrong and the fourth incomplete:
 packages building warning-free under `IsAotCompatible`, the first reflection-disabled run of the new
 `tasks/aot-smoke` still failed: NetCid's `JcsCanonicalizer.Canonicalize(JsonNode)` serializes through
 reflection internally, and NetCid carries no annotations, so every JCS proof with `@context` would
-have failed to verify in an AOT host. The rule: **zero trim/AOT warnings proves nothing about
-unannotated dependencies.** Before claiming AOT support, run every public path with
-`JsonSerializerIsReflectionEnabledByDefault=false` (cheap, no native toolchain) and as a native
+have failed to verify in an AOT host. The rule: **zero trim/AOT warnings from the packages' own build
+proves nothing about unannotated dependencies.** Before claiming AOT support, run every public path
+with `JsonSerializerIsReflectionEnabledByDefault=false` (cheap, no native toolchain) and as a native
 binary, and turn each hidden-reflection dependency API found into a `BannedSymbols.txt` entry with
 the reason, so the compile step guards what the analyzers cannot.
+
+**Second addendum, after the adversarial review — and do not write a gate that ignores the evidence.**
+The ILCompiler's whole-program analysis *did* report the NetCid reflection, as a NetCid IL2026/IL3050
+in the publish log. My first `ac-12` scan treated every third-party IL warning as "informational" and
+failed only on DataProofs-attributed ones, so it would have passed the bug; only the runtime leg
+caught it, and only because that path happened to be exercised. I also wrote "no analyzer could see
+it" into the CHANGELOG, which the same log disproved. The rules:
+- A gate's allowlist is per finding, not per category. "Third-party warnings are expected" was a
+  category; the fix is a reviewed list of exact warnings (`known-il-warnings.txt`), each with the
+  reason it is unreachable, and failure on anything else.
+- Hidden problems in a dependency surface as *that dependency's* diagnostics. A filter that discards
+  diagnostics by attribution discards exactly those.
+- A scan needs negative controls for the input classes it must reject (unknown dependency warning,
+  empty log, a publish where the compiler did not run), not just a regex control.

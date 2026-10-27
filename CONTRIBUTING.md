@@ -42,6 +42,10 @@ docs/       supplementary documentation
   any newly serialized type to that package's `JsonSerializerContext`. Build JSON with
   `JsonObject`/`JsonNode`, and cast to `JsonNode` when passing a derived node or a string to
   `JsonArray.Add` (the generic overload is reflection-based)
+- A dependency is not covered by those analyzers. If `ac-12` reports a new IL warning from a
+  dependency, trace it: if the path is reachable, stop using it (and ban it in `BannedSymbols.txt` with
+  the reason); only a warning shown unreachable goes on `tasks/aot-smoke/known-il-warnings.txt`, with
+  that reason
 
 ## Tests
 
