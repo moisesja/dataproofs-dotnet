@@ -171,10 +171,34 @@ public sealed class SourceGeneratedJsonTests
     }
 
     [Fact]
-    public void JwsProtectedHeader_Decode_StillRejectsDuplicateMembers()
+    public void JwsProtectedHeader_Decode_RejectsDuplicateMembers()
     {
-        // AllowDuplicateProperties=false lives on JoseJson.Default; the typed metadata is bound to it.
+        // Behavioural: the JWS decoder parses with JoseJson.StrictDocument before the model is
+        // deserialized, so this rejection does not depend on the typed metadata's options (see below).
         var act = () => JwsProtectedHeader.Decode(Base64Url.Encode("""{"alg":"EdDSA","alg":"ES256"}"""u8));
+
+        act.Should().Throw<MalformedJoseException>();
+    }
+
+    [Fact]
+    public void TypedMetadata_RejectsDuplicateMembers_BecauseItIsBoundToJoseJsonDefault()
+    {
+        // AllowDuplicateProperties=false lives on JoseJson.Default. The JWE header decoder and the SD-JWT
+        // cnf/jwk reader deserialize with these typed infos and no earlier strict parse, so the binding is
+        // the only guard against a last-wins duplicate there.
+        Rejects(() => JsonSerializer.Deserialize("""{"alg":"EdDSA","alg":"ES256"}""", JoseJson.JwsHeaderTypeInfo));
+        Rejects(() => JsonSerializer.Deserialize("""{"alg":"A256KW","alg":"A256KW","enc":"A256GCM"}""", JoseJson.JweHeaderTypeInfo));
+        Rejects(() => JsonSerializer.Deserialize("""{"kty":"EC","kty":"OKP","crv":"X25519","x":"AA"}""", JoseJson.JwkTypeInfo));
+
+        static void Rejects(Action deserialize) => deserialize.Should().Throw<JsonException>();
+    }
+
+    [Theory]
+    [InlineData("""{"alg":"A256KW","alg":"A256KW","enc":"A256GCM"}""")]
+    [InlineData("""{"alg":"ECDH-ES+A256KW","enc":"A256GCM","epk":{"kty":"EC","kty":"OKP","crv":"X25519","x":"AA"}}""")]
+    public void JweProtectedHeader_Decode_RejectsDuplicateMembers_IncludingInTheEpk(string json)
+    {
+        var act = () => JweProtectedHeader.Decode(Base64Url.Encode(Encoding.UTF8.GetBytes(json)));
 
         act.Should().Throw<MalformedJoseException>();
     }
@@ -191,9 +215,17 @@ public sealed class SourceGeneratedJsonTests
     }
 
     [Fact]
-    public void VcJoseContentType_Element_MatchesTheFormerOptionLessSerialization()
+    public async Task VcJoseEnvelope_ProtectedHeader_IsPinned()
     {
-        JsonSerializer.SerializeToElement(VcJose.CredentialContentType, JoseJson.StringTypeInfo).GetRawText()
-            .Should().Be(JsonSerializer.SerializeToElement(VcJose.CredentialContentType).GetRawText());
+        // The cty member is now serialized through typed metadata instead of an option-less reflection
+        // call. Pin the whole protected header: sorted members, cty as the JSON string "vc", and the
+        // relaxed encoder's literal '+' in the kid.
+        var key = new NetCrypto.DefaultKeyGenerator().FromPrivateKey(NetCrypto.KeyType.Ed25519, Enumerable.Repeat((byte)1, 32).ToArray());
+        var signer = new JwsSigner(new NetCrypto.KeyPairSigner(key, new NetCrypto.DefaultCryptoProvider()), "did:example:issuer#k+1");
+
+        var envelope = await VcJose.EnvelopeCredentialAsync("""{"@context":["https://www.w3.org/ns/credentials/v2"],"type":["VerifiableCredential"]}"""u8.ToArray(), signer);
+
+        Base64Url.DecodeUtf8(envelope.Split('.')[0])
+            .Should().Be("""{"alg":"EdDSA","cty":"vc","kid":"did:example:issuer#k+1","typ":"vc+jwt"}""");
     }
 }

@@ -15,8 +15,8 @@ namespace DataProofsDotnet;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Metadata for this library's own types — <see cref="DataIntegrityProof"/> and the
-/// <see cref="JsonNode"/> family — is source-generated, so the packages run unchanged in trimmed
+/// Metadata for this library's own types — <see cref="DataIntegrityProof"/>, <see cref="JsonObject"/>,
+/// <see cref="JsonNode"/> and <see cref="JsonElement"/> — is source-generated, so the packages run unchanged in trimmed
 /// and native-AOT applications and never reflect over their own models, whatever the host.
 /// </para>
 /// <para>
@@ -78,14 +78,17 @@ public static class DataProofsJsonOptions
         return options;
     }
 
-    // The ASP.NET Core pattern (Microsoft.AspNetCore.Http.Json.JsonOptions): the guard is a trimmer
-    // feature switch, substituted with false in trimmed and native-AOT builds, so the branch — and the
-    // reflection resolver with it — is removed there. The analyzer cannot see that, hence the
-    // suppressions. The library's own types never reach this link of the chain.
+    // The ASP.NET Core pattern (Microsoft.AspNetCore.Http.Json.JsonOptions): the guard is the trimmer
+    // feature switch JsonSerializerIsReflectionEnabledByDefault. Trimmed and native-AOT builds default it
+    // to false, the trimmer substitutes the constant, and the branch — the reflection resolver with it —
+    // is removed. A host can opt back in (JsonSerializerIsReflectionEnabledByDefault=true in a trimmed or
+    // AOT build): that host has asked for reflection-based serialization of its own types, with the
+    // trim and AOT caveats that come with it, exactly as for any JsonSerializerOptions it builds. The
+    // library's own types resolve through the first link of the chain and never reach this one.
     [UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "Reached only when the host enables reflection-based serialization; trimmed and native-AOT hosts set IsReflectionEnabledByDefault=false at build time and the trimmer removes this branch.")]
+        Justification = "Guarded by the JsonSerializerIsReflectionEnabledByDefault feature switch, false by default in trimmed and native-AOT builds, where the trimmer removes the branch. A host that sets it to true has opted into reflection-based serialization for its own types; the library's types never resolve through this resolver.")]
     [UnconditionalSuppressMessage("AOT", "IL3050",
-        Justification = "Same guard: unreachable when dynamic code is unsupported.")]
+        Justification = "Same feature-switch guard as IL2026: removed by default in native-AOT builds; present only when the host opts back into reflection-based serialization, for its own types.")]
     private static void AddReflectionFallbackForJitHosts(JsonSerializerOptions options)
     {
         if (JsonSerializer.IsReflectionEnabledByDefault)

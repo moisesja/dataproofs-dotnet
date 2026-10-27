@@ -21,8 +21,11 @@ internal sealed partial class LegacyJsonContext : JsonSerializerContext;
 
 /// <summary>
 /// Typed metadata accessors for <see cref="LegacyJsonContext"/>, bound to a read-only copy of
-/// <see cref="DataProofsJsonOptions.Default"/>: the same encoder, null handling and indentation, so
-/// the bytes equal Core's — load-bearing for the cross-stack byte identity with zcap-dotnet.
+/// <see cref="DataProofsJsonOptions.Default"/>: the same encoder, null handling and indentation as
+/// Core's. Every value serialized here feeds JCS or RDFC canonicalization, which re-derive the signed
+/// bytes from the JSON values (escaping and member order do not survive), and the JCS variant strips
+/// null members first; the copy keeps one set of wire settings across the packages rather than
+/// carrying the signed bytes itself.
 /// </summary>
 internal static class LegacyJson
 {

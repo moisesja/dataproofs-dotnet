@@ -48,6 +48,26 @@ public class PublicApiHygieneTests
     ];
 
     [Fact]
+    public void EveryPackageProject_SetsIsAotCompatible()
+    {
+        // The IsTrimmable stamp checked below is also produced by IsTrimmable alone, which does not turn
+        // on the AOT analyzer; the project files are the authoritative declaration.
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "DataProofsDotnet.sln")))
+            root = root.Parent;
+        root.Should().NotBeNull("the test runs from inside the repository");
+
+        var projects = Directory.GetFiles(Path.Combine(root!.FullName, "src"), "*.csproj", SearchOption.AllDirectories);
+        projects.Should().HaveCount(6, "the six packages");
+        foreach (var project in projects)
+        {
+            var declared = System.Xml.Linq.XDocument.Load(project).Descendants("IsAotCompatible")
+                .Any(e => string.Equals(e.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase));
+            declared.Should().BeTrue($"{Path.GetFileName(project)} must set <IsAotCompatible>true</IsAotCompatible>");
+        }
+    }
+
+    [Fact]
     public void EveryPackage_DeclaresTrimAndAotCompatibility()
     {
         // Issue #27 (PRD NFR-7 / AC-12): IsAotCompatible=true in each package project turns the trim,

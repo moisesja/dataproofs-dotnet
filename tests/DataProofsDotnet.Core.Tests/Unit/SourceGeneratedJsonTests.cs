@@ -178,7 +178,10 @@ public sealed class SourceGeneratedJsonTests
         }
         else
         {
-            // A trimmed or native-AOT host: the source-generated link only (exercised by tasks/aot-smoke).
+            // Never taken under the test host, which runs with reflection enabled, so this test pins only
+            // the JIT half. The reflection-disabled half is asserted at run time by tasks/aot-smoke
+            // (CompositionPath: Default resolves a consumer type exactly when reflection is enabled), in
+            // its reflection-disabled and native legs of ac-12.
             chain.Should().ContainSingle().Which.Should().BeSameAs(DataProofsJsonContext.Default);
         }
     }
