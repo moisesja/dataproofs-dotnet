@@ -18,6 +18,14 @@ internal static class HostileJson
     // negative case fails against the pre-fix code whichever way that code mishandled the input.
     public const string Surrogate = "contains a JSON escape for an unpaired UTF-16 surrogate";
     public const string Duplicate = "has a duplicate member name";
+    public const string ReservedName = "has an extension member with a reserved proof name";
+
+    public static readonly string[] ReservedProofNames =
+    [
+        "id", "type", "cryptosuite", "created", "expires", "verificationMethod", "proofPurpose",
+        "challenge", "domain", "nonce", "previousProof", "@context", "proofValue",
+    ];
+
     public const string TooDeep = "nests deeper than 64 levels";
     public const string NotUtf8 = "is not valid UTF-8";
 

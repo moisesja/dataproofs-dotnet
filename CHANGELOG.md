@@ -287,8 +287,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `AddProofAsync` throws `ProofGenerationException`: "The document to secure contains a JSON escape for
     an unpaired UTF-16 surrogate." It also checks the proof options. Their raw JSON (`@context` and
     extension members) is checked as given, because serialization would rewrite non-UTF-8 text as U+FFFD
-    or throw. Their serialized form is checked too: "The proof options object has a duplicate member
-    name."
+    or throw. Extension keys matching any modeled proof member are rejected, including omitted members:
+    "The proof options object has an extension member with a reserved proof name." Their serialized
+    form is checked too.
   - The pipeline's own transformation steps also map any remaining System.Text.Json fault to the contract.
     On verification that is a failed result; on creation it is `ProofGenerationException` with the cause
     attached. One such fault is reachable today: a document at the 64-level limit whose object-form proof
@@ -310,9 +311,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check, so neither reaches into Core's internals. The suites' `VerifyProof` methods already failed closed,
   and are unchanged.
 
+  **PR #35 review follow-up.** A configuration at depth 64 can become depth 65 when the legacy JCS
+  suites nest it under the document's `proof` member. These transformation failures now throw
+  `ProofGenerationException` with the JSON exception attached; signer faults remain outside the mapping.
+  Regression tests cover both legacy JCS suites, direct calls and the pipeline, the successful depth-64
+  combined document, and signer exception identity.
+
+  Extension keys now cannot match **any** modeled proof JSON name, even when its typed property is null
+  or omitted. Checking serialized configuration alone missed `AdditionalProperties["proofValue"]`:
+  signing populated the typed field afterward, emitted two `proofValue` members and returned a document
+  the verifier rejected. The check uses source-generated property metadata in all three packages.
+  Shared tests cover all modeled names across all eight suite create paths and BBS creation, with
+  pipeline regressions and controls for case-sensitive and nested extension names.
+
   **Upgrade note.** A caller that caught `InvalidOperationException`, `JsonException` or
   `ArgumentException` from any method above now gets `ProofGenerationException`, or, from `Verify` and
   `VerifyAsync`, a failed result.
+
+  **Creation-options migration.** Populate modeled fields through their typed properties; reserve
+  `AdditionalProperties` for unmodeled extensions. An extension with a modeled name is now rejected
+  even if it previously serialized as a single member because its typed property was omitted. This is
+  an additional creation-input narrowing for every suite, including JCS; it does not newly reject
+  well-formed earlier wire proofs, whose modeled members deserialize into typed properties.
 
   **Accept-set note.** What this narrows depends on the suite.
 
@@ -346,7 +366,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A shared create matrix runs through all eight suite create paths.
   - Separate matrices cover `bbs-2023`.
 
-  Against the pre-fix code, 625 cases fail. The 44 that pass are over-rejection guards, controls, and unit
+  In the original pre-review regression run against the pre-fix code, 625 cases failed. The 44 that passed are over-rejection guards, controls, and unit
   tests of the check itself. The guards prove that well-formed escapes, comments and trailing commas,
   depth 64, a name repeated across sibling objects, and proof chains still sign and verify.
 

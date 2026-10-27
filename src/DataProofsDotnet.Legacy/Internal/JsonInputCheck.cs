@@ -133,8 +133,10 @@ internal static class JsonInputCheck
     /// The raw elements are checked as given, because serialization would hide or fail on their
     /// faults: it rewrites invalid UTF-8 as U+FFFD, silently changing what is signed; it throws
     /// <see cref="InvalidOperationException"/> for an element with no value; and it throws
-    /// <see cref="JsonException"/> for one it cannot write. The serialized result is checked too:
-    /// an extension member whose name repeats a modelled one (<c>proofPurpose</c>) is written twice.
+    /// <see cref="JsonException"/> for one it cannot write. Extension names must not match any
+    /// modelled JSON member, even one currently omitted: creation populates <c>proofValue</c>
+    /// later, and an extension with that name would then be written twice. The names come from
+    /// source-generated metadata, without reflection. The serialized result is checked too.
     /// </remarks>
     /// <param name="proof">The proof options or configuration.</param>
     /// <param name="typeInfo">The package's metadata for <see cref="DataIntegrityProof"/>.</param>
@@ -148,9 +150,15 @@ internal static class JsonInputCheck
             RequireValue(context, what);
         }
 
-        foreach (var value in proof.AdditionalProperties?.Values ?? [])
+        foreach (var member in proof.AdditionalProperties?.AsEnumerable() ?? [])
         {
-            RequireValue(value, what);
+            if (typeInfo.Properties.Any(property => !property.IsExtensionData
+                && string.Equals(property.Name, member.Key, StringComparison.Ordinal)))
+            {
+                throw new ProofGenerationException($"{what} has an extension member with a reserved proof name.");
+            }
+
+            RequireValue(member.Value, what);
         }
 
         JsonElement element;

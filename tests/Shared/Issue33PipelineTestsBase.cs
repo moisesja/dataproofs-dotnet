@@ -162,13 +162,15 @@ public abstract class Issue33PipelineTestsBase
             Options() with { Context = HostileJson.Parse("[\"" + HostileJson.LoneEscape(escape) + "\"]") },
             $"The proof options object {HostileJson.Surrogate}.");
 
-    [Fact]
-    public Task AddProof_OptionsExtensionRepeatingAModelledMember_ThrowsProofGenerationException()
-        // The serializer writes both: the proof would carry two proofPurpose members.
+    [Theory]
+    [InlineData("proofPurpose")]
+    [InlineData("proofValue")]
+    [InlineData("challenge")]
+    public Task AddProof_ReservedExtensionName_ThrowsProofGenerationException(string name)
         => AssertAddFailsAsync(
             HostileJson.Parse(HostileJson.BaseDocument),
-            Options() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["proofPurpose"] = HostileJson.Parse("\"authentication\"") } },
-            $"The proof options object {HostileJson.Duplicate}.");
+            Options() with { AdditionalProperties = new Dictionary<string, JsonElement> { [name] = HostileJson.Parse("\"zFake\"") } },
+            $"The proof options object {HostileJson.ReservedName}.");
 
     [Fact]
     public Task AddProof_OptionsExtensionWithDuplicateMember_ThrowsProofGenerationException()

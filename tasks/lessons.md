@@ -317,3 +317,16 @@ rows exposed it on the first run, and the check moved ahead of the parse
 (`JoseJson.ParseStrictDocument`). The rule: **a spike must call the API with the exact options the
 production call site passes.** The 2026-10-26 "spike first" lesson is only as good as the fidelity
 of the spike.
+
+## 2026-10-27 — Validate the final shape, not only its ingredients (PR #35 review)
+
+The review found two gaps after individually validating a document and proof configuration:
+- A depth-64 legacy JCS configuration became depth 65 when nested under `document.proof`, leaking
+  `JsonException`. Boundary tests must cover transformations that add levels, with both the last
+  successful depth and the first rejected depth. Keep transformation exception mapping outside signer calls.
+- An extension named `proofValue` was unique while the typed field was omitted, but signing populated
+  that field and emitted a duplicate. Reserve modeled names using serialization metadata regardless of
+  their current values; test omitted fields as well as populated ones. Check valid case-distinct and
+  nested extensions to avoid unnecessarily narrowing the extension namespace.
+
+A green input-validation matrix does not prove later composition preserves the checked invariants.

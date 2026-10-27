@@ -2,6 +2,7 @@ using System.Text.Json;
 using DataProofsDotnet.DataIntegrity;
 using FluentAssertions;
 using NetCrypto;
+using NSubstitute;
 using Xunit;
 
 namespace DataProofsDotnet.Tests.Shared;
@@ -100,12 +101,35 @@ public abstract class Issue33SuiteCreateTestsBase
             Options() with { Context = HostileJson.Parse("[\"" + HostileJson.Esc(0xDC00) + "\"]") },
             $"The proof configuration {HostileJson.Surrogate}.");
 
-    [Fact]
-    public Task CreateProof_ConfigurationExtensionRepeatingAModelledMember_ThrowsProofGenerationException()
-        => AssertCreateFailsAsync(
-            HostileJson.Parse(HostileJson.BaseDocument),
-            WithExtension("proofPurpose", HostileJson.Parse("\"authentication\"")),
-            $"The proof configuration {HostileJson.Duplicate}.");
+    public static TheoryData<string> ReservedNames() => [.. HostileJson.ReservedProofNames];
+
+    [Theory]
+    [MemberData(nameof(ReservedNames), MemberType = typeof(Issue33SuiteCreateTestsBase))]
+    public async Task CreateProof_ReservedExtensionName_RejectsBeforeSigning(string name)
+    {
+        var signer = Substitute.For<ISigner>();
+        signer.KeyType.Returns(Signer.KeyType);
+        var options = WithExtension(name, HostileJson.Parse("null"));
+
+        await FluentActions.Invoking(() => Suite.CreateProofAsync(HostileJson.Parse(HostileJson.BaseDocument), options, signer))
+            .Should().ThrowExactlyAsync<ProofGenerationException>()
+            .WithMessage($"The proof configuration {HostileJson.ReservedName}.");
+        await signer.DidNotReceive().SignAsync(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("proofValue")]
+    [InlineData("ProofValue")]
+    [InlineData("AdditionalProperties")]
+    public async Task CreateProof_UnreservedOrNestedName_StillSigns(string name)
+    {
+        // A reserved name is forbidden only as a top-level extension key; case remains significant.
+        var options = name == "proofValue"
+            ? WithExtension("custom", HostileJson.Parse("{\"proofValue\":\"metadata\"}"))
+            : WithExtension(name, HostileJson.Parse("\"metadata\""));
+        var proof = await Suite.CreateProofAsync(HostileJson.Parse(HostileJson.BaseDocument), options, Signer);
+        proof.ProofValue.Should().NotBeNullOrEmpty();
+    }
 
     [Fact]
     public Task CreateProof_ConfigurationExtensionWithNoValue_ThrowsProofGenerationException()

@@ -106,8 +106,17 @@ public sealed class Issue33Bbs2023Tests
         await AssertCreateFailsAsync(
             Parse(Wind),
             BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["proofPurpose"] = Parse("\"authentication\"") } },
-            $"The proof configuration {Duplicate}.");
+            $"The proof configuration {ReservedName}.");
     }
+
+    public static TheoryData<string> ReservedNames() => [.. ReservedProofNames];
+
+    [BbsTheory]
+    [MemberData(nameof(ReservedNames))]
+    public Task CreateBaseProof_ReservedExtensionName_ThrowsProofGenerationException(string name)
+        => AssertCreateFailsAsync(Parse(Wind),
+            BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { [name] = Parse("null") } },
+            $"The proof configuration {ReservedName}.");
 
     [BbsTheory]
     [MemberData(nameof(SurrogateCases))]

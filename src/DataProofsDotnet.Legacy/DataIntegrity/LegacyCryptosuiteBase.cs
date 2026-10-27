@@ -200,6 +200,14 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             throw new ProofGenerationException(
                 "The document or proof configuration could not be RDFC-canonicalized.", ex);
         }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
+        {
+            // The separately valid document/configuration can exceed the JSON depth limit when
+            // JCS nests the configuration under "proof". Map only transformation faults here;
+            // the signer below must retain its own exception contract (PR #35 review).
+            throw new ProofGenerationException(
+                "The document or proof configuration could not be prepared for signing.", ex);
+        }
 
         var rawSignature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
         var signature = NormalizeSignature(rawSignature, signer.KeyType)

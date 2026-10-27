@@ -104,7 +104,11 @@ public sealed record DataIntegrityProof
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ProofValue { get; init; }
 
-    /// <summary>Unmodeled members, preserved verbatim for round-tripping and canonicalization.</summary>
+    /// <summary>
+    /// Unmodeled members, preserved verbatim for round-tripping and canonicalization.
+    /// Creation rejects keys matching a modeled JSON member name, even when the typed property
+    /// is null. Use the typed property for those members instead.
+    /// </summary>
     [JsonExtensionData]
     public IDictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }
