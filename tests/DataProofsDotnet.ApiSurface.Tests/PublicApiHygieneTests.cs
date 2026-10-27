@@ -61,9 +61,12 @@ public class PublicApiHygieneTests
         projects.Should().HaveCount(6, "the six packages");
         foreach (var project in projects)
         {
+            // Unconditional only: a Condition on the element or its PropertyGroup could switch it off.
             var declared = System.Xml.Linq.XDocument.Load(project).Descendants("IsAotCompatible")
-                .Any(e => string.Equals(e.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase));
-            declared.Should().BeTrue($"{Path.GetFileName(project)} must set <IsAotCompatible>true</IsAotCompatible>");
+                .Any(e => string.Equals(e.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase)
+                    && e.Attribute("Condition") is null
+                    && e.Parent?.Attribute("Condition") is null);
+            declared.Should().BeTrue($"{Path.GetFileName(project)} must set <IsAotCompatible>true</IsAotCompatible> unconditionally");
         }
     }
 

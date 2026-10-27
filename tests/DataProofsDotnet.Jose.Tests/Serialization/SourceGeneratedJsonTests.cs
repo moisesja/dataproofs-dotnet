@@ -183,9 +183,10 @@ public sealed class SourceGeneratedJsonTests
     [Fact]
     public void TypedMetadata_RejectsDuplicateMembers_BecauseItIsBoundToJoseJsonDefault()
     {
-        // AllowDuplicateProperties=false lives on JoseJson.Default. The JWE header decoder and the SD-JWT
-        // cnf/jwk reader deserialize with these typed infos and no earlier strict parse, so the binding is
-        // the only guard against a last-wins duplicate there.
+        // AllowDuplicateProperties=false lives on JoseJson.Default. The JWE header decoder deserializes
+        // with these typed infos and no earlier strict parse, so the binding is the only guard against a
+        // last-wins duplicate there. (The SD-JWT cnf/jwk reader is guarded earlier too: its payload is
+        // parsed with duplicates rejected, and a JsonObject cannot hold a duplicate key.)
         Rejects(() => JsonSerializer.Deserialize("""{"alg":"EdDSA","alg":"ES256"}""", JoseJson.JwsHeaderTypeInfo));
         Rejects(() => JsonSerializer.Deserialize("""{"alg":"A256KW","alg":"A256KW","enc":"A256GCM"}""", JoseJson.JweHeaderTypeInfo));
         Rejects(() => JsonSerializer.Deserialize("""{"kty":"EC","kty":"OKP","crv":"X25519","x":"AA"}""", JoseJson.JwkTypeInfo));
