@@ -19,10 +19,39 @@ public sealed class Issue33JcsPipelineTests : Issue33PipelineTestsBase
     protected override string Cryptosuite => EddsaJcs2022Cryptosuite.CryptosuiteName;
 }
 
-/// <summary>
-/// Issue #33: the input check itself, and the JCS suites' own <c>CreateProofAsync</c>, which is
-/// public and documented to throw only <see cref="ProofGenerationException"/> for invalid input.
-/// </summary>
+/// <summary>Issue #33: the shared suite matrix through <c>eddsa-jcs-2022</c>'s own <c>CreateProofAsync</c>.</summary>
+public sealed class Issue33EddsaJcsCreateTests : Issue33SuiteCreateTestsBase
+{
+    protected override ICryptosuite Suite { get; } = new EddsaJcs2022Cryptosuite();
+
+    protected override ISigner Signer { get; } = Fx.Signer(Fx.SeedKey(0x01));
+
+    protected override DataIntegrityProof Options() => new()
+    {
+        Cryptosuite = EddsaJcs2022Cryptosuite.CryptosuiteName,
+        Created = "2026-01-01T00:00:00Z",
+        VerificationMethod = "did:example:alice#key-1",
+        ProofPurpose = ProofPurposes.AssertionMethod,
+    };
+}
+
+/// <summary>Issue #33: the shared suite matrix through <c>ecdsa-jcs-2019</c>'s own <c>CreateProofAsync</c>.</summary>
+public sealed class Issue33EcdsaJcsCreateTests : Issue33SuiteCreateTestsBase
+{
+    protected override ICryptosuite Suite { get; } = new EcdsaJcs2019Cryptosuite();
+
+    protected override ISigner Signer { get; } = Fx.Signer(Fx.SeedKey(0x01, KeyType.P256));
+
+    protected override DataIntegrityProof Options() => new()
+    {
+        Cryptosuite = EcdsaJcs2019Cryptosuite.CryptosuiteName,
+        Created = "2026-01-01T00:00:00Z",
+        VerificationMethod = "did:example:alice#key-1",
+        ProofPurpose = ProofPurposes.AssertionMethod,
+    };
+}
+
+/// <summary>Issue #33: the input check itself.</summary>
 public sealed class Issue33ContractEscapeTests
 {
     // ------------------------------------------------------------- JsonInputCheck
@@ -112,102 +141,4 @@ public sealed class Issue33ContractEscapeTests
 
         element.GetProperty("proofPurpose").GetString().Should().Be(ProofPurposes.AssertionMethod);
     }
-
-    // ------------------------------------------- the JCS suites' own CreateProofAsync
-
-    private static readonly string[] SuiteNames = [EddsaJcs2022Cryptosuite.CryptosuiteName, EcdsaJcs2019Cryptosuite.CryptosuiteName];
-
-    public static TheoryData<string> Suites() => [.. SuiteNames];
-
-    public static TheoryData<string, string, string> SuiteSurrogateCases()
-    {
-        var data = new TheoryData<string, string, string>();
-        foreach (var suite in SuiteNames)
-        {
-            foreach (var placement in new[] { "first member name", "last member name", "member value" })
-            {
-                foreach (var escape in LoneEscapeNames)
-                {
-                    data.Add(suite, placement, escape);
-                }
-            }
-        }
-
-        return data;
-    }
-
-    [Theory]
-    [MemberData(nameof(SuiteSurrogateCases))]
-    public Task CreateProof_UnpairedSurrogateEscape_ThrowsProofGenerationException(string suite, string placement, string escape)
-    {
-        var e = LoneEscape(escape);
-        var document = placement switch
-        {
-            "first member name" => FirstMember(BaseDocument, "\"" + e + "\":1"),
-            "last member name" => LastMember(BaseDocument, "\"" + e + "\":1"),
-            "member value" => LastMember(BaseDocument, "\"v\":\"" + e + "\""),
-            _ => throw new ArgumentOutOfRangeException(nameof(placement)),
-        };
-
-        return AssertCreateFailsAsync(suite, Parse(document), Options(suite), $"The document to secure {Surrogate}.");
-    }
-
-    [Theory]
-    [MemberData(nameof(Suites))]
-    public async Task CreateProof_DuplicateDepthOrInvalidUtf8_ThrowsProofGenerationException(string suite)
-    {
-        await AssertCreateFailsAsync(suite, Parse(LastMember(BaseDocument, "\"v\":1,\"v\":2")), Options(suite), $"The document to secure {Duplicate}.");
-        await AssertCreateFailsAsync(suite, Parse(LastMember(BaseDocument, "\"n\":{\"v\":1,\"v\":2}")), Options(suite), $"The document to secure {Duplicate}.");
-        await AssertCreateFailsAsync(suite, Parse(LastMember(BaseDocument, "\"d\":" + Nest(64))), Options(suite), $"The document to secure {TooDeep}.");
-        await AssertCreateFailsAsync(suite, Parse(WithBytes(LastMember(BaseDocument, "\"v\":\"XX\""), "XX", 0xC3, 0x28)), Options(suite), $"The document to secure {NotUtf8}.");
-    }
-
-    [Theory]
-    [MemberData(nameof(Suites))]
-    public async Task CreateProof_UnwritableOrRepeatedConfigurationMember_ThrowsProofGenerationException(string suite)
-    {
-        var unwritable = Options(suite) with
-        {
-            AdditionalProperties = new Dictionary<string, JsonElement> { ["x"] = Parse("\"" + Esc(0xD800) + "\"") },
-        };
-        var repeated = Options(suite) with
-        {
-            AdditionalProperties = new Dictionary<string, JsonElement> { ["proofPurpose"] = Parse("\"authentication\"") },
-        };
-        // With no document @context, the configuration keeps the options' own.
-        var unwritableContext = Options(suite) with { Context = Parse("[\"" + Esc(0xDC00) + "\"]") };
-
-        await AssertCreateFailsAsync(suite, Parse(BaseDocument), unwritable, $"The proof configuration {Surrogate}.");
-        await AssertCreateFailsAsync(suite, Parse(BaseDocument), repeated, $"The proof configuration {Duplicate}.");
-        await AssertCreateFailsAsync(suite, Parse("{\"a\":1}"), unwritableContext, $"The proof configuration {Surrogate}.");
-    }
-
-    [Theory]
-    [MemberData(nameof(Suites))]
-    public async Task CreateProof_EscapedSpellings_StillSign(string suite)
-    {
-        var document = LastMember(BaseDocument, "\"" + Esc(0xE9) + "\":\"" + Esc(0xD83D) + Esc(0xDE00) + "\",\"s\":\"a\\/b\"");
-
-        var proof = await Suite(suite).CreateProofAsync(Parse(document), Options(suite), Signer(suite));
-
-        proof.ProofValue.Should().StartWith("z");
-    }
-
-    private static ICryptosuite Suite(string name) => name == EddsaJcs2022Cryptosuite.CryptosuiteName
-        ? new EddsaJcs2022Cryptosuite()
-        : new EcdsaJcs2019Cryptosuite();
-
-    private static ISigner Signer(string name) => Fx.Signer(Fx.SeedKey(0x01, name == EddsaJcs2022Cryptosuite.CryptosuiteName ? KeyType.Ed25519 : KeyType.P256));
-
-    private static DataIntegrityProof Options(string suite) => new()
-    {
-        Cryptosuite = suite,
-        Created = "2026-01-01T00:00:00Z",
-        VerificationMethod = "did:example:alice#key-1",
-        ProofPurpose = ProofPurposes.AssertionMethod,
-    };
-
-    private static Task AssertCreateFailsAsync(string suite, JsonElement document, DataIntegrityProof options, string message)
-        => FluentActions.Invoking(() => Suite(suite).CreateProofAsync(document, options, Signer(suite)))
-            .Should().ThrowExactlyAsync<ProofGenerationException>().WithMessage(message);
 }

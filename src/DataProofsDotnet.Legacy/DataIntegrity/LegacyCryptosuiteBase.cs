@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
+using DataProofsDotnet.Legacy.Internal;
 using DataProofsDotnet.Rdfc;
 using NetCid;
 using NetCrypto;
@@ -117,6 +118,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             throw new ProofGenerationException("The document to secure must be a JSON object.");
         }
 
+        // Before the proof-member and @context lookups and the JCS re-nesting below, which read
+        // member names and materialize the document (issue #33).
+        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+
         if (!IsSupportedKeyType(signer.KeyType))
         {
             throw new ProofGenerationException(
@@ -160,6 +165,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             Cryptosuite = null,
             ProofValue = null,
         };
+
+        // The configuration carries the caller's raw JSON (@context, extension members), which
+        // serialization cannot always write (issue #33).
+        _ = JsonInputCheck.SerializeChecked(proofConfig, LegacyJson.ProofTypeInfo, "The proof configuration");
 
         // The JCS 2020-era convention nests the single current proof under "proof"; it has no
         // representation for a W3C proof chain. The pipeline injects predecessor proofs under the

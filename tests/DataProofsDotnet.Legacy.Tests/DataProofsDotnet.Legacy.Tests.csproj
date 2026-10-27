@@ -25,6 +25,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Issue #33 regression matrix, shared with Core.Tests and Rdfc.Tests -->
+    <Compile Include="../Shared/HostileJson.cs" Link="Shared/HostileJson.cs" />
+    <Compile Include="../Shared/Issue33SuiteCreateTestsBase.cs" Link="Shared/Issue33SuiteCreateTestsBase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Vendored cross-stack golden vectors (zcap-dotnet LD-Signatures), copied beside the
          test binaries (PRD §9 conventions). Scoped to the legacy fixture tree this project owns. -->
     <Content Include="../fixtures/legacy/**/*" LinkBase="fixtures/legacy" CopyToOutputDirectory="PreserveNewest" />

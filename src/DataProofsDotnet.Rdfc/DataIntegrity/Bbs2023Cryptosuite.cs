@@ -140,11 +140,15 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException("The document to secure must be a JSON object.");
         }
 
+        // Before skolemization and the @context lookup, which read member names (issue #33).
+        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+
         cancellationToken.ThrowIfCancellationRequested();
 
         var publicKey = KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, bbsPrivateKey.Span).PublicKey;
 
         var proofConfig = BuildProofConfig(unsecuredDocument, proofOptions);
+        _ = JsonInputCheck.SerializeChecked(proofConfig, RdfcJson.ProofTypeInfo, "The proof configuration");
         var transformed = Transform(unsecuredDocument, hmacKey.Span, mandatoryPointers);
 
         var proofHash = HashProofConfig(proofConfig);
@@ -187,6 +191,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         {
             throw new ProofGenerationException("The secured base document must be a JSON object.");
         }
+
+        // The holder derives over a document an issuer sent: check it before splitting off the
+        // proof, which reads member names (issue #33).
+        JsonInputCheck.RequireValid(securedBaseDocument, "The secured base document");
 
         var (baseProof, unsecured) = SplitProof(securedBaseDocument);
         Bbs2023ProofValue.BaseProofComponents components;

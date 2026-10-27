@@ -24,6 +24,7 @@
     <!-- Issue #33 regression matrix, shared with Rdfc.Tests (and its builders with Legacy.Tests) -->
     <Compile Include="../Shared/HostileJson.cs" Link="Shared/HostileJson.cs" />
     <Compile Include="../Shared/Issue33PipelineTestsBase.cs" Link="Shared/Issue33PipelineTestsBase.cs" />
+    <Compile Include="../Shared/Issue33SuiteCreateTestsBase.cs" Link="Shared/Issue33SuiteCreateTestsBase.cs" />
   </ItemGroup>
 
   <ItemGroup>

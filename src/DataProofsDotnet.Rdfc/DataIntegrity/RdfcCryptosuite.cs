@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DataProofsDotnet;
 using DataProofsDotnet.DataIntegrity;
+using DataProofsDotnet.Rdfc.Internal;
 using NetCid;
 using NetCrypto;
 
@@ -70,6 +71,10 @@ internal abstract class RdfcCryptosuite : ICryptosuite
             throw new ProofGenerationException("The document to secure must be a JSON object.");
         }
 
+        // Before the @context lookup below, which compares member names; the JSON-LD processor
+        // would otherwise resolve duplicates and invalid text silently (issue #33).
+        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+
         if (!IsSupportedKeyType(signer.KeyType))
         {
             throw new ProofGenerationException($"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
@@ -110,13 +115,17 @@ internal abstract class RdfcCryptosuite : ICryptosuite
             ProofValue = null,
         };
 
+        // The configuration carries the caller's raw JSON (@context, extension members), which
+        // serialization cannot always write (issue #33).
+        var proofConfigElement = JsonInputCheck.SerializeChecked(
+            proofConfig, RdfcJson.ProofTypeInfo, "The proof configuration");
+
         byte[] canonicalProofConfig;
         byte[] canonicalDocument;
         try
         {
             var hash = CanonicalizationHash(signer.KeyType);
-            canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(
-                JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo), hash);
+            canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(proofConfigElement, hash);
             canonicalDocument = _canonicalizer.CanonicalizeJsonLd(unsecuredDocument, hash);
         }
         catch (RdfCanonicalizationException ex)

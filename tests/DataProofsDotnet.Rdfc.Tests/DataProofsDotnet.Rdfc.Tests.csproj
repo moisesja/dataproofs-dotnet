@@ -25,6 +25,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Issue #33 regression matrices, shared with Core.Tests and Legacy.Tests -->
+    <Compile Include="../Shared/HostileJson.cs" Link="Shared/HostileJson.cs" />
+    <Compile Include="../Shared/Issue33PipelineTestsBase.cs" Link="Shared/Issue33PipelineTestsBase.cs" />
+    <Compile Include="../Shared/Issue33SuiteCreateTestsBase.cs" Link="Shared/Issue33SuiteCreateTestsBase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Vendored conformance fixtures (PRD §9 conventions): copied beside the test binaries.
          Scoped to the directories this project consumes (like the sibling test projects):
          the RDFC-1.0 suite (AC-2), the RDFC/BBS cryptosuite vectors (AC-1), and the contexts. -->
