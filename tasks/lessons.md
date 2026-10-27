@@ -227,3 +227,35 @@ input class") recurring as a *documentation* claim rather than a fix.
 - An input-validation requirement stated in an RFC (here RFC 7515 §5.2 step 3) maps to an explicit
   check with its own test, never to "the parser happens to throw". Before declaring an input class
   closed, grep the sibling decoders for the same decode→parse shape; this time four had it.
+
+## 2026-10-26 — Spike the toolchain's behaviour before designing around it (issue #27)
+
+**What happened:** The first design draft for the native-AOT migration rested on four assumptions,
+and a fifteen-minute scratch project in the scratchpad, built before the plan was written, showed
+three of them wrong and the fourth incomplete:
+1. A `JsonSerializerContext` bound to a `JsonSerializerOptions` **locks** that instance's resolver
+   chain — the planned "bind the context, then add the JIT reflection fallback" order throws.
+2. The `JsonSerializer.IsReflectionEnabledByDefault` guard does **not** silence the Roslyn trim/AOT
+   analyzers; the ASP.NET Core `[UnconditionalSuppressMessage]`-with-justification pattern is required.
+3. The .NET 10 source generator models `init`-only members as **constructor parameters**: an
+   `init`-only `[JsonExtensionData]` bag throws at first use, and an `init`-only member with an
+   initializer comes back `null` when absent from the payload. That forced a public-API change
+   (`init` → `set` on two `DataIntegrityProof` members) that belonged in the plan for the owner's
+   approval, not in a mid-implementation surprise — and a regression test for a behaviour (`Type`
+   defaulting) that *serialization* byte-identity tests would never have caught.
+4. An internal `[JsonConverter]` type blocks every downstream consumer's source generator
+   (SYSLIB1220), which turned "no public API change" into one deliberately public type.
+
+**The rule for myself:**
+- When a design depends on how a toolchain or library behaves — a source generator, an analyzer, a
+  trimmer feature switch, a serializer's constructor-selection rules — build a scratch project and
+  **observe** it before writing the plan. Recalled documentation is a hypothesis; compiler and
+  runtime output are facts. Budget the spike; it is cheaper than one re-plan and far cheaper than
+  an approved plan that later needs a public-API amendment.
+- For System.Text.Json source generation specifically: inspect the generated code
+  (`EmitCompilerGeneratedFiles=true`) for every model shape — `init`, `required`, initializers,
+  extension data, private setters, record copy constructors — and test a **deserialization with a
+  member absent**. Serialization byte identity says nothing about deserialization defaults.
+- State the version/release assumption as the **first** decision in a plan. The owner's one-line
+  rejection ("Version is still 1.4.0. We haven't deployed.") corrected an assumption I had reasoned
+  about at length; putting it first makes it the first thing the owner can strike.
