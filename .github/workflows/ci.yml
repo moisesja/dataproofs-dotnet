@@ -228,12 +228,12 @@ jobs:
         with:
           global-json-file: global.json
       # The runner context is not available to job-level env, so the scratch path is exported here.
-      - name: Scratch directory for the three reports
+      - name: Scratch directory for the four reports
         run: echo "SMOKE=$RUNNER_TEMP/aot-smoke" >> "$GITHUB_ENV"
       - name: Native toolchain for the ILCompiler
         run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
       # NFR-7 / AC-12 (issue #27). tasks/aot-smoke exercises every package with fixed keys and timestamps
-      # and writes a report whose `deterministic` section must be byte-identical across three runtimes.
+      # and writes a report whose `deterministic` section must be byte-identical across four legs.
       # Each run builds into its own output directory and is checked for the runtime it claims to be,
       # so a mix-up between the three cannot pass silently. PublishAot is passed on the command line,
       # not set in the csproj, so ordinary solution restores never download the ILCompiler and
@@ -246,13 +246,19 @@ jobs:
           dotnet build tasks/aot-smoke/AotSmoke.csproj --configuration Release /warnaserror -o "$SMOKE/jit"
           dotnet "$SMOKE/jit/AotSmoke.dll" emit "$SMOKE/jit.json"
           jq -e '.runtime.reflectionEnabled == true and .runtime.isDynamicCodeSupported == true' "$SMOKE/jit.json" > /dev/null
-      - name: emit — JIT with reflection-based serialization disabled (trimmed-host / .NET 10 file-based-app condition)
+      - name: emit — JIT with reflection-based serialization disabled (the serializer condition of a trimmed host)
         shell: bash
         run: |
           set -euo pipefail
           dotnet build tasks/aot-smoke/AotSmoke.csproj --configuration Release --no-incremental -p:JsonSerializerIsReflectionEnabledByDefault=false -o "$SMOKE/noreflect"
           dotnet "$SMOKE/noreflect/AotSmoke.dll" emit "$SMOKE/trimmed.json"
           jq -e '.runtime.reflectionEnabled == false' "$SMOKE/trimmed.json" > /dev/null
+      - name: emit — .NET 10 file-based app (`dotnet run app.cs`, native-AOT defaults under JIT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run tasks/aot-smoke/file-based-app/aot-smoke.cs --configuration Release -- emit "$SMOKE/filebased.json"
+          jq -e '.runtime.reflectionEnabled == false and .runtime.isDynamicCodeSupported == false' "$SMOKE/filebased.json" > /dev/null
       - name: publish — native AOT, linux-x64
         shell: bash
         run: |
@@ -264,8 +270,8 @@ jobs:
           set -euo pipefail
           "$SMOKE/aot/AotSmoke" emit "$SMOKE/aot.json"
           jq -e '.runtime.isDynamicCodeSupported == false and .runtime.reflectionEnabled == false and .runtime.bbsAvailable == true' "$SMOKE/aot.json" > /dev/null
-      - name: compare — deterministic output byte-identical across JIT, reflection-disabled JIT and native AOT
-        run: dotnet "$SMOKE/jit/AotSmoke.dll" compare "$SMOKE/jit.json" "$SMOKE/trimmed.json" "$SMOKE/aot.json"
+      - name: compare — deterministic output byte-identical across all four legs
+        run: dotnet "$SMOKE/jit/AotSmoke.dll" compare "$SMOKE/jit.json" "$SMOKE/trimmed.json" "$SMOKE/filebased.json" "$SMOKE/aot.json"
       - name: cross-verify — the native binary verifies the JIT run's artifacts, and JIT verifies the native run's
         shell: bash
         run: |
@@ -273,24 +279,17 @@ jobs:
           "$SMOKE/aot/AotSmoke" verify "$SMOKE/jit.json"
           dotnet "$SMOKE/jit/AotSmoke.dll" verify "$SMOKE/aot.json"
           dotnet "$SMOKE/jit/AotSmoke.dll" verify "$SMOKE/trimmed.json"
-      - name: No IL2xxx/IL3xxx warning attributed to a DataProofs assembly (positive control included)
+          "$SMOKE/aot/AotSmoke" verify "$SMOKE/filebased.json"
+      # Every IL warning must be on tasks/aot-smoke/known-il-warnings.txt, whichever assembly it names:
+      # hidden reflection in an unannotated dependency surfaces as that dependency's warning (NetCid's did).
+      # The self-test proves the scan rejects a DataProofs warning, an unknown dependency warning, and an
+      # empty or skipped (no native compilation) log before the real log is trusted.
+      - name: IL warnings — only known, unreachable third-party ones (scan self-test first)
         shell: bash
         run: |
           set -euo pipefail
-          log="$SMOKE/publish.log"
-          scan() { { grep -E 'IL[23][0-9]{3}' "$1" || true; } | { grep -E 'DataProofsDotnet|/src/' || true; }; }
-          # Positive control: the scan must fire on a planted line, or a green result proves nothing.
-          printf 'ILC : AOT analysis warning IL3050: DataProofsDotnet.Core.Planted(): control line\n' > "$SMOKE/control.log"
-          [ -n "$(scan "$SMOKE/control.log")" ] || { echo "FAILED: the IL-warning scan did not fire on the planted control line"; exit 1; }
-          echo "--- every IL warning in the publish log (third-party ones are informational) ---"
-          { grep -E 'IL[23][0-9]{3}' "$log" || echo "(none)"; } | sort -u
-          hits="$(scan "$log")"
-          if [ -n "$hits" ]; then
-            echo "FAILED: IL warnings attributed to DataProofsDotnet assemblies:"
-            echo "$hits"
-            exit 1
-          fi
-          echo "OK — no IL2xxx/IL3xxx warning from a DataProofsDotnet assembly"
+          bash tasks/aot-smoke/scan-il-warnings.sh --self-test
+          bash tasks/aot-smoke/scan-il-warnings.sh "$SMOKE/publish.log"
       - name: Upload reports and publish log
         if: always()
         uses: actions/upload-artifact@v4

@@ -113,7 +113,8 @@ internal sealed class RdfcPath : ISmokePath
 /// <summary>bbs-2023: issuer base proof, holder derived proof, verifier. Required where NetCrypto ships BBS.</summary>
 internal sealed class Bbs2023Path : ISmokePath
 {
-    private static readonly string[] RequiredOn = ["osx-arm64", "linux-x64"];
+    // Every RID for which NetCrypto 1.4.0 ships the native BBS library (runtimes/*/native/zkryptium_ffi).
+    private static readonly string[] RequiredOn = ["osx-arm64", "osx-x64", "linux-x64", "linux-arm64", "win-x64"];
     private static readonly string[] Mandatory = ["/issuer", "/credentialSubject/id"];
     private static readonly string[] Selective = ["/credentialSubject/gpa"];
     private static readonly byte[] PresentationHeader = [0x11, 0x33, 0x77, 0xaa];
@@ -182,12 +183,13 @@ internal sealed class LegacyPath : ISmokePath
 {
     private static readonly RdfcDocumentCanonicalizer Canonicalizer = new(OfflineDocumentLoader.Instance);
 
-    private static readonly DataIntegrityProofPipeline Jcs = Build(new Ed25519Signature2020Cryptosuite());
+    private static readonly DataIntegrityProofPipeline Jcs = Build(
+        new Ed25519Signature2020Cryptosuite(), new EcdsaSecp256r1Signature2019Cryptosuite());
     private static readonly DataIntegrityProofPipeline Rdfc = Build(
         new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc, Canonicalizer),
         new EcdsaSecp256r1Signature2019Cryptosuite(LegacyCanonicalization.Rdfc, Canonicalizer));
 
-    public string Name => "Legacy — Ed25519Signature2020 (JCS, RDFC), EcdsaSecp256r1Signature2019 (RDFC)";
+    public string Name => "Legacy — Ed25519Signature2020 and EcdsaSecp256r1Signature2019, JCS and RDFC";
 
     public async Task EmitAsync(Report report)
     {
@@ -195,6 +197,10 @@ internal sealed class LegacyPath : ISmokePath
         Gate.Expect(!edJcs.GetProperty("proof").TryGetProperty("cryptosuite", out _), "Ed25519Signature2020 emits no cryptosuite member");
         Gate.Expect(Jcs.Verify(edJcs, Pk(Ed), AssertionMethod).Verified, "Ed25519Signature2020 (JCS) verifies");
         report.Det("legacy.ed25519Signature2020.jcs.secured", Compact(edJcs));
+
+        var p256Jcs = await Jcs.AddProofAsync(Credential(), LegacyProof(EcdsaSecp256r1Signature2019Cryptosuite.ProofType, P256), Signer(P256));
+        Gate.Expect(Jcs.Verify(p256Jcs, Pk(P256), AssertionMethod).Verified, "EcdsaSecp256r1Signature2019 (JCS) verifies");
+        report.Artifact("legacy.ecdsaSecp256r1Signature2019.jcs", new() { ["secured"] = Wrap(p256Jcs) });
 
         var edRdfc = await Rdfc.AddProofAsync(Credential(), LegacyProof(Ed25519Signature2020Cryptosuite.ProofType, Ed), Signer(Ed));
         Gate.Expect(Rdfc.Verify(edRdfc, Pk(Ed), AssertionMethod).Verified, "Ed25519Signature2020 (RDFC) verifies");
@@ -209,6 +215,8 @@ internal sealed class LegacyPath : ISmokePath
     {
         Gate.Expect(Jcs.Verify(Parse(report.Det("legacy.ed25519Signature2020.jcs.secured")), Pk(Ed), AssertionMethod).Verified,
             "Ed25519Signature2020 (JCS) document from the other run verifies");
+        Gate.Expect(Jcs.Verify(report.ArtifactElement("legacy.ecdsaSecp256r1Signature2019.jcs", "secured"), Pk(P256), AssertionMethod).Verified,
+            "EcdsaSecp256r1Signature2019 (JCS) document from the other run verifies");
         Gate.Expect(Rdfc.Verify(Parse(report.Det("legacy.ed25519Signature2020.rdfc.secured")), Pk(Ed), AssertionMethod).Verified,
             "Ed25519Signature2020 (RDFC) document from the other run verifies");
         Gate.Expect(Rdfc.Verify(report.ArtifactElement("legacy.ecdsaSecp256r1Signature2019.rdfc", "secured"), Pk(P256), AssertionMethod).Verified,

@@ -34,6 +34,12 @@
   -->
 
   <ItemGroup>
+    <!-- file-based-app/aot-smoke.cs is a .NET 10 file-based program (#: directives) that references this
+         project; it is run with `dotnet run <file>.cs`, never compiled as part of this project. -->
+    <Compile Remove="file-based-app/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../src/DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Jose/DataProofsDotnet.Jose.csproj" />
     <ProjectReference Include="../../src/DataProofsDotnet.Cose/DataProofsDotnet.Cose.csproj" />

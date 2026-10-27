@@ -1,0 +1,23 @@
+# AC-12 known ILC warnings (PRD NFR-7, issue #27).
+#
+# tasks/aot-smoke/scan-il-warnings.sh fails a native-AOT publish log on ANY IL2xxx/IL3xxx line that is
+# not matched here. Third-party warnings are where hidden reflection in an unannotated dependency
+# shows up (NetCid's JcsCanonicalizer.Canonicalize(JsonNode) appeared in exactly this log), so they are
+# not informational: each one is either listed here, with the reason it is unreachable, or a failure.
+#
+# Format: one fixed string per line, matched as a substring of the normalized warning
+# ("ILxxxx: <member>: <message>"). Lines starting with '#' and blank lines are ignored. Each entry must
+# name the warning code and the member, never a bare code or assembly.
+
+# Newtonsoft.Json (transitive through dotNetRdf.Core, Rdfc only): its `dynamic` support
+# (IDynamicMetaObjectProvider.GetMetaObject) and IConvertible.ToType on JValue. dotNetRdf's JSON-LD
+# parser reads JToken trees through the typed LINQ-to-JSON API and never takes either path; the issue
+# verified RDFC output byte-identical to JIT under native AOT, and ac-12 re-proves it on every run.
+IL2026: Newtonsoft.Json.Linq.JObject.GetMetaObject(Expression):
+IL3050: Newtonsoft.Json.Linq.JObject.GetMetaObject(Expression):
+IL2026: Newtonsoft.Json.Linq.JToken.GetMetaObject(Expression):
+IL3050: Newtonsoft.Json.Linq.JToken.GetMetaObject(Expression):
+IL2026: Newtonsoft.Json.Linq.JValue.GetMetaObject(Expression):
+IL3050: Newtonsoft.Json.Linq.JValue.GetMetaObject(Expression):
+IL2026: Newtonsoft.Json.Linq.JValue.System.IConvertible.ToType(Type,IFormatProvider):
+IL3050: Newtonsoft.Json.Linq.JValue.System.IConvertible.ToType(Type,IFormatProvider):
