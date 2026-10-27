@@ -7,8 +7,17 @@ namespace DataProofsDotnet.DataIntegrity;
 /// Shape-preserving converter for <see cref="PreviousProofReference"/>: a bare string
 /// round-trips as a string, an array round-trips as an array (even with one element).
 /// </summary>
-internal sealed class PreviousProofReferenceJsonConverter : JsonConverter<PreviousProofReference>
+/// <remarks>
+/// Applied through the <see cref="JsonConverterAttribute"/> on <see cref="PreviousProofReference"/>,
+/// so no caller registers it. It is public because a consumer that lists
+/// <see cref="DataIntegrityProof"/> in its own <see cref="JsonSerializerContext"/> — the way to
+/// serialize it in a trimmed or native-AOT application — needs the System.Text.Json source
+/// generator to instantiate this converter; an inaccessible converter makes the generator skip the
+/// type (SYSLIB1220/SYSLIB1030).
+/// </remarks>
+public sealed class PreviousProofReferenceJsonConverter : JsonConverter<PreviousProofReference>
 {
+    /// <inheritdoc />
     public override PreviousProofReference Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         switch (reader.TokenType)
@@ -52,6 +61,7 @@ internal sealed class PreviousProofReferenceJsonConverter : JsonConverter<Previo
         }
     }
 
+    /// <inheritdoc />
     public override void Write(Utf8JsonWriter writer, PreviousProofReference value, JsonSerializerOptions options)
     {
         if (value.IsArrayForm)

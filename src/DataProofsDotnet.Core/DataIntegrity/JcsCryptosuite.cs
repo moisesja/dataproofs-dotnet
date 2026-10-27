@@ -113,7 +113,7 @@ internal abstract class JcsCryptosuite : ICryptosuite
         try
         {
             canonicalProofConfig = JcsCanonicalizer.Canonicalize(
-                JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.Default));
+                JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.ProofTypeInfo));
             canonicalDocument = JcsCanonicalizer.Canonicalize(unsecuredDocument);
         }
         catch (JcsFormatException ex)
@@ -216,7 +216,7 @@ internal abstract class JcsCryptosuite : ICryptosuite
             {
                 var proofConfig = proof with { ProofValue = null };
                 canonicalProofConfig = JcsCanonicalizer.Canonicalize(
-                    JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.Default));
+                    JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.ProofTypeInfo));
                 canonicalDocument = rewrittenDocument is null
                     ? JcsCanonicalizer.Canonicalize(documentToCanonicalize)
                     : JcsCanonicalizer.Canonicalize(rewrittenDocument);

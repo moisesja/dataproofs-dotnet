@@ -19,6 +19,15 @@ namespace DataProofsDotnet.DataIntegrity;
 /// extension fields survive deserialization and canonicalization; without this,
 /// signatures over proofs carrying extensions would silently break.
 /// </para>
+/// <para>
+/// Serialization metadata is source-generated (native AOT and trimming support, issue #27). The
+/// generator models <c>init</c>-only members as constructor parameters, which rules out two shapes:
+/// an <c>init</c>-only extension-data bag is rejected at first use, and an <c>init</c>-only member
+/// with an initializer loses its default when the member is absent from the payload.
+/// <see cref="Type"/> and <see cref="AdditionalProperties"/> are therefore settable; every other
+/// member stays <c>init</c>-only. The emitted bytes are identical to the reflection-based
+/// serialization of earlier versions.
+/// </para>
 /// </remarks>
 public sealed record DataIntegrityProof
 {
@@ -32,7 +41,7 @@ public sealed record DataIntegrityProof
 
     /// <summary>The proof type. Always <c>DataIntegrityProof</c> for this generation of suites.</summary>
     [JsonPropertyName("type")]
-    public string Type { get; init; } = DataIntegrityProofType;
+    public string Type { get; set; } = DataIntegrityProofType;
 
     /// <summary>The cryptosuite identifier (e.g. <c>eddsa-jcs-2022</c>, <c>ecdsa-jcs-2019</c>).</summary>
     [JsonPropertyName("cryptosuite")]
@@ -97,5 +106,5 @@ public sealed record DataIntegrityProof
 
     /// <summary>Unmodeled members, preserved verbatim for round-tripping and canonicalization.</summary>
     [JsonExtensionData]
-    public IDictionary<string, JsonElement>? AdditionalProperties { get; init; }
+    public IDictionary<string, JsonElement>? AdditionalProperties { get; set; }
 }

@@ -113,9 +113,9 @@ public sealed class DataIntegrityProofPipeline
             signingInput[ProofMemberName] = matching;
         }
 
-        var signingElement = JsonSerializer.SerializeToElement(signingInput, DataProofsJsonOptions.Default);
+        var signingElement = JsonSerializer.SerializeToElement(signingInput, DataProofsJsonOptions.JsonObjectTypeInfo);
         var proof = await suite.CreateProofAsync(signingElement, proofOptions, signer, cancellationToken).ConfigureAwait(false);
-        var proofNode = JsonSerializer.SerializeToNode(proof, DataProofsJsonOptions.Default)!;
+        var proofNode = JsonSerializer.SerializeToNode(proof, DataProofsJsonOptions.ProofTypeInfo)!;
 
         // Append the proof: none -> object form; existing object -> two-element array;
         // existing array -> append.
@@ -134,7 +134,7 @@ public sealed class DataIntegrityProofPipeline
             array.Add(proofNode);
         }
 
-        return JsonSerializer.SerializeToElement(output, DataProofsJsonOptions.Default);
+        return JsonSerializer.SerializeToElement(output, DataProofsJsonOptions.JsonObjectTypeInfo);
     }
 
     /// <summary>
@@ -312,7 +312,7 @@ public sealed class DataIntegrityProofPipeline
         DataIntegrityProof? proof;
         try
         {
-            proof = proofElement.Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default);
+            proof = proofElement.Deserialize(DataProofsJsonOptions.ProofTypeInfo);
         }
         catch (JsonException)
         {
@@ -438,7 +438,7 @@ public sealed class DataIntegrityProofPipeline
                 inputDocument[ProofMemberName] = matchingProofs;
             }
 
-            var inputElement = JsonSerializer.SerializeToElement(inputDocument, DataProofsJsonOptions.Default);
+            var inputElement = JsonSerializer.SerializeToElement(inputDocument, DataProofsJsonOptions.JsonObjectTypeInfo);
             return suite.VerifyProof(inputElement, proof, publicKey);
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException)

@@ -21,7 +21,7 @@ DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.Register(DataProofsDotnet.Dat
 DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.RegisteredNames.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 DataProofsDotnet.DataIntegrity.DataIntegrityProof
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.AdditionalProperties.get -> System.Collections.Generic.IDictionary<string!, System.Text.Json.JsonElement>?
-DataProofsDotnet.DataIntegrity.DataIntegrityProof.AdditionalProperties.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.AdditionalProperties.set -> void
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.Challenge.get -> string?
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.Challenge.init -> void
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.Context.get -> System.Text.Json.JsonElement?
@@ -45,7 +45,7 @@ DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofPurpose.init -> void
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofValue.get -> string?
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.ProofValue.init -> void
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.Type.get -> string!
-DataProofsDotnet.DataIntegrity.DataIntegrityProof.Type.init -> void
+DataProofsDotnet.DataIntegrity.DataIntegrityProof.Type.set -> void
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.VerificationMethod.get -> string?
 DataProofsDotnet.DataIntegrity.DataIntegrityProof.VerificationMethod.init -> void
 DataProofsDotnet.DataIntegrity.DataIntegrityProofPipeline
@@ -83,6 +83,8 @@ DataProofsDotnet.DataIntegrity.PreviousProofReference
 DataProofsDotnet.DataIntegrity.PreviousProofReference.Equals(DataProofsDotnet.DataIntegrity.PreviousProofReference? other) -> bool
 DataProofsDotnet.DataIntegrity.PreviousProofReference.IsArrayForm.get -> bool
 DataProofsDotnet.DataIntegrity.PreviousProofReference.Values.get -> System.Collections.Generic.IReadOnlyList<string!>!
+DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter
+DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter.PreviousProofReferenceJsonConverter() -> void
 DataProofsDotnet.DataIntegrity.ProofProblem
 DataProofsDotnet.DataIntegrity.ProofProblem.Code.get -> string!
 DataProofsDotnet.DataIntegrity.ProofProblem.Code.init -> void
@@ -136,6 +138,8 @@ DataProofsDotnet.PublicKeyMaterial.ToJsonWebKey() -> Microsoft.IdentityModel.Tok
 DataProofsDotnet.PublicKeyMaterial.ToMultikey() -> string!
 override DataProofsDotnet.DataIntegrity.PreviousProofReference.Equals(object? obj) -> bool
 override DataProofsDotnet.DataIntegrity.PreviousProofReference.GetHashCode() -> int
+override DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter.Read(ref System.Text.Json.Utf8JsonReader reader, System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> DataProofsDotnet.DataIntegrity.PreviousProofReference!
+override DataProofsDotnet.DataIntegrity.PreviousProofReferenceJsonConverter.Write(System.Text.Json.Utf8JsonWriter! writer, DataProofsDotnet.DataIntegrity.PreviousProofReference! value, System.Text.Json.JsonSerializerOptions! options) -> void
 static DataProofsDotnet.DataIntegrity.CryptosuiteRegistry.CreateDefault() -> DataProofsDotnet.DataIntegrity.CryptosuiteRegistry!
 static DataProofsDotnet.DataIntegrity.PreviousProofReference.FromSingle(string! proofId) -> DataProofsDotnet.DataIntegrity.PreviousProofReference!
 static DataProofsDotnet.DataIntegrity.PreviousProofReference.FromValues(System.Collections.Generic.IEnumerable<string!>! proofIds) -> DataProofsDotnet.DataIntegrity.PreviousProofReference!
