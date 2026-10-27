@@ -116,7 +116,7 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         {
             var hash = CanonicalizationHash(signer.KeyType);
             canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(
-                JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.Default), hash);
+                JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo), hash);
             canonicalDocument = _canonicalizer.CanonicalizeJsonLd(unsecuredDocument, hash);
         }
         catch (RdfCanonicalizationException ex)
@@ -197,7 +197,7 @@ internal abstract class RdfcCryptosuite : ICryptosuite
             {
                 var hash = CanonicalizationHash(publicKey.KeyType);
                 canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(
-                    JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.Default), hash);
+                    JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo), hash);
                 canonicalDocument = _canonicalizer.CanonicalizeJsonLd(unsecuredDocument, hash);
             }
             catch (RdfCanonicalizationException)

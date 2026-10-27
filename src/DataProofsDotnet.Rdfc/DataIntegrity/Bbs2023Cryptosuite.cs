@@ -212,9 +212,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             disclosure.SelectiveIndexes, presentationHeader.Span);
 
         var derivedProof = baseProof with { ProofValue = derivedProofValue };
-        revealDocument["proof"] = JsonSerializer.SerializeToNode(derivedProof, DataProofsJsonOptions.Default);
+        revealDocument["proof"] = JsonSerializer.SerializeToNode(derivedProof, RdfcJson.ProofTypeInfo);
 
-        return JsonSerializer.SerializeToElement(revealDocument, DataProofsJsonOptions.Default);
+        return JsonSerializer.SerializeToElement(revealDocument, RdfcJson.JsonObjectTypeInfo);
     }
 
     /// <summary>
@@ -432,7 +432,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         // Select the reveal document on the SKOLEMIZED document so it carries the stable
         // urn:bnid ids; the verifier deskolemizes + relabels with the same labelMap.
         var revealDocument = JsonPointer.SelectJsonLd(
-                JsonSerializer.SerializeToElement(transformed.SkolemizedDocument, DataProofsJsonOptions.Default),
+                JsonSerializer.SerializeToElement(transformed.SkolemizedDocument, RdfcJson.JsonObjectTypeInfo),
                 combinedPointers)
             ?? throw new ProofGenerationException("The selective disclosure produced an empty reveal document.");
 
@@ -464,7 +464,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     // blank-node labels. The result is the document's N-Quads with document-order-stable ids.
     private IReadOnlyList<string> SkolemizedToStableNQuads(JsonObject skolemized)
     {
-        var element = JsonSerializer.SerializeToElement(skolemized, DataProofsJsonOptions.Default);
+        var element = JsonSerializer.SerializeToElement(skolemized, RdfcJson.JsonObjectTypeInfo);
         var canonical = CanonicalNQuadLines(element);
         var deskolemized = JsonLdSkolemizer.Deskolemize(canonical);
         var sorted = deskolemized.ToList();
@@ -492,7 +492,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private HashSet<string> SelectionNQuads(
         JsonObject skolemizedDocument, IReadOnlyList<string> pointers, IReadOnlyDictionary<string, string> labelMap)
     {
-        var element = JsonSerializer.SerializeToElement(skolemizedDocument, DataProofsJsonOptions.Default);
+        var element = JsonSerializer.SerializeToElement(skolemizedDocument, RdfcJson.JsonObjectTypeInfo);
         var selection = JsonPointer.SelectJsonLd(element, pointers);
         if (selection is JsonObject selectionObject)
         {
@@ -524,7 +524,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         try
         {
             canonical = _canonicalizer.CanonicalizeJsonLd(
-                JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.Default),
+                JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo),
                 RdfCanonicalizationHashAlgorithm.Sha256);
         }
         catch (RdfCanonicalizationException ex)
@@ -548,12 +548,12 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException("The secured base document must carry a single proof object.");
         }
 
-        var proof = proofElement.Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)
+        var proof = proofElement.Deserialize(RdfcJson.ProofTypeInfo)
             ?? throw new ProofGenerationException("The base proof could not be parsed.");
 
         var unsecured = JsonObject.Create(securedDocument)!;
         unsecured.Remove("proof");
-        return (proof, JsonSerializer.SerializeToElement(unsecured, DataProofsJsonOptions.Default));
+        return (proof, JsonSerializer.SerializeToElement(unsecured, RdfcJson.JsonObjectTypeInfo));
     }
 
     private void ValidateProofOptions(DataIntegrityProof proofOptions)
