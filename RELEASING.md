@@ -181,6 +181,15 @@ what makes them read the CHANGELOG. The rule this adds: **an accept-set narrowin
 the exception contract on a path reachable with unauthenticated input is treated as minor, even
 when the patch rule's conditions all hold.**
 
+The same release also rejects JSON escapes for unpaired surrogates (`\uD800`) in every JOSE decoder
+(issue #30). That narrowing never qualified for a patch: the escapes are valid RFC 8259 grammar,
+forbidden by I-JSON (RFC 7493 §2.1) but by no JSON or JOSE RFC, so a conformant peer could in
+principle send one. It is minor material under the accept-set rule as written. It rode in a release
+that was already a minor, and the CHANGELOG names the one kind of this library's own output it
+rejects: a JWT whose payload bytes the caller passed to `JwsBuilder` already carrying such an
+escape. The point worth keeping: **"invalid under the RFC" means the governing RFC, not a stricter
+profile of it.** Rejecting what only a profile such as I-JSON forbids is a spec-valid narrowing.
+
 ## Downstream consumers
 
 Other repositories pin this package family and move in lockstep with it, so a release here is what
