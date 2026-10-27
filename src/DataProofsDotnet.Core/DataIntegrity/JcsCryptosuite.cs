@@ -195,7 +195,6 @@ internal abstract class JcsCryptosuite : ICryptosuite
             // must start with the proof's @context values (in order); the document is then
             // canonicalized under the proof's @context.
             var documentToCanonicalize = unsecuredDocument;
-            JsonNode? rewrittenDocument = null;
             if (proof.Context is { } proofContext)
             {
                 if (!ContextStartsWith(unsecuredDocument, proofContext))
@@ -207,7 +206,11 @@ internal abstract class JcsCryptosuite : ICryptosuite
 
                 var documentNode = JsonObject.Create(unsecuredDocument)!;
                 documentNode["@context"] = JsonNode.Parse(proofContext.GetRawText());
-                rewrittenDocument = documentNode;
+                // Canonicalize an element, never a node: NetCid's JsonNode overloads of
+                // JcsCanonicalizer.Canonicalize serialize through reflection-based System.Text.Json,
+                // which trimmed and native-AOT hosts disable, so every proof carrying @context failed
+                // to verify there (issue #27). The overloads are banned in BannedSymbols.txt.
+                documentToCanonicalize = JsonSerializer.SerializeToElement(documentNode, DataProofsJsonOptions.JsonObjectTypeInfo);
             }
 
             byte[] canonicalProofConfig;
@@ -217,9 +220,7 @@ internal abstract class JcsCryptosuite : ICryptosuite
                 var proofConfig = proof with { ProofValue = null };
                 canonicalProofConfig = JcsCanonicalizer.Canonicalize(
                     JsonSerializer.SerializeToElement(proofConfig, DataProofsJsonOptions.ProofTypeInfo));
-                canonicalDocument = rewrittenDocument is null
-                    ? JcsCanonicalizer.Canonicalize(documentToCanonicalize)
-                    : JcsCanonicalizer.Canonicalize(rewrittenDocument);
+                canonicalDocument = JcsCanonicalizer.Canonicalize(documentToCanonicalize);
             }
             catch (JcsFormatException)
             {

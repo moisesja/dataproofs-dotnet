@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shown to work under native AOT in the issue; the job keeps proving it at run time. Unblocks
   [moisesja/zcap-dotnet#154](https://github.com/moisesja/zcap-dotnet/issues/154).
 
+- **The JCS suites no longer depend on reflection inside NetCid.** `ac-12`'s first
+  reflection-disabled run found that NetCid's `JcsCanonicalizer.Canonicalize(JsonNode)` overloads
+  serialize the node through reflection-based System.Text.Json. NetCid carries no AOT annotations, so
+  no analyzer could see it. `eddsa-jcs-2022` and `ecdsa-jcs-2019` verification called that overload
+  whenever the proof carries `@context`, which is every proof this library creates. In a trimmed or
+  native-AOT host every such verification therefore failed closed, as
+  `PROOF_VERIFICATION_ERROR: Verification failed unexpectedly (InvalidOperationException)`. JIT hosts
+  were never affected. The suite now canonicalizes a `JsonElement`, and the canonical bytes are
+  unchanged, as the W3C vector suites confirm. `BannedSymbols.txt` bans the four `JsonNode` overloads, so
+  the build fails if one is reintroduced.
+
 ### Changed
 
 - **`DataProofsJsonOptions.Default` resolves this library's types through source-generated metadata
