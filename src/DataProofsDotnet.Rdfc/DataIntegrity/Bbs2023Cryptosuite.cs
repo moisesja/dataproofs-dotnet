@@ -448,6 +448,16 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Reveal the mandatory group AND the selected statements (ascending full-list order).
         var revealedIndexes = transformed.Mandatory.Indexes.Concat(selectiveIndexes).Distinct().OrderBy(x => x).ToList();
+
+        // No mandatory statements and a selection that is empty or matches nothing: the BBS
+        // provider refuses a proof revealing no message with ArgumentException, so reject it here
+        // as the documented exception (PR #35 review). An empty selection alongside mandatory
+        // statements is a valid mandatory-only disclosure and reaches the provider.
+        if (revealedIndexes.Count == 0)
+        {
+            throw new ProofGenerationException("The selective disclosure reveals no statements.");
+        }
+
         var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
         // The derived proof commits to the same BBS header the issuer bound at sign time
         // (bbsHeader = proofHash ‖ mandatoryHash, carried in the base proofValue); the verifier

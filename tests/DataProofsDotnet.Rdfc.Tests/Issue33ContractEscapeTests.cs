@@ -202,6 +202,33 @@ public sealed class Issue33Bbs2023Tests
         AssertDeriveFails(Parse(hostile), message);
     }
 
+    [BbsTheory]
+    [InlineData("empty selection")]
+    [InlineData("selection matching nothing")]
+    public async Task DeriveProof_NothingToReveal_ThrowsProofGenerationException(string kind)
+    {
+        string[] selective = kind == "empty selection" ? [] : ["/doesnotexist"];
+
+        // A base proof with no mandatory pointers, and a selection that is empty or matches
+        // nothing, reveals no statement. The BBS provider refuses that with ArgumentException,
+        // so it is rejected before the provider is called (PR #35 review comment 6456380810).
+        var secured = await SecuredBaseAsync(mandatory: []);
+
+        AssertDeriveFails(Parse(secured), selective, "The selective disclosure reveals no statements.");
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_SomethingToReveal_StillDerives()
+    {
+        // Controls for the case above: without mandatory pointers a matching selection derives,
+        // and with a mandatory pointer an empty selection derives.
+        var noMandatory = await SecuredBaseAsync(mandatory: []);
+        var issuerMandatory = await SecuredBaseAsync(mandatory: ["/issuer"]);
+
+        _suite.DeriveProof(Parse(noMandatory), Selective, Header).ValueKind.Should().Be(JsonValueKind.Object);
+        _suite.DeriveProof(Parse(issuerMandatory), [], Header).ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
     [BbsFact]
     public async Task DeriveProof_InvalidSelectivePointer_ThrowsProofGenerationException()
         => AssertDeriveFails(Parse(await SecuredBaseAsync()), ["abc"], "A selective pointer is invalid.");
@@ -294,10 +321,10 @@ public sealed class Issue33Bbs2023Tests
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
 
-    private async Task<string> SecuredBaseAsync()
+    private async Task<string> SecuredBaseAsync(string[]? mandatory = null)
     {
         var (sk, hmacKey) = Key();
-        var baseProof = await _suite.CreateBaseProofAsync(Parse(Wind), BaseOptions(), sk, hmacKey, Mandatory());
+        var baseProof = await _suite.CreateBaseProofAsync(Parse(Wind), BaseOptions(), sk, hmacKey, mandatory ?? Mandatory());
         var secured = JsonObject.Create(Parse(Wind))!;
         secured["proof"] = JsonSerializer.SerializeToNode(baseProof, DataProofsJsonOptions.Default);
         return JsonSerializer.Serialize(secured, DataProofsJsonOptions.Default);
