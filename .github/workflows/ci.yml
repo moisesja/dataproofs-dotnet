@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# PRD §9: one CI job per acceptance criterion, ac-1 … ac-11, each exiting 0/non-zero, all
+# PRD §9: one CI job per acceptance criterion, ac-1 … ac-12, each exiting 0/non-zero, all
 # required for merge to main. ac-11 (package-identity publish gate) lives in publish.yml.
 # ac-5 (didcomm behavior-parity diff) has been retired — see the note where it used to sit, below.
 #
@@ -218,5 +218,86 @@ jobs:
               && { [ -z "${prereq[$id]:-}" ] || dotnet add package "${prereq[$id]%%:*}" --version "${prereq[$id]##*:}"; } \
               && dotnet run -c Release )
           done
+
+  ac-12:
+    name: ac-12 native AOT publish + JIT parity
+    runs-on: ubuntu-latest
+    env:
+      SMOKE: ${{ runner.temp }}/aot-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Native toolchain for the ILCompiler
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      # NFR-7 / AC-12 (issue #27). tasks/aot-smoke exercises every package with fixed keys and timestamps
+      # and writes a report whose `deterministic` section must be byte-identical across three runtimes.
+      # Each run builds into its own output directory and is checked for the runtime it claims to be,
+      # so a mix-up between the three cannot pass silently. PublishAot is passed on the command line,
+      # not set in the csproj, so ordinary solution restores never download the ILCompiler and
+      # `dotnet run` stays a true JIT baseline (see tasks/aot-smoke/README.md).
+      - name: emit — JIT, reflection-based serialization enabled (today's ordinary host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE"
+          dotnet build tasks/aot-smoke/AotSmoke.csproj --configuration Release /warnaserror -o "$SMOKE/jit"
+          dotnet "$SMOKE/jit/AotSmoke.dll" emit "$SMOKE/jit.json"
+          jq -e '.runtime.reflectionEnabled == true and .runtime.isDynamicCodeSupported == true' "$SMOKE/jit.json" > /dev/null
+      - name: emit — JIT with reflection-based serialization disabled (trimmed-host / .NET 10 file-based-app condition)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build tasks/aot-smoke/AotSmoke.csproj --configuration Release --no-incremental -p:JsonSerializerIsReflectionEnabledByDefault=false -o "$SMOKE/noreflect"
+          dotnet "$SMOKE/noreflect/AotSmoke.dll" emit "$SMOKE/trimmed.json"
+          jq -e '.runtime.reflectionEnabled == false' "$SMOKE/trimmed.json" > /dev/null
+      - name: publish — native AOT, linux-x64
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish tasks/aot-smoke/AotSmoke.csproj --configuration Release -r linux-x64 -p:PublishAot=true -o "$SMOKE/aot" 2>&1 | tee "$SMOKE/publish.log"
+      - name: emit — native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SMOKE/aot/AotSmoke" emit "$SMOKE/aot.json"
+          jq -e '.runtime.isDynamicCodeSupported == false and .runtime.reflectionEnabled == false and .runtime.bbsAvailable == true' "$SMOKE/aot.json" > /dev/null
+      - name: compare — deterministic output byte-identical across JIT, reflection-disabled JIT and native AOT
+        run: dotnet "$SMOKE/jit/AotSmoke.dll" compare "$SMOKE/jit.json" "$SMOKE/trimmed.json" "$SMOKE/aot.json"
+      - name: cross-verify — the native binary verifies the JIT run's artifacts, and JIT verifies the native run's
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$SMOKE/aot/AotSmoke" verify "$SMOKE/jit.json"
+          dotnet "$SMOKE/jit/AotSmoke.dll" verify "$SMOKE/aot.json"
+          dotnet "$SMOKE/jit/AotSmoke.dll" verify "$SMOKE/trimmed.json"
+      - name: No IL2xxx/IL3xxx warning attributed to a DataProofs assembly (positive control included)
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$SMOKE/publish.log"
+          scan() { { grep -E 'IL[23][0-9]{3}' "$1" || true; } | { grep -E 'DataProofsDotnet|/src/' || true; }; }
+          # Positive control: the scan must fire on a planted line, or a green result proves nothing.
+          printf 'ILC : AOT analysis warning IL3050: DataProofsDotnet.Core.Planted(): control line\n' > "$SMOKE/control.log"
+          [ -n "$(scan "$SMOKE/control.log")" ] || { echo "FAILED: the IL-warning scan did not fire on the planted control line"; exit 1; }
+          echo "--- every IL warning in the publish log (third-party ones are informational) ---"
+          { grep -E 'IL[23][0-9]{3}' "$log" || echo "(none)"; } | sort -u
+          hits="$(scan "$log")"
+          if [ -n "$hits" ]; then
+            echo "FAILED: IL warnings attributed to DataProofsDotnet assemblies:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK — no IL2xxx/IL3xxx warning from a DataProofsDotnet assembly"
+      - name: Upload reports and publish log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aot-smoke-reports
+          path: |
+            ${{ runner.temp }}/aot-smoke/*.json
+            ${{ runner.temp }}/aot-smoke/publish.log
+          if-no-files-found: warn
 
   # ac-11 (package identity & publish readiness) is the publish gate — see publish.yml.

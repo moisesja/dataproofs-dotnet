@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>AotSmoke</AssemblyName>
+    <RootNamespace>DataProofsDotnet.Tools.AotSmoke</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The tool's own code is held to the same trim/AOT/single-file analyzer bar as the packages
+         (NFR-7): any reflection-based serializer call in this tool is a compile error. -->
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <!-- Itemize third-party ILC warnings in the publish log instead of one line per assembly, so
+         the AC-12 log scan can tell a DataProofsDotnet warning from a dotNetRdf/Newtonsoft one. -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- The ILCompiler inherits the repo-wide TreatWarningsAsErrors by default, which turns the
+         expected third-party warnings (Newtonsoft.Json's unreachable `dynamic` support, pulled in by
+         dotNetRdf.Core) into publish errors. They are reported, not fatal: the AC-12 job fails only on
+         an IL warning attributed to a DataProofsDotnet assembly. The Roslyn analyzers on this tool's own
+         code above are unaffected and stay errors. -->
+    <IlcTreatWarningsAsErrors>false</IlcTreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!--
+    PublishAot is deliberately NOT set here. CI and local runs pass it on the command line
+    (`dotnet publish -c Release -r <rid> -p:PublishAot=true`) so that:
+      * an ordinary `dotnet restore DataProofsDotnet.sln` does not download the ILCompiler packages
+        for every contributor and every CI job that merely builds the solution; and
+      * `dotnet run` on this project stays a true JIT baseline — in a project that sets PublishAot the
+        SDK turns JsonSerializer.IsReflectionEnabledByDefault off even under `dotnet run`, which would
+        make the "JIT with reflection" leg of the three-way comparison impossible.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/DataProofsDotnet.Core/DataProofsDotnet.Core.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Jose/DataProofsDotnet.Jose.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Cose/DataProofsDotnet.Cose.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Rdfc/DataProofsDotnet.Rdfc.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Legacy/DataProofsDotnet.Legacy.csproj" />
+    <ProjectReference Include="../../src/DataProofsDotnet.Extensions.DependencyInjection/DataProofsDotnet.Extensions.DependencyInjection.csproj" />
+    <!-- The concrete container that hosts AddDataProofs (CPM-pinned in Directory.Packages.props). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+</Project>
