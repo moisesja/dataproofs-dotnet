@@ -57,6 +57,7 @@ docs/       supplementary documentation
 ## Pull requests
 
 - Keep changes minimal and focused; one concern per PR
-- All `ac-1` … `ac-12` CI jobs must be green before merging to `main`. This is a maintainer procedure:
-  as of 2026-10-27 GitHub does not enforce it (no branch protection or rulesets on `main`; PRD §9)
+- All `ac-1` … `ac-12` CI jobs, and `build + test` on both platforms, must be green to merge to `main`.
+  Since 2026-10-27 the ruleset `main: required CI` enforces this (PRD §9). Renaming a CI job blocks
+  merges until the ruleset is updated to the new name
 - Update samples and docs alongside code changes

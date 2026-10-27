@@ -9,11 +9,11 @@ on:
 permissions:
   contents: read
 
-# PRD §9: one CI job per acceptance criterion, ac-1 … ac-12, each exiting 0/non-zero, all to be green
-# before a merge to main. Correction (2026-10-27, PR #32 review): GitHub does not enforce this — main has
-# no branch protection or rulesets — so it is a maintainer procedure until the jobs are configured as
-# required status checks (an owner action; see PRD §9). ac-11 (package-identity publish gate) lives in
-# publish.yml.
+# PRD §9: one CI job per acceptance criterion, ac-1 … ac-12, each exiting 0/non-zero, all required for
+# merge to main. Enforced since 2026-10-27 by the ruleset "main: required CI" (id 25966034), which
+# requires every job in this file by its name — renaming a job here blocks every merge until the ruleset
+# is updated. The repository admin role may bypass it. Before that date nothing enforced it (PRD §9).
+# ac-11 (package-identity publish gate) lives in publish.yml.
 # ac-5 (didcomm behavior-parity diff) has been retired — see the note where it used to sit, below.
 #
 # The build-test job is the comprehensive gate: it builds the whole solution with

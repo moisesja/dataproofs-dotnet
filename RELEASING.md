@@ -55,10 +55,12 @@ temporary key.
 One-time owner actions (cannot be automated):
 
 - Reserve the `DataProofsDotnet` ID prefix on nuget.org (AC-11 fails closed until done).
-- Optional: make the `ci.yml` jobs required status checks on `main` (Settings → Rules → Rulesets, or
-  branch protection). As of 2026-10-27 none are, so "green before merge" is a reviewer procedure, not a
-  gate (PRD §9). Verify with
-  `gh api repos/moisesja/dataproofs-dotnet/rules/branches/main` (an empty array means no rules).
+- ~~Optional: make the `ci.yml` jobs required status checks on `main`.~~ Done 2026-10-27: ruleset
+  `main: required CI` (id 25966034) requires the 12 PR-time jobs, pinned to GitHub Actions, with a
+  bypass for the repository admin role. Re-verify after any settings change with
+  `gh api repos/moisesja/dataproofs-dotnet/rules/branches/main --jq '.[] | {type, checks: (.parameters.required_status_checks | length)}'`.
+  An empty array means the gate is gone. A job renamed in `ci.yml` must be renamed in the ruleset too, or
+  every merge stays blocked.
 - ~~Create the `nuget-release` environment with required reviewers (no secret needed).~~ Done
   2026-08-04 — see [Approval gate](#approval-gate). The environment existed from 2026-06-13 but
   carried **no** protection rules until then.
