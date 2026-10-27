@@ -84,11 +84,11 @@ For the overall vision use [`dataproofs-concept.md`](dataproofs-concept.md) as t
 
 # Task Management
 
-1. **Plan First**: Write plan to `tasks/todo{timestamp}.md` with checkable items
+1. **Plan First**: Write plan to `tasks/plan{timestamp}.md` with checkable items. Include the owner's intent and document all decisions made during the session
 2. **Verify Plan**: Check in before starting implementation
 3. **Track Progress**: Mark items complete as you go
 4. **Explain Changes**: High-level summary at each step
-5. **Document Results**: Add a review section to 'tasks/todo{timestamp}.md'
+5. **Document Results**: Add a review section to 'tasks/plan{timestamp}.md'
 6. **Capture Lessons**: Update 'tasks/lessons.md' after corrections
 7. **Update Documents and Examples**: Always keep any relevant documentation and examples current with your code changes
 
