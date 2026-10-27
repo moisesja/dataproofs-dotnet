@@ -179,9 +179,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
        `JwtHandler.Verify` with `IsValid == true`, and the consumer's own read of
        `AdditionalClaims`, `ToJsonString()` or `ToJsonBytes()` then threw.
 
-     Every JSON text the package decodes is now checked once, before it is parsed: the JWS and JWE
-     protected headers, the JWS and JWE JSON serializations, the JWT claims set, the SD-JWT issuer
-     and Key Binding JWTs, and every Disclosure. One reader pass validates the UTF-8 and transcodes
+     Every JSON text the package parses on receipt is now checked before it is parsed: the JWS and
+     JWE protected headers, the JWS and JWE JSON serializations, the JWT claims set, the SD-JWT
+     issuer and Key Binding JWTs, and every Disclosure. For the JSON serializations the check has to
+     precede the parse: `JsonDocument`'s own duplicate-member check transcodes member names and
+     throws the same `InvalidOperationException`. One reader pass validates the UTF-8 and transcodes
      each escaped string and member name. A failure is `MalformedJoseException`
      ("… contains an unpaired UTF-16 surrogate escape."), which the structured-result APIs report
      as `MALFORMED` or `KB_JWT_MALFORMED`. Well-formed escapes, a surrogate *pair* included, read
@@ -193,23 +195,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3. **`JweParser` with `"protected": ""`** threw `ArgumentException` from `Parse`,
      `PeekRecipients` and `ParseAsync`, before any key work. It now fails as
      `MalformedJoseException` ("JWE protected header is empty."), as the JWS parser already did.
+  4. **Two JWE key-agreement escapes**, found by the adversarial review of this fix and also older
+     than this release:
+     - A small-order X25519 `epk`, or ECDH-1PU sender key, gives the all-zero shared secret that
+       RFC 7748 §6.1 says to reject. NetCrypto rejects it with `CryptographicException`, and the key
+       derivation sat outside every catch, so it escaped `Parse`, `ParseAsync`, `ParseCompact` and
+       `ParseCompactAsync`. No key is needed to send one. It is now the uniform decrypt failure
+       (`JoseCryptoException`, "JWE could not be decrypted.", no inner exception), identical whether
+       or not the recipient key is held, so the issue #12 constant-work property is unchanged.
+     - An ECDH-1PU sender key that the caller's resolver returns off-curve or malformed (in
+       DIDComm, from the sender's own DID document) threw `CryptographicException` or
+       `ArgumentException`. It is now `JoseCryptoException` ("ECDH-1PU sender public key for skid
+       '…' is malformed or not on its curve."), as a malformed `epk` already was.
 
   **Accept-set note: this narrowing rejects input the JSON grammar allows.** Unlike the #28
   octets, an unpaired-surrogate escape is valid RFC 8259 grammar; I-JSON forbids it, but neither
   the JSON nor the JOSE RFCs do. Under [`RELEASING.md`](RELEASING.md) that makes it minor
-  material, which 1.4.0 already is. No output this library serializes itself contains one:
+  material, which 1.4.0 already is. No JSON this library serializes itself contains one:
   `JwtHandler.SignAsync`, the headers `JwsBuilder` and `JweBuilder` write, `SdJwtIssuer` and
-  `KeyBindingJwt.IssueAsync` all serialize .NET strings, and System.Text.Json writes a lone
-  surrogate as U+FFFD (a pre-existing substitution this release does not change). The one
-  exception is payload bytes a caller hands to `JwsBuilder` as-is. A JWT built that way with such
-  an escape in an unregistered claim passed 1.3.x `JwtHandler.Verify` and threw when the claim was
-  read; 1.4.0 rejects it with `MALFORMED: JWT claims set contains an unpaired UTF-16 surrogate
-  escape.` `JwsParser` and `VcJose.VerifyCredential` still return payload bytes opaquely, without
-  parsing them.
+  `KeyBindingJwt.IssueAsync` serialize .NET strings and caller-built JSON nodes. System.Text.Json
+  writes a lone surrogate in a .NET string as U+FFFD, a pre-existing substitution this release
+  does not change, and throws on a node parsed from text that carries the escape, so neither
+  reaches the output. The only output of this library that 1.4.0 newly rejects is a JWT whose
+  payload bytes the caller handed to `JwsBuilder` as-is, carrying such an escape in an unregistered
+  claim. It passed 1.3.x `JwtHandler.Verify` and threw when the claim was read; 1.4.0 rejects it
+  with `MALFORMED: JWT claims set contains an unpaired UTF-16 surrogate escape.` Caller bytes that
+  `VcJose.EnvelopeCredentialAsync` and `JweBuilder` carry are unaffected: `VcJose.VerifyCredential`,
+  `JwsParser` and `JweParser` return payloads and plaintexts opaquely, without parsing them.
 
   The regression suite covers each placement above on each entry point named, with four escapes
-  (`\uD800`, `\uDC00`, `\uD800A`, `\uD800\uD800`), 674 cases in all; every negative case fails
-  against the pre-fix code.
+  (`\uD800`, `\uDC00`, `\uD800A`, `\uD800\uD800`), plus the key-agreement cases: 786 cases in
+  all. Every case that feeds one of these inputs fails against the pre-fix code. The ones that
+  pass on both are the over-rejection guards, which prove that well-formed escapes (a surrogate
+  pair included) and this library's own non-BMP output still verify, their controls, and the
+  `null`-root case, which already failed correctly.
 
 ### Known limitations
 
