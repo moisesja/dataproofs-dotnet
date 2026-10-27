@@ -50,7 +50,7 @@ internal static class SdJwtClaims
 
         try
         {
-            return JsonSerializer.Deserialize<Jwk>(jwkNode.ToJsonString(), Json.JoseJson.Default)
+            return JsonSerializer.Deserialize(jwkNode.ToJsonString(), Json.JoseJson.JwkTypeInfo)
                 ?? throw new MalformedJoseException("SD-JWT 'cnf'/'jwk' deserialized to null.");
         }
         catch (JsonException ex)

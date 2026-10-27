@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace DataProofsDotnet.Jose.Encryption;
 
@@ -527,20 +527,29 @@ public static class JweBuilder
 
     private static string RenderJwe(string protectedB64u, IReadOnlyList<RecipientWrap> wraps, byte[] iv, byte[] ciphertext, byte[] tag)
     {
-        var recipientArr = wraps.Select(w => new
+        // Member order and escaping are those of the anonymous-type rendering this replaced (the
+        // System.Text.Json source generator cannot describe anonymous types, issue #27): default
+        // JsonSerializerOptions, hence the HTML-safe default encoder for the unprotected kid — unlike
+        // the JWS renderers, which use JoseJson.Default's relaxed encoder. Preserved so emitted bytes
+        // do not change; pinned by JweRenderingTests.
+        var recipients = new JsonArray();
+        foreach (var w in wraps)
         {
-            header = new { kid = w.Kid },
-            encrypted_key = Base64Url.Encode(w.EncryptedKey),
-        }).ToArray();
+            recipients.Add((JsonNode)new JsonObject
+            {
+                ["header"] = new JsonObject { ["kid"] = w.Kid },
+                ["encrypted_key"] = Base64Url.Encode(w.EncryptedKey),
+            });
+        }
 
-        return JsonSerializer.Serialize(new
+        return new JsonObject
         {
-            @protected = protectedB64u,
-            recipients = recipientArr,
-            iv = Base64Url.Encode(iv),
-            ciphertext = Base64Url.Encode(ciphertext),
-            tag = Base64Url.Encode(tag),
-        });
+            ["protected"] = protectedB64u,
+            ["recipients"] = recipients,
+            ["iv"] = Base64Url.Encode(iv),
+            ["ciphertext"] = Base64Url.Encode(ciphertext),
+            ["tag"] = Base64Url.Encode(tag),
+        }.ToJsonString();
     }
 
     private static void EnsureRecipientsShareCurve(IReadOnlyList<Jwk> recipients, out string curve)

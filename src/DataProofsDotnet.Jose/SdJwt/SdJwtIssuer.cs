@@ -135,7 +135,8 @@ public static class SdJwtIssuer
                             var disclosure = Disclosure.ForArrayElement(salt, array[i]);
                             disclosures.Add(disclosure);
                             var digest = disclosure.ComputeDigest(options.HashAlgorithm);
-                            newArray.Add(new JsonObject { ["..."] = digest });
+                            // The explicit JsonNode cast selects the non-generic Add: JsonArray.Add<T> is reflection-based.
+                            newArray.Add((JsonNode)new JsonObject { ["..."] = digest });
                         }
                         else
                         {
@@ -159,7 +160,7 @@ public static class SdJwtIssuer
             sdDigests.Sort(StringComparer.Ordinal);
             var sd = new JsonArray();
             foreach (var d in sdDigests)
-                sd.Add(d);
+                sd.Add((JsonNode)d);
             obj["_sd"] = sd;
         }
 

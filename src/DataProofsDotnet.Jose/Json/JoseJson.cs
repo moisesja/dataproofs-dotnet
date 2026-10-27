@@ -1,19 +1,35 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.Unicode;
+using DataProofsDotnet.Jose.Encryption;
+using DataProofsDotnet.Jose.Signing;
 
 namespace DataProofsDotnet.Jose.Json;
 
 /// <summary>
 /// Shared <see cref="JsonSerializerOptions"/> for JOSE model serialization. Ported from
 /// didcomm-dotnet <c>DidComm.Json.DidCommJson</c> (PRD §1.4 item 2), minus the
-/// DIDComm-specific epoch-seconds converter.
+/// DIDComm-specific epoch-seconds converter. Metadata is source-generated
+/// (<see cref="JoseJsonContext"/>, issue #27); serializer calls use the typed accessors below.
 /// </summary>
 internal static class JoseJson
 {
     /// <summary>Default options for serializing/deserializing JOSE DTOs (headers, JWKs).</summary>
     public static readonly JsonSerializerOptions Default = CreateDefault();
+
+    /// <summary>Metadata for <see cref="JwsProtectedHeader"/>, bound to <see cref="Default"/>.</summary>
+    public static readonly JsonTypeInfo<JwsProtectedHeader> JwsHeaderTypeInfo = TypeInfo<JwsProtectedHeader>();
+
+    /// <summary>Metadata for <see cref="JweProtectedHeader"/>, bound to <see cref="Default"/>.</summary>
+    public static readonly JsonTypeInfo<JweProtectedHeader> JweHeaderTypeInfo = TypeInfo<JweProtectedHeader>();
+
+    /// <summary>Metadata for <see cref="Jwk"/>, bound to <see cref="Default"/>.</summary>
+    public static readonly JsonTypeInfo<Jwk> JwkTypeInfo = TypeInfo<Jwk>();
+
+    /// <summary>Metadata for <see cref="string"/>, bound to <see cref="Default"/>.</summary>
+    public static readonly JsonTypeInfo<string> StringTypeInfo = TypeInfo<string>();
 
     /// <summary>
     /// Parse options that reject duplicate member names, for the raw <see cref="JsonDocument"/> /
@@ -57,9 +73,13 @@ internal static class JoseJson
             throw new MalformedJoseException($"{what} is not valid UTF-8.");
     }
 
+    // GetTypeInfo(Type) is AOT-safe: it resolves through Default's resolver, the source-generated
+    // context, and returns metadata bound to Default's wire settings.
+    private static JsonTypeInfo<T> TypeInfo<T>() => (JsonTypeInfo<T>)Default.GetTypeInfo(typeof(T));
+
     private static JsonSerializerOptions CreateDefault()
     {
-        return new JsonSerializerOptions
+        var options = new JsonSerializerOptions
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             WriteIndented = false,
@@ -73,6 +93,12 @@ internal static class JoseJson
             // + JavaScript-safe escape. The JOSE spec vectors carry the literal form; the
             // deterministic-JSON bytes feeding the JWS signing input / JWE AAD must match.
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            // Source-generated metadata only: these options serialize this package's own DTOs and
+            // nothing else, so there is no reflection fallback to keep (unlike the public
+            // DataProofsJsonOptions.Default).
+            TypeInfoResolver = JoseJsonContext.Default,
         };
+        options.MakeReadOnly();
+        return options;
     }
 }

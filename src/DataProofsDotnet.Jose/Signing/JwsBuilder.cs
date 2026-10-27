@@ -210,7 +210,7 @@ public static class JwsBuilder
             var element = new JsonObject { ["protected"] = entry.ProtectedB64u };
             AddUnprotectedHeader(element, entry);
             element["signature"] = Base64Url.Encode(entry.Signature);
-            entries.Add(element);
+            entries.Add((JsonNode)element);
         }
 
         var json = new JsonObject();
