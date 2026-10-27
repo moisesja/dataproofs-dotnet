@@ -127,11 +127,12 @@ internal sealed class JwsProtectedHeader
         }
         catch (InvalidOperationException ex)
         {
-            // Defence in depth. JsonElement reports some faults as InvalidOperationException rather
-            // than JsonException — a member accessor on a non-object root, a string that cannot be
-            // transcoded. The explicit root-kind check and the UTF-8 check above should make this
-            // unreachable; keep the documented contract if a future accessor proves otherwise, so a
-            // caller's catch (MalformedJoseException) is never bypassed (issues #15, #28).
+            // Load-bearing. JsonElement reports some faults as InvalidOperationException rather than
+            // JsonException. The root-kind and UTF-8 checks above remove two causes, but not a member
+            // name written as a JSON escape for an unpaired surrogate ("\uD800"): it is valid UTF-8
+            // and parses, and TryGetProperty / EnumerateObject throw when they transcode it to compare
+            // names. This catch keeps that on the documented contract, so a caller's
+            // catch (MalformedJoseException) is never bypassed (issues #15, #28).
             throw new MalformedJoseException("JWS protected header is malformed.", ex);
         }
     }

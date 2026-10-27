@@ -96,10 +96,12 @@ public sealed class Disclosure
             throw new MalformedJoseException("SD-JWT Disclosure is not valid base64url.", ex);
         }
 
-        // RFC 9901 §4.2.1: a Disclosure is the base64url encoding of UTF-8 JSON. JsonNode.Parse does
-        // not check encoding; a claim name that cannot be transcoded throws a raw
+        // RFC 9901 §4.2.1 / §4.2.2: a Disclosure is the base64url encoding of UTF-8 JSON. JsonNode.Parse
+        // does not check encoding; a claim name that cannot be transcoded throws a raw
         // InvalidOperationException from GetValue<string>() below — before any signature check and
-        // outside the MalformedJoseException contract SdJwtVerifier relies on (issue #28).
+        // outside the MalformedJoseException contract SdJwtVerifier relies on (issue #28). This
+        // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") is
+        // valid UTF-8 and still reaches that transcode (a known 1.4.0 limitation; see the CHANGELOG).
         Json.JoseJson.RequireUtf8(bytes, "SD-JWT Disclosure");
 
         JsonNode? node;

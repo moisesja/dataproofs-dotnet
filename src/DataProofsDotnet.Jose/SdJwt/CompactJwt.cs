@@ -160,7 +160,9 @@ internal sealed class CompactJwt
         // JsonNode.Parse is lazy and does not check encoding; a member name that cannot be
         // transcoded throws a raw InvalidOperationException at first access — here, reading 'alg'
         // — which is before signature verification and outside the MalformedJoseException contract
-        // SdJwtVerifier and KeyBindingJwt rely on (issue #28).
+        // SdJwtVerifier and KeyBindingJwt rely on (issue #28). This removes the invalid-octet cause
+        // only: a JSON escape for an unpaired surrogate ("\uD800") is valid UTF-8 and still reaches
+        // that lazy transcode (a known 1.4.0 limitation; see the CHANGELOG).
         JoseJson.RequireUtf8(bytes, $"Compact JWT {what}");
 
         JsonNode? node;
