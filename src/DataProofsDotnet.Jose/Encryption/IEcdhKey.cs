@@ -39,5 +39,16 @@ public interface IEcdhKey
     /// <c>epk</c>/sender public key.</param>
     /// <param name="ct">A token to cancel the (possibly I/O-bound) derivation.</param>
     /// <returns>The raw shared secret <c>Z</c>.</returns>
+    /// <exception cref="System.Security.Cryptography.CryptographicException">
+    /// When the agreement fails — for example, <paramref name="peerPublicKey"/> is not a valid point,
+    /// or is a small-order X25519 point that yields the all-zero shared secret. <see cref="JweParser"/>
+    /// reports a <see cref="System.Security.Cryptography.CryptographicException"/> or
+    /// <see cref="ArgumentException"/> from this method as its uniform decrypt failure, exactly as it
+    /// does for the decoy key it substitutes when no held key matches (issue #12). Any other exception
+    /// propagates unchanged — <see cref="OperationCanceledException"/> must — so an implementation that
+    /// wraps a keystore or KMS should translate its own key-agreement errors to
+    /// <see cref="System.Security.Cryptography.CryptographicException"/>: a different type would let a
+    /// sender tell a held key from the decoy.
+    /// </exception>
     ValueTask<byte[]> DeriveAsync(ReadOnlyMemory<byte> peerPublicKey, CancellationToken ct = default);
 }

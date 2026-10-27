@@ -317,7 +317,8 @@ public static class JweParser
     /// <summary>
     /// The single, recipient-agnostic message every post-selection decrypt failure throws (issue
     /// #12, "uniform failure"). A key-agreement failure (a low-order X25519 <c>epk</c> or sender key,
-    /// which yields the all-zero shared secret RFC 7748 §6.1 says to reject — issue #30), a key-unwrap
+    /// whose all-zero shared secret RFC 7748 §6.1 lets a party reject and NetCrypto does — issue #30),
+    /// a key-unwrap
     /// failure (wrong/decoy key), an AEAD-integrity failure (held key, tampered content), and a
     /// malformed <c>iv</c>/<c>tag</c>/<c>encrypted_key</c> length must be indistinguishable — same type (<see cref="JoseCryptoException"/>), same message, no
     /// recipient kid, no inner cause — or the exception itself re-leaks recipient-key possession that
@@ -352,12 +353,13 @@ public static class JweParser
                 var ephemeralPubBytes = ExtractEphemeralPublicKey(RequireEpk(header), recipientJwk);
                 var apvBytes = string.IsNullOrEmpty(header.Apv) ? [] : DecodeB64u(header.Apv, "apv");
                 var apuBytes = string.IsNullOrEmpty(header.Apu) ? [] : DecodeB64u(header.Apu, "apu");
+                var keyType = AgreementKeyType(recipientJwk);
                 var recipientPrivBytes = DecodePrivateKey(recipientJwk);
                 try
                 {
                     kek = EcdhEsKdf.DeriveKeyForReceiver(
                         cryptoProvider.UnderlyingProvider,
-                        KeyTypeMapper.FromCurveForKeyAgreement(recipientJwk.Crv!),
+                        keyType,
                         recipientPrivBytes,
                         ephemeralPubBytes,
                         Encoding.ASCII.GetBytes(header.Alg),
@@ -381,12 +383,13 @@ public static class JweParser
                 senderKid = skid;
                 var ephemeralPubBytes = ExtractEphemeralPublicKey(RequireEpk(header), recipientJwk);
                 var apvBytes = string.IsNullOrEmpty(header.Apv) ? [] : DecodeB64u(header.Apv, "apv");
+                var keyType = AgreementKeyType(recipientJwk);
                 var recipientPrivBytes = DecodePrivateKey(recipientJwk);
                 try
                 {
                     kek = Ecdh1PuKdf.DeriveKeyForReceiver(
                         cryptoProvider.UnderlyingProvider,
-                        KeyTypeMapper.FromCurveForKeyAgreement(recipientJwk.Crv!),
+                        keyType,
                         recipientPrivBytes,
                         ephemeralPubBytes,
                         senderPubBytes,
@@ -604,6 +607,25 @@ public static class JweParser
         finally
         {
             CryptographicOperations.ZeroMemory(cek);
+        }
+    }
+
+    /// <summary>
+    /// The key type for the recipient key's agreement curve. Only <see cref="ParseCompact"/> can reach
+    /// an unsupported one — a caller-supplied key on a signing-only curve (Ed25519, secp256k1) with an
+    /// <c>epk</c> on the same curve; <see cref="Parse"/> substitutes a decoy for such a key — so it is
+    /// reported as the documented <see cref="JoseCryptoException"/>, not the mapper's
+    /// <see cref="NotSupportedException"/> (issue #30).
+    /// </summary>
+    private static NetCrypto.KeyType AgreementKeyType(Jwk recipientJwk)
+    {
+        try
+        {
+            return KeyTypeMapper.FromCurveForKeyAgreement(recipientJwk.Crv!);
+        }
+        catch (NotSupportedException)
+        {
+            throw new JoseCryptoException($"Recipient key curve '{recipientJwk.Crv}' is not supported for key agreement.");
         }
     }
 

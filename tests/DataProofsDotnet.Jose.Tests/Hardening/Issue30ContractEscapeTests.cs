@@ -1085,8 +1085,8 @@ public sealed class Issue30ContractEscapeTests
 
     // ── 11. JWE key agreement with a low-order X25519 key (found by this fix's adversarial review) ──
     //
-    // A small-order X25519 point gives the all-zero shared secret, which RFC 7748 §6.1 says to reject;
-    // NetCrypto does, with CryptographicException, and the KDF call sat outside every catch, so it
+    // A small-order X25519 point gives the all-zero shared secret, which RFC 7748 §6.1 lets a party
+    // reject; NetCrypto does, with CryptographicException, and the KDF call sat outside every catch, so it
     // escaped JweParser's documented contract. No key is needed to send one. It is now the uniform
     // decrypt failure: same type, same message, no inner cause, held key or decoy (issue #12).
 
@@ -1157,6 +1157,27 @@ public sealed class Issue30ContractEscapeTests
 
         (await act.Should().ThrowExactlyAsync<JoseCryptoException>().WithMessage("JWE could not be decrypted."))
             .Which.InnerException.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(KeyType.Ed25519)]
+    [InlineData(KeyType.Secp256k1)]
+    public void Jwe_CompactWithCallerKeyOnSigningOnlyCurve_IsJoseCryptoException(KeyType keyType)
+    {
+        // Found by the second review pass. ParseCompact uses the caller's key as given (Parse would
+        // substitute a decoy), so a signing key passed by mistake, met by an epk on the same curve —
+        // the sender's choice — reached the key-agreement mapper and threw NotSupportedException.
+        var key = TestKeyMaterial.Generate(keyType, "signing-key");
+        var header = Obj(
+            M("alg", S(JoseAlgorithms.EcdhEsA256Kw)),
+            M("enc", S(JoseAlgorithms.A256Gcm)),
+            M("epk", JsonSerializer.Serialize(key.PublicJwk, Json.JoseJson.JwkTypeInfo)));
+        var compact = CompactJwe(BaseJwe.Value with { Protected = B64(header) });
+
+        var act = () => JweParser.ParseCompact(compact, key.PrivateJwk, senderKeys: null, Jose);
+
+        act.Should().ThrowExactly<JoseCryptoException>()
+            .WithMessage($"Recipient key curve '{key.PrivateJwk.Crv}' is not supported for key agreement.");
     }
 
     // ── 12. ECDH-1PU with a malformed sender key (found by this fix's adversarial review) ──────
