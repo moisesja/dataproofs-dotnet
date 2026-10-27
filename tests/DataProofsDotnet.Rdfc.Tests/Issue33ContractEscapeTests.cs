@@ -1,3 +1,4 @@
+using System.Formats.Cbor;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet;
@@ -150,10 +151,122 @@ public sealed class Issue33Bbs2023Tests
         var proof = await _suite.CreateBaseProofAsync(Parse(respelled), BaseOptions(), Key().Sk, Key().HmacKey, Mandatory());
         proof.ProofValue.Should().StartWith("u2V0C");
 
+        // Skolemization re-parses the document's raw text strictly, so before the check handed
+        // back a strict copy these threw a raw JsonReaderException (PR #35 review).
+        var commented = await _suite.CreateBaseProofAsync(ParseLenient("{/* c */" + Wind[1..]), BaseOptions(), Key().Sk, Key().HmacKey, Mandatory());
+        var trailingComma = await _suite.CreateBaseProofAsync(ParseLenient(Wind[..^1] + ",}"), BaseOptions(), Key().Sk, Key().HmacKey, Mandatory());
+        commented.ProofValue.Should().Be(proof.ProofValue);
+        trailingComma.ProofValue.Should().Be(proof.ProofValue);
+
         var secured = await SecuredBaseAsync();
         _suite.DeriveProof(Parse(EscapeNonAscii(Splice(secured, "/", "\\/"))), Selective, Header).ValueKind.Should().Be(JsonValueKind.Object);
         _suite.DeriveProof(ParseLenient("{/* c */" + secured[1..^1] + ",}"), Selective, Header).ValueKind.Should().Be(JsonValueKind.Object);
     }
+
+    public static TheoryData<string, string> HostileBaseProofCases() => new()
+    {
+        // A modelled member of the wrong JSON kind.
+        { "type of the wrong kind", "The base proof could not be parsed." },
+        { "previousProof of the wrong kind", "The base proof could not be parsed." },
+        // proofValue framing and sizes, read by the CBOR parser.
+        { "CBOR map instead of array", "The base proofValue is not a valid bbs-2023 base proof." },
+        { "empty public key", "The base proofValue is not a valid bbs-2023 base proof." },
+        { "short signature", "The base proofValue is not a valid bbs-2023 base proof." },
+        // A well-formed proofValue whose signature does not match its messages.
+        { "tampered signature", "The base proof's BBS signature could not be used to derive a proof." },
+        // A mandatory pointer from the issuer's document that is not an RFC 6901 pointer.
+        { "invalid mandatory pointer", "The base proof carries an invalid mandatory pointer." },
+    };
+
+    [BbsTheory]
+    [MemberData(nameof(HostileBaseProofCases))]
+    public async Task DeriveProof_HostileBaseProof_ThrowsProofGenerationException(string kind, string message)
+    {
+        // The holder's boundary: every fault in the issuer's base proof surfaces as the documented
+        // exception, never as a raw JsonException, InvalidOperationException, ArgumentException or
+        // CryptographicException (PR #35 review).
+        var secured = await SecuredBaseAsync();
+        var proofValue = JsonDocument.Parse(secured).RootElement.GetProperty("proof").GetProperty("proofValue").GetString()!;
+        var hostile = kind switch
+        {
+            "type of the wrong kind" => Splice(secured, "\"type\":\"DataIntegrityProof\"", "\"type\":1"),
+            "previousProof of the wrong kind" => InProof(secured, "\"previousProof\":{}"),
+            "CBOR map instead of array" => Splice(secured, proofValue, BaseProofValue(writer => { writer.WriteStartMap(0); writer.WriteEndMap(); })),
+            "empty public key" => Splice(secured, proofValue, Reencode(proofValue, publicKey: [])),
+            "short signature" => Splice(secured, proofValue, Reencode(proofValue, signature: s => s[..10])),
+            "tampered signature" => Splice(secured, proofValue, Reencode(proofValue, signature: s => { var t = (byte[])s.Clone(); t[5] ^= 1; return t; })),
+            "invalid mandatory pointer" => Splice(secured, proofValue, Reencode(proofValue, mandatoryPointers: ["abc"])),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+
+        AssertDeriveFails(Parse(hostile), message);
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_InvalidSelectivePointer_ThrowsProofGenerationException()
+        => AssertDeriveFails(Parse(await SecuredBaseAsync()), ["abc"], "A selective pointer is invalid.");
+
+    [BbsFact]
+    public async Task DeriveProof_ReencodedBaseProof_IsByteIdentical()
+    {
+        // Control: re-encoding with no change reproduces the issuer's proofValue exactly, so each
+        // negative case above differs from a derivable base proof only in its one change.
+        var secured = await SecuredBaseAsync();
+        var proofValue = JsonDocument.Parse(secured).RootElement.GetProperty("proof").GetProperty("proofValue").GetString()!;
+
+        Reencode(proofValue).Should().Be(proofValue);
+        _suite.DeriveProof(Parse(secured), Selective, Header).ValueKind.Should().Be(JsonValueKind.Object);
+    }
+
+    // The bbs-2023 base proof header (multibase 'u', then 0xd9 0x5d 0x02) and its five CBOR
+    // components: signature, header, public key, HMAC key, mandatory pointers.
+    private static readonly byte[] BaseProofHeader = [0xd9, 0x5d, 0x02];
+
+    private static string BaseProofValue(Action<CborWriter> write)
+    {
+        var writer = new CborWriter();
+        write(writer);
+        return "u" + Base64Url([.. BaseProofHeader, .. writer.Encode()]);
+    }
+
+    private static string Reencode(
+        string proofValue, Func<byte[], byte[]>? signature = null, byte[]? publicKey = null, string[]? mandatoryPointers = null)
+    {
+        var padded = proofValue[1..].Replace('-', '+').Replace('_', '/');
+        var bytes = Convert.FromBase64String(padded + new string('=', (4 - (padded.Length % 4)) % 4));
+        var reader = new CborReader(bytes.AsMemory(BaseProofHeader.Length));
+        reader.ReadStartArray();
+        var bbsSignature = reader.ReadByteString();
+        var bbsHeader = reader.ReadByteString();
+        var bbsPublicKey = reader.ReadByteString();
+        var hmacKey = reader.ReadByteString();
+        var pointers = new List<string>();
+        reader.ReadStartArray();
+        while (reader.PeekState() != CborReaderState.EndArray)
+        {
+            pointers.Add(reader.ReadTextString());
+        }
+
+        return BaseProofValue(writer =>
+        {
+            writer.WriteStartArray(5);
+            writer.WriteByteString(signature is null ? bbsSignature : signature(bbsSignature));
+            writer.WriteByteString(bbsHeader);
+            writer.WriteByteString(publicKey ?? bbsPublicKey);
+            writer.WriteByteString(hmacKey);
+            var written = mandatoryPointers ?? [.. pointers];
+            writer.WriteStartArray(written.Length);
+            foreach (var pointer in written)
+            {
+                writer.WriteTextString(pointer);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndArray();
+        });
+    }
+
+    private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static readonly string[] Selective = ["/credentialSubject/sails/1"];
 
@@ -215,7 +328,9 @@ public sealed class Issue33Bbs2023Tests
             .Should().ThrowExactlyAsync<ProofGenerationException>().WithMessage(message);
     }
 
-    private void AssertDeriveFails(JsonElement document, string message)
-        => FluentActions.Invoking(() => _suite.DeriveProof(document, Selective, Header))
+    private void AssertDeriveFails(JsonElement document, string message) => AssertDeriveFails(document, Selective, message);
+
+    private void AssertDeriveFails(JsonElement document, IReadOnlyList<string> selective, string message)
+        => FluentActions.Invoking(() => _suite.DeriveProof(document, selective, Header))
             .Should().ThrowExactly<ProofGenerationException>().WithMessage(message);
 }

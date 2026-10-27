@@ -148,6 +148,16 @@ public abstract class Issue33SuiteCreateTestsBase
     // ------------------------------------------- over-rejection guards: these must still work
 
     [Fact]
+    public async Task CreateProof_ConfigurationExtensionOf63Levels_StillSigns()
+    {
+        // The last depth every create path accepts: 63 levels in the configuration, which the
+        // legacy JCS variant nests one level deeper, to 64, under the document's proof member.
+        var options = WithExtension("x", HostileJson.Parse(HostileJson.Nest(62)));
+
+        (await Suite.CreateProofAsync(HostileJson.Parse(HostileJson.BaseDocument), options, Signer)).ProofValue.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
     public async Task CreateProof_EscapedSpellingsCommentsAndDepth64_StillSign()
     {
         var pair = HostileJson.Esc(0xD83D) + HostileJson.Esc(0xDE00);

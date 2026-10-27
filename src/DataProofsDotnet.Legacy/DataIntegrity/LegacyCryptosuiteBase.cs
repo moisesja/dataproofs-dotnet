@@ -120,7 +120,7 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
 
         // Before the proof-member and @context lookups and the JCS re-nesting below, which read
         // member names and materialize the document (issue #33).
-        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+        unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
         if (!IsSupportedKeyType(signer.KeyType))
         {

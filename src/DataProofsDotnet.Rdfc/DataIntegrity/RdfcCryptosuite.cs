@@ -73,7 +73,7 @@ internal abstract class RdfcCryptosuite : ICryptosuite
 
         // Before the @context lookup below, which compares member names; the JSON-LD processor
         // would otherwise resolve duplicates and invalid text silently (issue #33).
-        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+        unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
         if (!IsSupportedKeyType(signer.KeyType))
         {

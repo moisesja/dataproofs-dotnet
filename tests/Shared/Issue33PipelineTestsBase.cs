@@ -281,7 +281,8 @@ public abstract class Issue33PipelineTestsBase
     [Fact]
     public async Task SameNameInSiblingObjects_StillSignsAndVerifies()
     {
-        var document = HostileJson.LastMember(HostileJson.BaseDocument, "\"x\":{\"a\":1},\"y\":{\"a\":2},\"z\":[{\"a\":3},{\"a\":4}]");
+        // Names that differ only in case are distinct names.
+        var document = HostileJson.LastMember(HostileJson.BaseDocument, "\"x\":{\"a\":1},\"y\":{\"a\":2},\"z\":[{\"a\":3},{\"a\":4}],\"w\":{\"id\":1,\"ID\":2}");
 
         var secured = await Pipeline.AddProofAsync(HostileJson.Parse(document), Options(), Signer);
 
@@ -297,6 +298,73 @@ public abstract class Issue33PipelineTestsBase
         var secured = await Pipeline.AddProofAsync(HostileJson.Parse(HostileJson.BaseDocument), options, Signer);
 
         Pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CommentsInsideProofs_StillSignAndVerify()
+    {
+        // A comment inside an existing proof, and inside the proof a chain references: steps that
+        // embed those proofs re-parse their raw text, so the pipeline carries on with a strict copy.
+        var withExisting = HostileJson.ParseLenient(HostileJson.Splice(Fixtures.Single, "\"proofValue\"", "/* c */\"proofValue\""));
+        var chain = HostileJson.ParseLenient(HostileJson.Splice(Fixtures.Chain, "\"id\":\"urn:p1\"", "\"id\":\"urn:p1\" /* c */"));
+
+        var proofSet = await Pipeline.AddProofAsync(withExisting, Options(), Signer);
+
+        Pipeline.Verify(proofSet, PublicKey).Verified.Should().BeTrue();
+        Pipeline.Verify(chain, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AddProof_OptionsAtTheDepthTheyWillOccupy_StillSignAndVerify()
+    {
+        // The proof sits one level below the document root: options of depth 63 fit.
+        var options = Options() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["x"] = HostileJson.Parse(HostileJson.Nest(62)) } };
+
+        var secured = await Pipeline.AddProofAsync(HostileJson.Parse(HostileJson.BaseDocument), options, Signer);
+
+        Pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue();
+
+        // Added to a document that already carries a proof, it becomes an array element, two levels down.
+        var deeper = Options() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["x"] = HostileJson.Parse(HostileJson.Nest(61)) } };
+        var proofSet = await Pipeline.AddProofAsync(HostileJson.Parse(Fixtures.Single), deeper, Signer);
+        Pipeline.Verify(proofSet, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false, 62, 63)]
+    [InlineData(true, 61, 62)]
+    public async Task AddProof_OptionsTooDeepForTheSecuredDocument_ThrowBeforeSigning(bool existingProof, int lastAcceptedNest, int budget)
+    {
+        // Rejected before the suite is called, so no signature is spent on a document that could
+        // not be written out (PR #35 review). Nest(n) under a member of the proof object is n + 1 deep.
+        var signer = new CountingSigner(Signer);
+        var options = Options() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["x"] = HostileJson.Parse(HostileJson.Nest(lastAcceptedNest + 1)) } };
+        var document = HostileJson.Parse(existingProof ? Fixtures.Single : HostileJson.BaseDocument);
+
+        await FluentActions.Invoking(() => Pipeline.AddProofAsync(document, options, signer))
+            .Should().ThrowExactlyAsync<ProofGenerationException>()
+            .WithMessage($"The proof options object nests deeper than {budget} levels.");
+        signer.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public void Verify_ProofReEmbeddedPast64Levels_IsAPerProofTransformationError()
+    {
+        // Defence in depth on the verify side: a proof whose previousProof names itself is
+        // re-embedded as an array element, one level deeper than it sits in the document. At the
+        // depth limit that cannot be written, and the proof fails as a result with a fixed message.
+        var proof = "{\"id\":\"urn:self\",\"type\":\"DataIntegrityProof\",\"cryptosuite\":\"" + Cryptosuite
+            + "\",\"verificationMethod\":\"did:example:alice#key-1\",\"proofPurpose\":\"assertionMethod\",\"previousProof\":\"urn:self\",\"proofValue\":\"z1\",\"d\":"
+            + HostileJson.Nest(62) + "}";
+        var document = HostileJson.LastMember(HostileJson.BaseDocument, "\"proof\":" + proof);
+
+        var result = Pipeline.Verify(HostileJson.Parse(document), PublicKey);
+
+        result.Verified.Should().BeFalse();
+        result.Problems.Should().BeEmpty("the document itself passes the check");
+        var problem = result.ProofResults.Should().ContainSingle().Subject.Problems.Should().ContainSingle().Subject;
+        problem.Code.Should().Be(ProofProblemCodes.ProofTransformationError);
+        problem.Message.Should().Be("The secured document could not be transformed for verification.");
     }
 
     [Fact]
@@ -467,6 +535,23 @@ public abstract class Issue33PipelineTestsBase
     }
 
     private sealed record Signed(string Single, string WithId, string Chain, string Proof);
+
+    private sealed class CountingSigner(ISigner inner) : ISigner
+    {
+        public int Calls { get; private set; }
+
+        public KeyType KeyType => inner.KeyType;
+
+        public ReadOnlyMemory<byte> PublicKey => inner.PublicKey;
+
+        public string MultibasePublicKey => inner.MultibasePublicKey;
+
+        public Task<byte[]> SignAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return inner.SignAsync(data, cancellationToken);
+        }
+    }
 
     private sealed class CountingResolver : IVerificationMethodResolver
     {

@@ -71,6 +71,9 @@ internal static class HostileJson
     public static string Nest(int levels)
         => string.Concat(Enumerable.Repeat("{\"a\":", levels)) + "1" + new string('}', levels);
 
+    /// <summary><paramref name="levels"/> nested arrays, <c>[[…0…]]</c>: the depth limit trips on a start token, not a member name.</summary>
+    public static string NestArrays(int levels) => new string('[', levels) + "0" + new string(']', levels);
+
     public static string FirstMember(string objectJson, string member)
     {
         Require(objectJson.StartsWith('{'), "an object");

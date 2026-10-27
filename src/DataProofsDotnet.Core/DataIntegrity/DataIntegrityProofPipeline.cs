@@ -100,9 +100,14 @@ public sealed class DataIntegrityProofPipeline
         }
 
         // Every step below, and the suite, reads member names and strings: reject what they
-        // cannot read before the first one does (issue #33).
-        JsonInputCheck.RequireValid(document, "The document to secure");
-        _ = JsonInputCheck.SerializeChecked(proofOptions, DataProofsJsonOptions.ProofTypeInfo, "The proof options object");
+        // cannot read before the first one does, and carry on with strict JSON (issue #33).
+        document = JsonInputCheck.RequireValid(document, "The document to secure");
+
+        // The options end up inside the secured document: one level below its root, or two once
+        // the proof member is an array. Check them against that depth now, before signing, rather
+        // than discover after the signature that the result cannot be written (PR #35 review).
+        var optionsDepth = JsonInputCheck.MaxDepth - (document.TryGetProperty(ProofMemberName, out _) ? 2 : 1);
+        _ = JsonInputCheck.SerializeChecked(proofOptions, DataProofsJsonOptions.ProofTypeInfo, "The proof options object", optionsDepth);
 
         JsonElement signingElement;
         try
@@ -294,7 +299,7 @@ public sealed class DataIntegrityProofPipeline
         // FR-3: a document whose member names or strings cannot be read, or whose members repeat,
         // fails here as a result — before any proof is parsed or any resolver is called — rather
         // than throwing from whichever later step reads it first (issue #33).
-        if (JsonInputCheck.FindProblem(securedDocument) is { } problem)
+        if (!JsonInputCheck.TryAccept(securedDocument, out securedDocument, out var problem))
         {
             return DocumentFailure(ProofProblemCodes.ProofTransformationError, $"The secured document {problem}.");
         }
@@ -463,7 +468,7 @@ public sealed class DataIntegrityProofPipeline
             }
             catch (Exception ex) when (IsTransformationFault(ex))
             {
-                return TransformationFailure(ex, proof);
+                return TransformationFailure(proof);
             }
         }
 
@@ -492,7 +497,7 @@ public sealed class DataIntegrityProofPipeline
         }
         catch (Exception ex) when (IsTransformationFault(ex))
         {
-            return TransformationFailure(ex, proof);
+            return TransformationFailure(proof);
         }
     }
 
@@ -505,10 +510,12 @@ public sealed class DataIntegrityProofPipeline
     private static bool IsTransformationFault(Exception ex)
         => ex is JsonException or ArgumentException or InvalidOperationException;
 
-    private static ProofVerificationResult TransformationFailure(Exception ex, DataIntegrityProof proof)
+    // A fixed message, like every other problem here: the exception's own message carries parser
+    // positions and characters of the document (FR-23).
+    private static ProofVerificationResult TransformationFailure(DataIntegrityProof proof)
         => ProofVerificationResult.Failure(
             ProofProblemCodes.ProofTransformationError,
-            $"The secured document could not be transformed for verification: {ex.Message}", proof);
+            "The secured document could not be transformed for verification.", proof);
 
     private static List<JsonElement> ReadExistingProofs(JsonElement document)
     {

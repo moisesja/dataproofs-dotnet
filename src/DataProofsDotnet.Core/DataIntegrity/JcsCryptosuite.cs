@@ -62,7 +62,7 @@ internal abstract class JcsCryptosuite : ICryptosuite
         }
 
         // Before the @context lookup below, which compares member names (issue #33).
-        JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+        unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
         if (!IsSupportedKeyType(signer.KeyType))
         {

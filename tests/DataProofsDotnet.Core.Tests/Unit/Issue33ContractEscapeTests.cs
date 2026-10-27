@@ -67,6 +67,12 @@ public sealed class Issue33ContractEscapeTests
         { "duplicate in an array root", "[{\"a\":1},{\"b\":1,\"b\":2}]", Duplicate },
         { "65 levels", Nest(65), TooDeep },
         { "64 levels", Nest(64), null },
+        { "65 nested arrays", NestArrays(65), TooDeep },
+        { "64 nested arrays", NestArrays(64), null },
+        { "an object holding 64 nested arrays", "{\"a\":" + NestArrays(64) + "}", TooDeep },
+        { "names differing only in case", "{\"id\":1,\"ID\":2,\"Id\":3}", null },
+        { "the same name in many sibling objects", "[" + string.Join(",", Enumerable.Repeat("{\"a\":1,\"b\":2}", 40)) + "]", null },
+        { "a duplicate after a wide sibling", "[{" + string.Join(",", Enumerable.Range(0, 40).Select(i => "\"k" + i + "\":1")) + "},{\"a\":1,\"a\":2}]", Duplicate },
         { "same name in sibling objects", "{\"x\":{\"a\":1},\"y\":{\"a\":2},\"a\":3}", null },
         { "surrogate-pair escape", "{\"" + Esc(0xD83D) + Esc(0xDE00) + "\":\"" + Esc(0xD83D) + Esc(0xDE00) + "\"}", null },
         { "BMP escape", "{\"" + Esc(0xE9) + "\":\"" + Esc(0xE9) + "\"}", null },
@@ -94,6 +100,103 @@ public sealed class Issue33ContractEscapeTests
     [Fact]
     public void FindProblem_CommentsAndTrailingCommas_AreSkipped()
         => JsonInputCheck.FindProblem(ParseLenient("{/* c */\"a\":[1,2,], // x\n\"b\":{\"c\":1,},}")).Should().BeNull();
+
+    [Fact]
+    public void FindProblem_DepthBudget_IsReportedAgainstTheBudget()
+    {
+        JsonInputCheck.FindProblem(Parse(Nest(62)), 62).Should().BeNull();
+        JsonInputCheck.FindProblem(Parse(Nest(63)), 62).Should().Be("nests deeper than 62 levels");
+        JsonInputCheck.FindProblem(Parse(NestArrays(63)), 62).Should().Be("nests deeper than 62 levels");
+    }
+
+    [Fact]
+    public void TryAccept_LenientText_ReturnsAStrictCopyOfTheSameJson()
+    {
+        // Comments and trailing commas are not faults, but some later steps re-parse raw text
+        // strictly, so the caller carries on with a copy that has neither.
+        var lenient = ParseLenient("{/* c */\"a\":[1,2,],\"b\":{\"c\":\"x\",}, // line\n}");
+
+        JsonInputCheck.TryAccept(lenient, out var accepted, out var problem).Should().BeTrue();
+
+        problem.Should().BeNull();
+        var raw = accepted.GetRawText();
+        raw.Should().NotContain("/*").And.NotContain("//").And.NotContain(",]").And.NotContain(",}");
+        JsonElement.DeepEquals(accepted, lenient).Should().BeTrue();
+        JsonInputCheck.RequireValid(lenient, "The thing").GetRawText().Should().Be(raw);
+    }
+
+    [Theory]
+    [InlineData("{\"a\":[1,2,]}")]
+    [InlineData("{\"a\":{\"b\":1 ,\n}}")]
+    [InlineData("[{\"a\":1},]")]
+    public void TryAccept_TrailingCommaWithoutComments_ReturnsAStrictCopy(string json)
+    {
+        // A trailing comma is detected on its own, not only alongside a comment.
+        var lenient = ParseLenient(json);
+
+        JsonInputCheck.TryAccept(lenient, out var accepted, out _).Should().BeTrue();
+
+        accepted.GetRawText().Should().NotContain(",]").And.NotContain(",}").And.NotMatchRegex(",\\s+[\\]}]");
+        JsonElement.DeepEquals(accepted, lenient).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryAccept_StrictText_IsReturnedUnchanged()
+    {
+        // A comma inside a string before a closing bracket is not a trailing comma; an escaped
+        // solidus would be rewritten by a copy, so an unchanged raw text proves no copy was made.
+        var strict = Parse("{\"a\":\"x,\",\"b\":[\"y,\"],\"c\":\"\\/\"}");
+
+        JsonInputCheck.TryAccept(strict, out var accepted, out _).Should().BeTrue();
+
+        accepted.GetRawText().Should().Be(strict.GetRawText());
+    }
+
+    [Fact]
+    public void TryAccept_Fault_IsReported()
+    {
+        JsonInputCheck.TryAccept(Parse("{\"v\":1,\"v\":2}"), out _, out var problem).Should().BeFalse();
+        problem.Should().Be(Duplicate);
+    }
+
+    [Theory]
+    [InlineData("invalid-operation")]
+    [InlineData("json")]
+    [InlineData("argument")]
+    public void Verify_SuiteThrowingATransformationFault_IsAPerProofTransformationError(string kind)
+    {
+        // Defence in depth on the verify side: a registered suite that throws one of the
+        // System.Text.Json fault types fails that proof as a result, with a fixed message.
+        var registry = new CryptosuiteRegistry();
+        registry.Register(new ThrowingSuite(kind));
+        var document = Parse("{\"proof\":{\"type\":\"DataIntegrityProof\",\"cryptosuite\":\"" + ThrowingSuite.SuiteName
+            + "\",\"verificationMethod\":\"did:example:a#1\",\"proofPurpose\":\"assertionMethod\",\"proofValue\":\"z1\"}}");
+
+        var result = new DataIntegrityProofPipeline(registry).Verify(document, PublicKeyMaterial.FromRaw(KeyType.Ed25519, Fx.SeedKey(0x01).PublicKey));
+
+        result.Verified.Should().BeFalse();
+        var problem = result.ProofResults.Should().ContainSingle().Subject.Problems.Should().ContainSingle().Subject;
+        problem.Code.Should().Be(ProofProblemCodes.ProofTransformationError);
+        problem.Message.Should().Be("The secured document could not be transformed for verification.");
+    }
+
+    private sealed class ThrowingSuite(string kind) : ICryptosuite
+    {
+        public const string SuiteName = "throwing-test-suite";
+
+        public string Name => SuiteName;
+
+        public Task<DataIntegrityProof> CreateProofAsync(JsonElement unsecuredDocument, DataIntegrityProof proofOptions, ISigner signer, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public ProofVerificationResult VerifyProof(JsonElement unsecuredDocument, DataIntegrityProof proof, PublicKeyMaterial publicKey)
+            => throw (kind switch
+            {
+                "invalid-operation" => new InvalidOperationException("suite fault"),
+                "json" => (Exception)new JsonException("suite fault"),
+                _ => new ArgumentException("suite fault"),
+            });
+    }
 
     [Fact]
     public void RequireValid_NamesTheInputInTheMessage()

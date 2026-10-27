@@ -23,9 +23,19 @@ public sealed class Issue35ReviewTests
         signer.KeyType.Returns(keyType);
 
         var thrown = await FluentActions.Invoking(() => Create(suite, Options(suite, 63), signer, throughPipeline))
-            .Should().ThrowExactlyAsync<ProofGenerationException>()
-            .WithMessage("The document or proof configuration could not be prepared for signing.");
-        thrown.Which.InnerException.Should().BeOfType<JsonException>();
+            .Should().ThrowExactlyAsync<ProofGenerationException>();
+        if (throughPipeline)
+        {
+            // The pipeline checks the options against the depth they will occupy in the secured
+            // document before it calls the suite, so the suite's own mapping is not reached.
+            thrown.Which.Message.Should().Be("The proof options object nests deeper than 63 levels.");
+        }
+        else
+        {
+            thrown.Which.Message.Should().Be("The document or proof configuration could not be prepared for signing.");
+            thrown.Which.InnerException.Should().BeOfType<JsonException>();
+        }
+
         await signer.DidNotReceive().SignAsync(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>());
     }
 
