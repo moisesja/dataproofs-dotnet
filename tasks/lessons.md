@@ -283,3 +283,37 @@ it" into the CHANGELOG, which the same log disproved. The rules:
   diagnostics by attribution discards exactly those.
 - A scan needs negative controls for the input classes it must reject (unknown dependency warning,
   empty log, a publish where the compiler did not run), not just a regex control.
+
+## 2026-10-27 — Escapes typed into a tool call are not escapes on disk; spike with production options (issue #30)
+
+**No user correction; both were caught by verification, one by my own test matrix and one by the
+adversarial reviewer.**
+
+**1. The over-rejection guards tested nothing, and every guard was green.** I wrote
+`Issue30ContractEscapeTests.cs` with guards spelled `@"\uD83D\uDE00"`, `@"\u00e9"`, `@"k\u0031"`.
+The file on disk held the literal emoji, `é` and `k1`: the Write tool (and the reviewer's Edit
+tool) decoded every *valid* `\uXXXX` sequence in its input before it reached the file. A Bash
+heredoc passed the same text through intact. Only the lone surrogates survived, because they can't
+be decoded. The negative tests were therefore real and the positive ones hollow. A mutant that
+rejected *every* surrogate escape passed 1193 of 1194 Jose tests, which left the CHANGELOG's
+"a surrogate pair included" claim untested. The same decoding reached the plan file. The reviewer
+caught it with a raw-byte dump.
+
+**The rule for myself:**
+- Never type a JSON or C# `\uXXXX` escape that a test depends on. Build it at run time from its code
+  unit (`@"\u" + codeUnit.ToString("X4")`): the source then holds nothing a tool can rewrite. The
+  same goes for any byte-exact fixture (escapes, BOMs, control characters).
+- After writing a file whose meaning depends on exact characters, check the bytes on disk with
+  `grep -o '\\u[0-9A-Fa-f]\{4\}'`, `od`, or a non-ASCII grep before trusting a green run.
+- A guard ("well-formed input still passes") is only evidence if a mutation that over-rejects makes
+  it fail. Run that mutant once per guard family; this time it took the failing guards from 1 to 23.
+
+**2. The spike used default options; production used strict ones.** My System.Text.Json spike
+parsed with default `JsonDocumentOptions`. The production call sites use
+`AllowDuplicateProperties = false`, whose duplicate check transcodes every member name inside
+`JsonDocument.Parse` itself and throws `InvalidOperationException`. So the approved design, which
+scanned the JWS/JWE envelope *after* the parse, was wrong for member names. The 64 failing test
+rows exposed it on the first run, and the check moved ahead of the parse
+(`JoseJson.ParseStrictDocument`). The rule: **a spike must call the API with the exact options the
+production call site passes.** The 2026-10-26 "spike first" lesson is only as good as the fidelity
+of the spike.

@@ -19,13 +19,15 @@ internal sealed class CompactJwt
     private readonly byte[] _signature;
     private readonly string _alg;
 
-    private CompactJwt(JsonObject header, JsonObject payload, string signingInput, byte[] signature, string alg)
+    private CompactJwt(JsonObject header, JsonObject payload, string signingInput, byte[] signature, string alg, string? typ, string? kid)
     {
         Header = header;
         Payload = payload;
         _signingInput = signingInput;
         _signature = signature;
         _alg = alg;
+        Type = typ;
+        KeyId = kid;
     }
 
     /// <summary>The decoded protected header.</summary>
@@ -37,15 +39,16 @@ internal sealed class CompactJwt
     /// <summary>The protected header <c>alg</c>.</summary>
     public string Algorithm => _alg;
 
-    /// <summary>The protected header <c>typ</c>, if present.</summary>
-    public string? Type => Header.TryGetPropertyValue("typ", out var t) && t is JsonValue tv && tv.GetValueKind() == JsonValueKind.String
-        ? tv.GetValue<string>()
-        : null;
+    /// <summary>The protected header <c>typ</c> when it is a string; otherwise <c>null</c>.</summary>
+    /// <remarks>
+    /// Resolved in <see cref="Decode"/>, like <see cref="Algorithm"/>, so reading it cannot throw:
+    /// the verifiers read <c>typ</c> and <c>kid</c> outside their <c>try</c> blocks (issue #30).
+    /// </remarks>
+    public string? Type { get; }
 
-    /// <summary>The protected header <c>kid</c>, if present.</summary>
-    public string? KeyId => Header.TryGetPropertyValue("kid", out var k) && k is JsonValue kv && kv.GetValueKind() == JsonValueKind.String
-        ? kv.GetValue<string>()
-        : null;
+    /// <summary>The protected header <c>kid</c> when it is a string; otherwise <c>null</c>.</summary>
+    /// <remarks>Resolved in <see cref="Decode"/>; see <see cref="Type"/>.</remarks>
+    public string? KeyId { get; }
 
     /// <summary>
     /// Decode a compact JWS into header/payload without verifying the signature. Use
@@ -90,8 +93,13 @@ internal sealed class CompactJwt
         }
 
         var signingInput = segments[0] + "." + segments[1];
-        return new CompactJwt(header, payload, signingInput, signature, alg);
+        return new CompactJwt(header, payload, signingInput, signature, alg, ReadOptionalString(header, "typ"), ReadOptionalString(header, "kid"));
     }
+
+    private static string? ReadOptionalString(JsonObject header, string name)
+        => header.TryGetPropertyValue(name, out var node) && node is JsonValue value && value.GetValueKind() == JsonValueKind.String
+            ? value.GetValue<string>()
+            : null;
 
     /// <summary>
     /// Verify this JWT's signature against <paramref name="publicJwk"/>. The header <c>alg</c>
@@ -157,13 +165,13 @@ internal sealed class CompactJwt
         }
 
         // RFC 7515 §5.2 step 3 / RFC 7519 §7.2 step 10: the decoded octets MUST be UTF-8.
-        // JsonNode.Parse is lazy and does not check encoding; a member name that cannot be
-        // transcoded throws a raw InvalidOperationException at first access — here, reading 'alg'
-        // — which is before signature verification and outside the MalformedJoseException contract
-        // SdJwtVerifier and KeyBindingJwt rely on (issue #28). This removes the invalid-octet cause
-        // only: a JSON escape for an unpaired surrogate ("\uD800") is valid UTF-8 and still reaches
-        // that lazy transcode (a known 1.4.0 limitation, tracked in issue #30).
-        JoseJson.RequireUtf8(bytes, $"Compact JWT {what}");
+        // JsonNode.Parse is lazy and does not check encoding; a member name or string that cannot be
+        // transcoded — invalid octets or an unpaired-surrogate escape — throws a raw
+        // InvalidOperationException at first access: reading 'alg' here, before signature
+        // verification, or a KB-JWT 'nonce', '_sd' digest or 'cnf' key after it. Either way it is
+        // outside the MalformedJoseException contract SdJwtVerifier and KeyBindingJwt rely on
+        // (issues #28, #30).
+        JoseJson.RequireTranscodableJson(bytes, $"Compact JWT {what}");
 
         JsonNode? node;
         try

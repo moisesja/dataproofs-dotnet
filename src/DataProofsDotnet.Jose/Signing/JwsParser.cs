@@ -135,31 +135,15 @@ public static class JwsParser
         ArgumentNullException.ThrowIfNull(resolveSignerPublicJwk);
         ArgumentNullException.ThrowIfNull(cryptoProvider);
 
-        // Malformed bytes (truncated frame, trailing junk, duplicate member, over-deep nesting)
-        // must surface as the documented MalformedJoseException — never as a raw System.Text.Json
-        // exception — so a caller's catch (MalformedJoseException) is not bypassed. This runs
-        // pre-verification on attacker-supplied input, same contract the JWE/JWT parsers uphold
-        // (JweParser.ParseStructure, JwtClaims.Parse); see issue #15.
-        JsonDocument doc;
-        try
-        {
-            doc = JsonDocument.Parse(packed, JoseJson.StrictDocument);
-        }
-        catch (JsonException ex)
-        {
-            throw new MalformedJoseException("JWS is not valid JSON.", ex);
-        }
-        catch (ArgumentException ex)
-        {
-            // JsonDocument.Parse(string) transcodes to UTF-8 first and reports a string that is not
-            // well-formed UTF-16 (a lone surrogate) as ArgumentException, not JsonException. Such a
-            // string cannot come from decoding wire bytes with .NET (invalid sequences become
-            // U+FFFD), only from a caller's own text, but it must still fail through the documented
-            // contract (issue #28).
-            throw new MalformedJoseException("JWS is not valid JSON text: the string is not well-formed UTF-16.", ex);
-        }
-
-        using (doc)
+        // Malformed text (truncated frame, trailing junk, duplicate member, over-deep nesting, a
+        // string that is not well-formed UTF-16) must surface as the documented
+        // MalformedJoseException — never as a raw System.Text.Json exception — so a caller's
+        // catch (MalformedJoseException) is not bypassed (issues #15, #28). So must a JSON escape for
+        // an unpaired surrogate ("\uD800") anywhere in the envelope: every string below and every
+        // member name TryGetProperty compares is transcoded on read, and that escape makes the
+        // transcode throw InvalidOperationException, even from a member this parser never reads
+        // (issue #30). This runs pre-verification on attacker-supplied input.
+        using (var doc = JoseJson.ParseStrictDocument(packed, "JWS"))
         {
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object)

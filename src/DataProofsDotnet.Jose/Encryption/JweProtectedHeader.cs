@@ -53,12 +53,16 @@ internal sealed class JweProtectedHeader
     /// <summary>Inverse of <see cref="EncodeBase64Url"/>; used by the parser on receive.</summary>
     /// <param name="encoded">Base64url-encoded JSON header.</param>
     /// <exception cref="MalformedJoseException">
-    /// When <paramref name="encoded"/> is not valid base64url, does not decode to valid UTF-8
-    /// (RFC 7516 §5.2 step 3), or is not valid JSON.
+    /// When <paramref name="encoded"/> is empty or not valid base64url, does not decode to valid
+    /// UTF-8 (RFC 7516 §5.2 step 3), contains an unpaired-surrogate escape, or is not valid JSON.
     /// </exception>
     public static JweProtectedHeader Decode(string encoded)
     {
-        ArgumentException.ThrowIfNullOrEmpty(encoded);
+        // The value comes straight from the envelope ("protected": ""), so an empty one is malformed
+        // input, not caller misuse: ArgumentException would escape JweParser's documented contract
+        // before any key work. Mirrors JwsProtectedHeader (issue #30).
+        if (string.IsNullOrEmpty(encoded))
+            throw new MalformedJoseException("JWE protected header is empty.");
         byte[] bytes;
         try
         {
@@ -71,8 +75,9 @@ internal sealed class JweProtectedHeader
 
         // RFC 7516 §5.2 step 3: the decoded octets MUST be UTF-8. The deserializer below does not
         // check: an unknown member name reaches the extension bag through a lossy decode and an
-        // extension string value is never transcoded at all (issue #28).
-        JoseJson.RequireUtf8(bytes, "JWE protected header");
+        // extension string value — invalid octets or an unpaired-surrogate escape — is never
+        // transcoded at all (issues #28, #30).
+        JoseJson.RequireTranscodableJson(bytes, "JWE protected header");
 
         try
         {
