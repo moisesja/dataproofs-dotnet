@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and as a native-AOT binary. The deterministic outputs must be byte-identical across all four, and the
   randomized artifacts are verified across runtimes. The job also fails on any `IL2xxx`/`IL3xxx` warning
   in the native publish that is not on a reviewed list of known, unreachable third-party warnings,
-  whichever assembly it names. The RDFC canonicalizer (dotNetRdf.Core and its Newtonsoft.Json
+  whichever assembly it names, and on a log that lacks the tool's own canary warning, which proves the
+  analysis ran and was not suppressed. The RDFC canonicalizer (dotNetRdf.Core and its Newtonsoft.Json
   dependency) was shown to work under native AOT in the issue; the job keeps proving it. Unblocks
   [moisesja/zcap-dotnet#154](https://github.com/moisesja/zcap-dotnet/issues/154).
 - **The JCS suites no longer depend on reflection inside NetCid.** `ac-12`'s first reflection-disabled
@@ -54,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
   ```
 
+  This makes **every** dependency's collapsed trim and AOT warnings non-fatal, not only
+  Newtonsoft.Json's. Hidden reflection in another dependency would then publish and fail at run time, so
+  check that each `IL2104`/`IL3053` in the publish log names `Newtonsoft.Json` and nothing else.
   Applications that use only Core, Jose and Cose see no IL warnings.
 
 ### Changed

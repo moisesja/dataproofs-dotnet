@@ -55,6 +55,10 @@ temporary key.
 One-time owner actions (cannot be automated):
 
 - Reserve the `DataProofsDotnet` ID prefix on nuget.org (AC-11 fails closed until done).
+- Optional: make the `ci.yml` jobs required status checks on `main` (Settings → Rules → Rulesets, or
+  branch protection). As of 2026-10-27 none are, so "green before merge" is a reviewer procedure, not a
+  gate (PRD §9). Verify with
+  `gh api repos/moisesja/dataproofs-dotnet/rules/branches/main` (an empty array means no rules).
 - ~~Create the `nuget-release` environment with required reviewers (no secret needed).~~ Done
   2026-08-04 — see [Approval gate](#approval-gate). The environment existed from 2026-06-13 but
   carried **no** protection rules until then.

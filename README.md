@@ -49,7 +49,9 @@ byte-identical output from all four. As a consumer:
 - Publishing `Rdfc`, `Legacy` or the DI package with native AOT surfaces warnings from Newtonsoft.Json,
   dotNetRdf.Core's dependency, for `dynamic` support the RDFC path never reaches (`IL2104`/`IL3053`).
   Under `TreatWarningsAsErrors` they fail the publish; to keep them visible but not fatal, add
-  `<WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>`. Core, Jose and Cose
+  `<WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>`. That makes **every**
+  dependency's collapsed trim/AOT warnings non-fatal, not only Newtonsoft.Json's, so check that each
+  `IL2104`/`IL3053` in your publish log names `Newtonsoft.Json` and nothing else. Core, Jose and Cose
   produce no IL warnings.
 
 ## Design documents

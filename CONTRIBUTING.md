@@ -57,5 +57,6 @@ docs/       supplementary documentation
 ## Pull requests
 
 - Keep changes minimal and focused; one concern per PR
-- All `ac-1` … `ac-11` CI jobs must be green to merge to `main`
+- All `ac-1` … `ac-12` CI jobs must be green before merging to `main`. This is a maintainer procedure:
+  as of 2026-10-27 GitHub does not enforce it (no branch protection or rulesets on `main`; PRD §9)
 - Update samples and docs alongside code changes
