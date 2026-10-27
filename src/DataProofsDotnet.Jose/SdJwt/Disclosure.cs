@@ -97,12 +97,12 @@ public sealed class Disclosure
         }
 
         // RFC 9901 §4.2.1 / §4.2.2: a Disclosure is the base64url encoding of UTF-8 JSON. JsonNode.Parse
-        // does not check encoding; a claim name that cannot be transcoded throws a raw
-        // InvalidOperationException from GetValue<string>() below — before any signature check and
-        // outside the MalformedJoseException contract SdJwtVerifier relies on (issue #28). This
-        // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") is
-        // valid UTF-8 and still reaches that transcode (a known 1.4.0 limitation, tracked in issue #30).
-        Json.JoseJson.RequireUtf8(bytes, "SD-JWT Disclosure");
+        // does not check encoding; a claim name that cannot be transcoded — invalid octets or an
+        // unpaired-surrogate escape — throws a raw InvalidOperationException from GetValue<string>()
+        // below, before any signature check and outside the MalformedJoseException contract
+        // SdJwtVerifier relies on, and a claim value is accepted into the disclosed payload and throws
+        // in the consumer's hands instead (issues #28, #30).
+        Json.JoseJson.RequireTranscodableJson(bytes, "SD-JWT Disclosure");
 
         JsonNode? node;
         try

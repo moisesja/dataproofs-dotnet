@@ -80,12 +80,13 @@ internal sealed class JwsProtectedHeader
     {
         var bytes = DecodeBytes(encoded);
 
-        // RFC 7515 §5.2 step 3: the decoded octets MUST be UTF-8. Checked once here, before any
-        // JSON parsing, so every caller — compact, both JSON serializations, VC-JOSE — rejects the
-        // same inputs. The JSON path used to reject an invalid member *name* only as a side effect
-        // of the EnumerateObject transcoding below, which the compact path deliberately skips, and
-        // an invalid extension *value* was accepted on every path (issue #28).
-        JoseJson.RequireUtf8(bytes, "JWS protected header");
+        // RFC 7515 §5.2 step 3: the decoded octets MUST be UTF-8, and every string in them must read
+        // back. Checked once here, before any JSON parsing, so every caller — compact, both JSON
+        // serializations, VC-JOSE — rejects the same inputs. The JSON path used to reject an invalid
+        // member *name* only as a side effect of the EnumerateObject transcoding below, which the
+        // compact path deliberately skips, and an invalid or unpaired-surrogate extension *value*
+        // was accepted on every path until a caller such as VcJose read it (issues #28, #30).
+        JoseJson.RequireTranscodableJson(bytes, "JWS protected header");
 
         try
         {
@@ -127,12 +128,11 @@ internal sealed class JwsProtectedHeader
         }
         catch (InvalidOperationException ex)
         {
-            // Load-bearing. JsonElement reports some faults as InvalidOperationException rather than
-            // JsonException. The root-kind and UTF-8 checks above remove two causes, but not a member
-            // name written as a JSON escape for an unpaired surrogate ("\uD800"): it is valid UTF-8
-            // and parses, and TryGetProperty / EnumerateObject throw when they transcode it to compare
-            // names. This catch keeps that on the documented contract, so a caller's
-            // catch (MalformedJoseException) is never bypassed (issues #15, #28).
+            // Defence in depth. JsonElement reports some faults as InvalidOperationException rather
+            // than JsonException. The root-kind check and RequireTranscodableJson above remove every
+            // known cause — a non-object root, invalid octets, an unpaired-surrogate escape in a
+            // member name — but this catch keeps any future one on the documented contract, so a
+            // caller's catch (MalformedJoseException) is never bypassed (issues #15, #28, #30).
             throw new MalformedJoseException("JWS protected header is malformed.", ex);
         }
     }

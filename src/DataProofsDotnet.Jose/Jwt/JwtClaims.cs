@@ -93,31 +93,33 @@ public sealed class JwtClaims
     /// differential defense); registered claims with the wrong JSON type are rejected.
     /// </summary>
     /// <param name="utf8Json">The claims-set JSON bytes (a JWS payload).</param>
-    /// <exception cref="MalformedJoseException">When the bytes are not valid UTF-8 (RFC 7519 §7.2 step 10) or not a valid claims-set object.</exception>
+    /// <exception cref="MalformedJoseException">When the bytes are not valid UTF-8 (RFC 7519 §7.2 step 10), contain an unpaired-surrogate escape, or are not a valid claims-set object.</exception>
     public static JwtClaims Parse(ReadOnlySpan<byte> utf8Json)
     {
         // RFC 7519 §7.2 step 10: the payload MUST be a UTF-8 encoded JSON object. JsonDocument does
-        // not check encoding, and a claim name or string value that cannot be transcoded would
-        // surface from the JsonObject below as a raw InvalidOperationException — outside this
-        // method's documented contract and JwtHandler.Verify's never-throws promise (issue #28). This
-        // removes the invalid-octet cause only: a JSON escape for an unpaired surrogate ("\uD800") and
-        // a non-object root still throw InvalidOperationException (known 1.4.0 limitations, tracked
-        // in issue #30).
-        JoseJson.RequireUtf8(utf8Json, "JWT claims set");
+        // not check encoding, and a claim name or string value that cannot be transcoded — invalid
+        // octets or an unpaired-surrogate escape — would surface from the JsonObject below as a raw
+        // InvalidOperationException, outside this method's documented contract and
+        // JwtHandler.Verify's never-throws promise. An unregistered claim value was worse: it was
+        // accepted, and threw later from the consumer's own read of AdditionalClaims (issues #28, #30).
+        JoseJson.RequireTranscodableJson(utf8Json, "JWT claims set");
 
-        JsonNode? node;
+        JsonObject obj;
         try
         {
             using var doc = JsonDocument.Parse(utf8Json.ToArray(), JoseJson.StrictDocument);
-            node = JsonObject.Create(doc.RootElement.Clone());
+
+            // JsonObject.Create throws InvalidOperationException, not JsonException, for an array,
+            // string, number or boolean root (and returns null for a null root), so establish the
+            // kind first (issue #30).
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                throw new MalformedJoseException("JWT claims set is not a JSON object.");
+            obj = JsonObject.Create(doc.RootElement.Clone())!;
         }
         catch (JsonException ex)
         {
             throw new MalformedJoseException("JWT claims set is not valid JSON.", ex);
         }
-
-        if (node is not JsonObject obj)
-            throw new MalformedJoseException("JWT claims set is not a JSON object.");
 
         string? issuer = null, subject = null, jwtId = null;
         List<string> audiences = [];

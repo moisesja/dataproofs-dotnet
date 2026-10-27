@@ -691,23 +691,10 @@ public static class JweParser
 
     private static ParsedJwe ParseStructure(string packed)
     {
-        JsonDocument doc;
-        try
-        {
-            doc = JsonDocument.Parse(packed, JoseJson.StrictDocument);
-        }
-        catch (JsonException ex)
-        {
-            throw new MalformedJoseException("JWE is not valid JSON.", ex);
-        }
-        catch (ArgumentException ex)
-        {
-            // See JwsParser.ParseJsonCore: a lone surrogate in the caller's string surfaces from
-            // JsonDocument.Parse(string) as ArgumentException, not JsonException (issue #28).
-            throw new MalformedJoseException("JWE is not valid JSON text: the string is not well-formed UTF-16.", ex);
-        }
-
-        using (doc)
+        // See JwsParser.ParseJsonCore: malformed text, a string that is not well-formed UTF-16 and
+        // an unpaired-surrogate escape anywhere in the envelope all fail as MalformedJoseException
+        // before any member is read (issues #15, #28, #30).
+        using (var doc = JoseJson.ParseStrictDocument(packed, "JWE"))
         {
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object)

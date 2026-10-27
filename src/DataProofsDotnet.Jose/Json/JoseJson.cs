@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -41,37 +42,118 @@ internal static class JoseJson
     public static readonly JsonDocumentOptions StrictDocument = new() { AllowDuplicateProperties = false };
 
     /// <summary>
-    /// Reject decoded octets that are not well-formed UTF-8 before they reach a JSON parser.
+    /// Reject JSON text whose strings cannot be read back as .NET strings, before it reaches a
+    /// JSON parser: octets that are not well-formed UTF-8, and JSON escapes for an unpaired
+    /// UTF-16 surrogate.
     /// </summary>
     /// <remarks>
     /// RFC 7515 §5.2 step 3, RFC 7516 §5.2 step 3 and RFC 7519 §7.2 step 10 all require that a
     /// base64url-decoded header or claims set "is a UTF-8-encoded representation of a completely
-    /// valid JSON object", and RFC 8259 §8.1 requires JSON exchanged between systems to be UTF-8. Neither
-    /// <see cref="JsonDocument"/> nor <see cref="JsonSerializer"/> enforces it: the reader
+    /// valid JSON object", and RFC 8259 §8.1 requires JSON exchanged between systems to be UTF-8.
+    /// Neither <see cref="JsonDocument"/> nor <see cref="JsonSerializer"/> enforces it: the reader
     /// validates structure, not encoding, and only transcodes a string when a caller asks for it.
     /// An unknown member name lands in a <c>[JsonExtensionData]</c> bag through the lossy
     /// <c>Encoding.UTF8</c> decoder (invalid bytes become U+FFFD), a string <em>value</em> in that
     /// bag is cloned as a raw <see cref="JsonElement"/> and never transcoded, and a lazily
     /// materialised <see cref="System.Text.Json.Nodes.JsonNode"/> throws
     /// <see cref="InvalidOperationException"/> — not <see cref="JsonException"/> — at first
-    /// access. Validating the octets once, up front, closes all three paths for invalid octets and
-    /// keeps every decoder's documented <see cref="MalformedJoseException"/> contract for that input
-    /// (issue #28).
+    /// access (issue #28).
     /// <para>
-    /// It does <b>not</b> cover a JSON escape for an unpaired surrogate (<c>\uD800</c>). Those six
-    /// bytes are valid UTF-8 and the reader accepts them, so the lazy transcode still throws
-    /// <see cref="InvalidOperationException"/> when the string is read. That class is a known 1.4.0
-    /// limitation, tracked in issue #30.
+    /// A JSON escape for an unpaired surrogate (<c>\uD800</c>, <c>\uDC00</c>, <c>\uD800A</c>) is
+    /// the same fault one layer up. Those bytes are valid UTF-8 and RFC 8259 §8.2 lets the grammar
+    /// contain them, but the string they denote is not Unicode text: RFC 8259 §8.2 calls the
+    /// receiver's behaviour "unpredictable" and RFC 7493 (I-JSON) §2.1 forbids them outright.
+    /// System.Text.Json accepts them at parse time and throws <see cref="InvalidOperationException"/>
+    /// on the deferred transcode — from <c>GetString()</c>, from the member-name comparison in
+    /// <c>TryGetProperty</c> / <c>EnumerateObject</c> / <see cref="System.Text.Json.Nodes.JsonObject"/>,
+    /// and from <c>ToJsonString()</c> — anywhere from the parser itself to a consumer reading a
+    /// claim long after verification succeeded (issue #30).
+    /// </para>
+    /// <para>
+    /// One pass closes both, so after this call every member name and string in the text reads
+    /// back successfully, through any API. Unescaped tokens need no transcode: validated UTF-8
+    /// cannot encode a surrogate. A reader error is reported as invalid JSON rather than left for
+    /// the parser that follows: the reader's defaults accept exactly the grammar of every parser in
+    /// this package (no comments, no trailing commas, depth 64, no BOM), and failing here keeps the
+    /// check fail-closed should a parser's options ever become more lenient than the reader's.
     /// </para>
     /// </remarks>
-    /// <param name="utf8">The decoded octets.</param>
-    /// <param name="what">What the octets are, for the exception message (e.g. "JWS protected header").</param>
-    /// <exception cref="MalformedJoseException">When <paramref name="utf8"/> is not valid UTF-8.</exception>
-    public static void RequireUtf8(ReadOnlySpan<byte> utf8, string what)
+    /// <param name="utf8Json">The JSON text as UTF-8 octets.</param>
+    /// <param name="what">What the text is, for the exception message (e.g. "JWS protected header").</param>
+    /// <exception cref="MalformedJoseException">
+    /// When <paramref name="utf8Json"/> is not valid UTF-8, is not valid JSON, or contains a JSON
+    /// escape for an unpaired UTF-16 surrogate.
+    /// </exception>
+    public static void RequireTranscodableJson(ReadOnlySpan<byte> utf8Json, string what)
     {
-        if (!Utf8.IsValid(utf8))
+        if (!Utf8.IsValid(utf8Json))
             throw new MalformedJoseException($"{what} is not valid UTF-8.");
+
+        var reader = new Utf8JsonReader(utf8Json);
+        try
+        {
+            while (reader.Read())
+            {
+                if (reader.TokenType is JsonTokenType.PropertyName or JsonTokenType.String && reader.ValueIsEscaped)
+                    _ = reader.GetString();
+            }
+        }
+        catch (JsonException ex)
+        {
+            throw new MalformedJoseException($"{what} is not valid JSON.", ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new MalformedJoseException($"{what} contains an unpaired UTF-16 surrogate escape.", ex);
+        }
     }
+
+    /// <summary>
+    /// Parse caller-supplied JSON text — a JWS or JWE JSON serialization — into a
+    /// <see cref="JsonDocument"/> that rejects duplicate members, after
+    /// <see cref="RequireTranscodableJson"/> has passed it.
+    /// </summary>
+    /// <remarks>
+    /// The check must run before the parse, not after it: the duplicate-member validation inside
+    /// <see cref="JsonDocument.Parse(ReadOnlyMemory{byte}, JsonDocumentOptions)"/> transcodes every
+    /// member name to compare them, and throws <see cref="InvalidOperationException"/> on an
+    /// unpaired-surrogate escape (issue #30). The text is transcoded strictly, because a .NET string
+    /// that is not well-formed UTF-16 (a lone surrogate <em>character</em>, not an escape) cannot
+    /// come from decoding wire bytes — .NET substitutes U+FFFD — only from a caller's own text, and
+    /// must still fail through the documented contract (issue #28).
+    /// </remarks>
+    /// <param name="json">The JSON text.</param>
+    /// <param name="what">What the text is, for the exception message ("JWS" or "JWE").</param>
+    /// <exception cref="MalformedJoseException">
+    /// When <paramref name="json"/> is not well-formed UTF-16, is not valid JSON (including a
+    /// duplicate member), or contains a JSON escape for an unpaired UTF-16 surrogate.
+    /// </exception>
+    public static JsonDocument ParseStrictDocument(string json, string what)
+    {
+        byte[] utf8;
+        try
+        {
+            utf8 = StrictUtf8.GetBytes(json);
+        }
+        catch (EncoderFallbackException ex)
+        {
+            throw new MalformedJoseException($"{what} is not valid JSON text: the string is not well-formed UTF-16.", ex);
+        }
+
+        RequireTranscodableJson(utf8, what);
+
+        try
+        {
+            return JsonDocument.Parse(utf8, StrictDocument);
+        }
+        catch (JsonException ex)
+        {
+            throw new MalformedJoseException($"{what} is not valid JSON.", ex);
+        }
+    }
+
+    /// <summary>UTF-8 that throws on a lone surrogate instead of substituting U+FFFD.</summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     // GetTypeInfo(Type) is AOT-safe: it resolves through Default's resolver, the source-generated
     // context, and returns metadata bound to Default's wire settings.
