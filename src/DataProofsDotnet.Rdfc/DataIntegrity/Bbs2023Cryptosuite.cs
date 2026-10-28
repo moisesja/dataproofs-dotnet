@@ -498,6 +498,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private VerifyData CreateVerifyData(JsonElement revealDocument, Bbs2023ProofValue.DerivedProofComponents components)
     {
         var stable = SkolemizedToStableNQuads(JsonLdSkolemizer.Skolemize(revealDocument));
+
+        // The holder's reveal gets the same check as the issuer's document: skolemizing it must not
+        // change its data. Otherwise deleting a member the skolemizer re-inserts, such as an @id in a
+        // @json value, recreates the signed bytes and still verifies (PR #37 review). The reveal's
+        // skolem ids are read back as the blank nodes they stand for.
+        RequireSameDataset(JsonLdSkolemizer.Deskolemize(CanonicalNQuadLines(revealDocument)), stable);
+
         var disclosedMessages = BlankNodeLabels.RelabelAndSort(stable, components.LabelMap);
 
         var revealedIndexes = components.MandatoryIndexes
@@ -539,21 +546,24 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
     // Skolemization works on compact JSON without the context, so it can mistake a JSON value for a
     // node and add an @id to it, such as a @json literal or an @id map: the signed data and the reveal
-    // document would then carry a member the issuer never wrote (adversarial review). Deskolemized,
-    // the skolemized document must canonicalize to exactly what the document does.
-    private void RequireSameDataset(IReadOnlyList<string> canonicalDocument, IReadOnlyList<string> stableNQuads)
+    // document would then carry a member the issuer never wrote (adversarial review). So at every
+    // boundary (create, derive and verify) the document as given and the skolemized document, both
+    // with skolem ids read back as blank nodes, must canonicalize to the same dataset.
+    private void RequireSameDataset(IReadOnlyList<string> document, IReadOnlyList<string> stableNQuads)
     {
-        string recanonicalized;
+        string given;
+        string skolemized;
         try
         {
-            recanonicalized = _canonicalizer.CanonicalizeNQuads(string.Concat(stableNQuads));
+            given = _canonicalizer.CanonicalizeNQuads(string.Concat(document));
+            skolemized = _canonicalizer.CanonicalizeNQuads(string.Concat(stableNQuads));
         }
         catch (RdfCanonicalizationException ex)
         {
             throw new ProofGenerationException("The document could not be RDFC-canonicalized.", ex);
         }
 
-        if (!string.Equals(recanonicalized, string.Concat(canonicalDocument), StringComparison.Ordinal))
+        if (!string.Equals(given, skolemized, StringComparison.Ordinal))
         {
             throw new ProofGenerationException(DataLossMessage, new JsonLdDataLossException(
                 "The JSON-LD input cannot be canonicalized without losing data: bbs-2023 skolemization would change "

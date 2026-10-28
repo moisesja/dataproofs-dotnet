@@ -689,6 +689,41 @@ public sealed class Issue36DataLossTests
             .WithInnerException<JsonLdDataLossException>().WithMessage("*skolemization would change it*");
     }
 
+    // PR #37 review (5685854125): the issuer signs a @json value that already carries an @id, which
+    // skolemization leaves alone. Verification skolemized the reveal blindly, so a holder who deleted
+    // that member had it re-inserted, recreating the signed bytes: the deletion still verified.
+    [BbsFact]
+    public async Task Bbs2023_VerifyProof_RevealWhoseSkolemizationWouldRestoreADeletedMember_IsDataLossDetectionError()
+    {
+        var (sk, hmacKey) = BbsKeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var pipeline = new DataIntegrityProofPipeline(CryptosuiteRegistry.CreateDefault().AddBbs2023());
+        var document = Parse("{\"@context\":[\"" + V2 + "\",{\"data\":{\"@id\":\"urn:data\",\"@type\":\"@json\"}}],"
+            + "\"@id\":\"urn:doc\",\"type\":\"VerifiableCredential\",\"data\":{\"@id\":\"urn:bnid:_:b0\",\"a\":1}}");
+        var baseProof = await suite.CreateBaseProofAsync(document, BbsOptions(), sk, hmacKey, []);
+        var secured = Fx.Mutate(document, vc => vc["proof"] = JsonSerializer.SerializeToNode(baseProof, DataProofsJsonOptions.Default));
+        var reveal = suite.DeriveProof(secured, ["/data"], Convert.FromHexString("113377aa"));
+        var derivedProof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
+        var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
+
+        var deleted = Fx.Mutate(reveal, vc => ((JsonObject)vc["data"]!).Remove("@id"));
+        var changed = Fx.Mutate(reveal, vc => vc["data"]!["a"] = 2);
+        ProofVerificationResult Direct(JsonElement securedReveal)
+            => suite.VerifyProof(Fx.Mutate(securedReveal, vc => vc.Remove("proof")), derivedProof, pk);
+
+        Direct(reveal).Verified.Should().BeTrue();
+        pipeline.Verify(reveal, pk).Verified.Should().BeTrue();
+
+        Direct(deleted).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+        var throughPipeline = pipeline.Verify(deleted, pk);
+        throughPipeline.Verified.Should().BeFalse();
+        throughPipeline.ProofResults.Should().ContainSingle().Which.Problems
+            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+
+        Direct(changed).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a changed value breaks the signature");
+        pipeline.Verify(changed, pk).Verified.Should().BeFalse();
+    }
+
     [BbsFact]
     public async Task Bbs2023_VerifyProof_RevealWithInjectedDroppedNode_IsDataLossDetectionError()
     {

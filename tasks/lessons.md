@@ -330,3 +330,26 @@ The review found two gaps after individually validating a document and proof con
   nested extensions to avoid unnecessarily narrowing the extension namespace.
 
 A green input-validation matrix does not prove later composition preserves the checked invariants.
+
+## 2026-10-28 — A fail-closed invariant must run at every boundary that handles untrusted input (PR #37)
+
+**Mistake:** For bbs-2023 I added "skolemization must not change the document's data" at creation
+and derivation, then claimed the affected documents were "refused rather than altered". Verification
+still skolemized the holder's reveal without the check. A holder could delete an `@id` member from a
+signed `@json` value: verification's skolemization re-inserted it, recreating the signed bytes, and
+the deletion verified. The owner's re-review caught it. I had even reasoned about exactly that
+collision earlier, assumed a guard covered it, then shipped a narrower guard (IRI terms only) without
+re-checking the case.
+
+**Why it happened:** I placed the invariant where the problem was first seen (issuance) instead of at
+the boundary that matters most for forgery: verification, where the input is the attacker's. And I
+let a claim in the docs stand on reasoning I had not re-tested after changing the design.
+
+**The rule for myself:**
+- An invariant that keeps signed data and presented data the same belongs at **verification first**.
+  Then add it at creation and derivation too. List every entry point that transforms untrusted input
+  (create, derive, verify; direct suite API and pipeline) and put the check on each, sharing one function.
+- When a design changes mid-fix (here: JSON scan → canonical-form IRI scan), re-run every attack I
+  previously reasoned about against the *new* design before claiming coverage.
+- For each "X is refused" sentence in a CHANGELOG or PR body, cite the test that proves it at every
+  boundary, or narrow the sentence.
