@@ -44,6 +44,9 @@ Typical causes:
 - **A term no `@context` defines.** credentials/v2 has no `@vocab`. Define your terms, or list
   `https://www.w3.org/ns/credentials/undefined-terms/v2` last, as VCDM 2.0 §5.2 requires. The offline
   loader bundles that context.
+- **Proof terms no `@context` defines.** A credentials/v1 document also needs
+  `https://w3id.org/security/data-integrity/v2`. The Legacy RDFC variant needs
+  `https://w3id.org/security/suites/ed25519-2020/v1`. Both are bundled.
 - **An IRI that is not well formed.** Examples: `?filter[id]=1`, a second `#`, a space, a relative IRI.
 - **An IRI the canonical form would respell.** Examples: `/a/../b`, `%41`, `HTTPS://HOST`, `:443`.
 

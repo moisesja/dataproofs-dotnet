@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alone. That context does not define `Ed25519Signature2020` or `EcdsaSecp256r1Signature2019`, so
   `created`, `proofPurpose`, `verificationMethod`, `challenge` and `domain` were dropped from the
   signed bytes. That left proof purpose and replay binding unprotected. It is now refused (see Changed).
+- **RDFC proofs over credentials/v1 documents left their proof configuration largely unsigned** when
+  the document did not also list `https://w3id.org/security/data-integrity/v2`. credentials/v1 does
+  not define `DataIntegrityProof`, so `cryptosuite`, `proofPurpose`, `verificationMethod` and the rest
+  were dropped. It is now refused. The W3C vectors list that context, so they were never affected.
 
 ### Added
 
@@ -59,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - define your terms in a context, or list `https://www.w3.org/ns/credentials/undefined-terms/v2`
     last in `@context`;
   - write IRIs well formed and in normalized form;
+  - for a credentials/v1 document, also list `https://w3id.org/security/data-integrity/v2` (bundled);
   - for the Legacy RDFC variant, list `https://w3id.org/security/suites/ed25519-2020/v1`
     (`Ed25519Signature2020`), or supply a context that defines the `EcdsaSecp256r1Signature2019`
     terms (none is published);

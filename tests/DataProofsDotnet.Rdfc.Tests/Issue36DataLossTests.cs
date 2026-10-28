@@ -228,6 +228,25 @@ public sealed class Issue36DataLossTests
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithInnerException<JsonLdDataLossException>();
     }
 
+    [Theory]
+    [MemberData(nameof(Suites))]
+    public async Task CreateProof_CredentialsV1Alone_RefusesTheProofConfiguration(string cryptosuite)
+    {
+        // credentials/v1 defines the credential but not DataIntegrityProof, so the configuration's
+        // cryptosuite, purpose and method would go unsigned; data-integrity/v2 defines them.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        const string credential = ",\"id\":\"urn:uuid:1\",\"type\":[\"VerifiableCredential\"],\"issuer\":\"did:example:issuer\","
+            + "\"issuanceDate\":\"2026-01-01T00:00:00Z\",\"credentialSubject\":{\"id\":\"did:example:alice\"}}";
+        var v1Only = Parse("{\"@context\":[\"" + V1 + "\"]" + credential);
+        var withDataIntegrity = Parse("{\"@context\":[\"" + V1 + "\",\"https://w3id.org/security/data-integrity/v2\"]" + credential);
+
+        var act = () => suite.CreateProofAsync(v1Only, Options(cryptosuite), signer);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithInnerException<JsonLdDataLossException>();
+        var proof = await suite.CreateProofAsync(withDataIntegrity, Options(cryptosuite), signer);
+        suite.VerifyProof(withDataIntegrity, proof, publicKey).Verified.Should().BeTrue();
+    }
+
     public static TheoryData<string, string> Tampers()
     {
         // Each of these verified against a proof over Signed before issue #36.
