@@ -74,8 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CanonicalizeNQuads` and `CanonicalizeNQuadsToMap` reject an IRI the canonical form would respell.
 - `bbs-2023` verification reports data loss as `DATA_LOSS_DETECTION_ERROR`, where it used to report
   "Verification failed unexpectedly".
-- Each JSON-LD canonicalization now runs one extra JSON-LD expansion for the checks, about 0.5–1 ms
-  for a typical credential.
+- Each JSON-LD canonicalization now runs one extra JSON-LD expansion for the checks: up to about
+  1 ms more for a typical credential on a developer laptop.
 
 ### Known limitations
 
