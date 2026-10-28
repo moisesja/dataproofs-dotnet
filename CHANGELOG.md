@@ -52,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and every W3C vector passes unchanged. Messages name the cause and never quote the input.
   Affected: `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023` and the Legacy RDFC variant. The JCS suites,
   JOSE, COSE and SD-JWT never used JSON-LD processing.
+- **bbs-2023: a holder could change a disclosed literal without breaking the derived proof.**
+  Blank-node relabeling and deskolemization rewrote text across whole N-Quad lines, literals included.
+  So a literal `<urn:bnid:_:b0>` reached the signature as `_:b0`, and a reveal carrying `_:b0` instead
+  still verified. A literal `_:c14n0` did not verify at all. Both now rewrite only blank-node and IRI
+  terms.
+
+  Creating and deriving also refuse two inputs:
+  - a document that already uses the `urn:bnid:` namespace bbs-2023 reserves for its blank-node ids,
+    checked on the canonical form, so compact IRIs count;
+  - a document the skolemization would change. It works on compact JSON and added an `@id` to `@json`
+    values and `@id` maps, which the reveal document then showed.
 - **The Legacy RDFC variant left its proof configuration largely unsigned** under credentials/v2
   alone. That context does not define `Ed25519Signature2020` or `EcdsaSecp256r1Signature2019`, so
   `created`, `proofPurpose`, `verificationMethod`, `challenge` and `domain` were dropped from the
@@ -104,6 +115,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Some values have several spellings that sign the same: numbers are signed in the canonical XSD form
   the JSON-LD-to-RDF algorithm defines (`1` and `1.0` sign the same), and dotNetRDF lower-cases language
   tags, which BCP 47 compares case-insensitively.
+- **bbs-2023 cannot yet sign** `@json` values, container maps (language, `@id`, `@type`) or keyword
+  aliases. Its skolemization works on compact JSON, so for these it refuses rather than alter the
+  data. The fix is the expanded-form skolemization the spec describes.
 - The Legacy suites' verification keeps its dual-variant result codes. A data-loss failure of the RDFC
   variant fails closed, but it is reported as `PROOF_VERIFICATION_ERROR` or `PROOF_TRANSFORMATION_ERROR`.
 - The COSE lossy-UTF-8 limitation listed under 1.4.0 remains open

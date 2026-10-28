@@ -626,6 +626,69 @@ public sealed class Issue36DataLossTests
             .WithInnerException<JsonLdDataLossException>();
     }
 
+    // bbs-2023 relabeled blank nodes and deskolemized by rewriting text across whole N-Quad lines, so a
+    // literal holding "<urn:bnid:_:b0>" was signed as "_:b0": a holder could swap one for the other
+    // and still verify, and a literal holding "_:c14n0" did not verify at all (adversarial review).
+    [BbsTheory]
+    [InlineData("<urn:bnid:_:b0>", "_:b0")]
+    [InlineData("_:b0", "_:b1")]
+    [InlineData("_:c14n0", "_:c14n1")]
+    public async Task Bbs2023_LiteralHoldingLabelText_IsSignedAsWritten(string note, string swapped)
+    {
+        var (sk, hmacKey) = BbsKeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var document = Fx.Mutate(WindDoc(), vc => vc["credentialSubject"]!["note"] = note);
+        var baseProof = await suite.CreateBaseProofAsync(document, BbsOptions(), sk, hmacKey, WindMandatory());
+        var secured = Fx.Mutate(document, vc => vc["proof"] = JsonSerializer.SerializeToNode(baseProof, DataProofsJsonOptions.Default));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/note"], Convert.FromHexString("113377aa"));
+        var derivedProof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
+        var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
+        var unsecured = Fx.Mutate(reveal, vc => vc.Remove("proof"));
+
+        suite.VerifyProof(unsecured, derivedProof, pk).Verified.Should().BeTrue();
+        suite.VerifyProof(Fx.Mutate(unsecured, vc => vc["credentialSubject"]!["note"] = swapped), derivedProof, pk)
+            .Verified.Should().BeFalse("the literal is signed as written");
+    }
+
+    // Skolem ids are urn:bnid: IRIs read back as blank nodes, so an issuer's own IRI there would be too.
+    [BbsTheory]
+    [InlineData("\"id\":\"urn:bnid:_:b0\"")]
+    [InlineData("\"id\":\"bn:_:b0\"")]
+    public async Task Bbs2023_CreateBaseProof_DocumentUsingTheSkolemNamespace_ThrowsProofGenerationException(string member)
+    {
+        var (sk, hmacKey) = BbsKeyMaterial();
+        var document = Fx.Mutate(WindDoc(), vc =>
+        {
+            ((JsonArray)vc["@context"]!).Add(new JsonObject { ["bn"] = "urn:bnid:" });
+            vc["credentialSubject"]!["owner"] = JsonNode.Parse("{" + member + "}");
+        });
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, BbsOptions(), sk, hmacKey, WindMandatory());
+
+        (await act.Should().ThrowAsync<ProofGenerationException>())
+            .WithInnerException<JsonLdDataLossException>().WithMessage("*urn:bnid: namespace*");
+    }
+
+    // Skolemization works on compact JSON, so it added an @id to a @json value or an @id map: the reveal
+    // document then showed, and the signature covered, a member the issuer never wrote.
+    [BbsTheory]
+    [InlineData("{\"@id\":\"https://e.example/extra\",\"@type\":\"@json\"}", "{\"a\":1}")]
+    [InlineData("{\"@id\":\"https://e.example/extra\",\"@container\":\"@id\"}", "{\"urn:k1\":{\"name\":\"x\"}}")]
+    public async Task Bbs2023_CreateBaseProof_SkolemizationThatWouldChangeTheData_ThrowsProofGenerationException(string term, string value)
+    {
+        var (sk, hmacKey) = BbsKeyMaterial();
+        var document = Fx.Mutate(WindDoc(), vc =>
+        {
+            ((JsonArray)vc["@context"]!).Add(new JsonObject { ["extra"] = JsonNode.Parse(term) });
+            vc["credentialSubject"]!["extra"] = JsonNode.Parse(value);
+        });
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, BbsOptions(), sk, hmacKey, WindMandatory());
+
+        (await act.Should().ThrowAsync<ProofGenerationException>())
+            .WithInnerException<JsonLdDataLossException>().WithMessage("*skolemization would change it*");
+    }
+
     [BbsFact]
     public async Task Bbs2023_VerifyProof_RevealWithInjectedDroppedNode_IsDataLossDetectionError()
     {

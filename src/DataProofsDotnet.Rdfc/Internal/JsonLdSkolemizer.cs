@@ -101,24 +101,9 @@ internal static class JsonLdSkolemizer
     private static bool HasId(JsonObject obj)
         => obj.ContainsKey("@id") || obj.ContainsKey("id");
 
-    // Replaces "<urn:bnid:_:bN>" tokens with "_:bN" wherever they appear in an N-Quad line.
+    // Replaces each "<urn:bnid:_:bN>" IRI term with the blank node "_:bN". Literals are left whole:
+    // one may contain that text, which is data, not a skolem id (adversarial review).
     private static string Rewrite(string line)
-    {
-        var marker = "<" + UrnPrefix + "_:";
-        var result = line;
-        int index;
-        while ((index = result.IndexOf(marker, StringComparison.Ordinal)) >= 0)
-        {
-            var close = result.IndexOf('>', index);
-            if (close < 0)
-            {
-                break;
-            }
-
-            var bnode = result.Substring(index + marker.Length - "_:".Length, close - (index + marker.Length - "_:".Length));
-            result = result[..index] + bnode + result[(close + 1)..];
-        }
-
-        return result;
-    }
+        => BlankNodeLabels.RewriteTerms(line, iri: iri =>
+            iri.StartsWith(UrnPrefix + "_:", StringComparison.Ordinal) ? iri[UrnPrefix.Length..] : "<" + iri + ">");
 }
