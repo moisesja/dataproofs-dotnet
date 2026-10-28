@@ -128,6 +128,59 @@ foreach (var (suiteName, keyType, label) in cases)
     Console.WriteLine();
 }
 
+// --- Data the canonical form would drop is refused, not silently left unsigned (issue #36). ---
+//     JSON-LD processing drops a term no @context defines, and an IRI that is not well formed.
+//     Whatever is dropped would not be signed, so the RDFC suites fail closed: creation throws,
+//     and verification reports DATA_LOSS_DETECTION_ERROR (VC Data Integrity 1.0 §2.4.3).
+Console.WriteLine("--- Data loss fails closed ---");
+KeyPair lossKey = keyGen.Generate(KeyType.Ed25519);
+ISigner lossSigner = new KeyPairSigner(lossKey, crypto);
+var lossOptions = new DataIntegrityProof
+{
+    Cryptosuite = EddsaRdfc2022Cryptosuite.CryptosuiteName,
+    Created = "2026-01-02T00:00:00Z",
+    VerificationMethod = $"did:key:{lossKey.MultibasePublicKey}#{lossKey.MultibasePublicKey}",
+    ProofPurpose = ProofPurposes.AssertionMethod,
+};
+JsonElement CustomClaimCredential(bool undefinedTermsContext) => JsonSerializer.Deserialize<JsonElement>(
+    $$"""
+    {
+      "@context": ["https://www.w3.org/ns/credentials/v2"{{(undefinedTermsContext ? ", \"https://www.w3.org/ns/credentials/undefined-terms/v2\"" : "")}}],
+      "type": ["VerifiableCredential"],
+      "issuer": "did:example:issuer",
+      "credentialSubject": { "id": "did:example:subject", "clearanceLevel": "viewer" }
+    }
+    """);
+
+// credentials/v2 does not define "clearanceLevel", so RDFC would drop it: signing refuses.
+try
+{
+    await pipeline.AddProofAsync(CustomClaimCredential(false), lossOptions, lossSigner);
+    Check(false, "a credential with an undefined claim is refused");
+}
+catch (ProofGenerationException ex) when (ex.InnerException is JsonLdDataLossException loss)
+{
+    Console.WriteLine($"  undefined claim refused: {loss.Message}");
+}
+
+// VCDM 2.0 §5.2: list undefined-terms/v2 last and the claim is signed (bundled offline).
+JsonElement customSecured = await pipeline.AddProofAsync(CustomClaimCredential(true), lossOptions, lossSigner);
+PublicKeyMaterial lossKeyMaterial = PublicKeyMaterial.FromMultikey(lossKey.MultibasePublicKey);
+Check(pipeline.Verify(customSecured, lossKeyMaterial).Verified, "undefined-terms/v2 makes the custom claim signable");
+Console.WriteLine("  with undefined-terms/v2 the claim is signed and verifies");
+
+// A verifier refuses content the canonical form would drop, e.g. a node whose id is malformed.
+var injected = System.Text.Json.Nodes.JsonObject.Create(customSecured)!;
+injected["refreshService"] = new System.Text.Json.Nodes.JsonObject { ["id"] = "https://evil.example/r?u[0]=1", ["type"] = "Refresh" };
+DocumentVerificationResult injectedResult = pipeline.Verify(
+    JsonSerializer.SerializeToElement(injected, DataProofsJsonOptions.Default), lossKeyMaterial);
+Check(
+    !injectedResult.Verified
+        && injectedResult.ProofResults[0].Problems.Any(p => p.Code == ProofProblemCodes.DataLossDetectionError),
+    "an injected node the canonical form would drop is DATA_LOSS_DETECTION_ERROR");
+Console.WriteLine("  injected malformed-IRI node: DATA_LOSS_DETECTION_ERROR");
+Console.WriteLine();
+
 // --- The canonicalizer is itself a first-class, reusable component. Show its three forms ---
 // and prove RDFC-1.0 is order-independent: two documents with re-ordered members canonicalize
 // to byte-identical N-Quads (the whole point of canonicalization).

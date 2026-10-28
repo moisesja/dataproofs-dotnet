@@ -24,9 +24,9 @@ Every path uses fixed seed keys, fixed timestamps and fixed documents (`Fixtures
 | --- | --- |
 | `JcsPath` | `eddsa-jcs-2022` and `ecdsa-jcs-2019` through `DataIntegrityProofPipeline`, with raw-key and resolver verification. A two-proof chain with an array-form `previousProof`. |
 | `RdfcPath` | RDFC-1.0 through dotNetRdf for an inline-`@context` document with blank nodes. A VC v2 document whose context comes from the **offline** loader. `eddsa-rdfc-2022` and `ecdsa-rdfc-2019`. |
-| `ProofInputPath` | Rejects a `proofValue` extension using cold source-generated metadata in Core, Rdfc and Legacy; a case-distinct `ProofValue` extension still signs and verifies. Runs first so previous serialization cannot initialize the metadata for it. |
+| `ProofInputPath` | Rejects a `proofValue` extension using cold source-generated metadata in Core, Rdfc and Legacy; a case-distinct `ProofValue` extension still signs and verifies (over a credential listing `undefined-terms/v2`, so RDFC can carry the extension). Runs first so previous serialization cannot initialize the metadata for it. |
 | `Bbs2023Path` | `bbs-2023` base proof, derived proof with mandatory and selective pointers, and verification. **Required** on every RID for which NetCrypto ships the native BBS library: osx-arm64, osx-x64, linux-x64, linux-arm64 and win-x64. Elsewhere it is recorded as unavailable and skipped. |
-| `LegacyPath` | `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019`, each in the JCS and RDFC variants. The RDFC signing input is the one zcap-dotnet uses. |
+| `LegacyPath` | `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019`, each in the JCS and RDFC variants. The RDFC signing input is the one zcap-dotnet uses. The RDFC documents list a context that defines the proof terms (`ed25519-2020/v1`, or `undefined-terms/v2` for P-256, which has no published one), since RDFC refuses terms it would drop. |
 | `JosePath` | JWS in compact, Flattened, General and DIDComm kid-placement forms; JWT with claim validation; General JSON JWE with ECDH-ES+A256KW and A256KW; compact JWE. |
 | `SdJwtPath` | SD-JWT issuance with object and array-element disclosures and decoys, then a holder presentation with a Key Binding JWT, then verification. |
 | `CoseAndVcPath` | COSE_Sign1 with EdDSA and ES256, CWT, and the VC-JOSE and VC-COSE envelopes. |

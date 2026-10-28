@@ -30,6 +30,25 @@ dotnet test DataProofsDotnet.sln
 Runnable, narrated examples for every feature live under [samples/](samples/) — each doubles as
 a CI smoke test. Start with `samples/README.md`.
 
+## RDFC canonicalization fails closed on data loss
+
+JSON-LD processing drops what it cannot turn into RDF, and whatever it drops is not signed. So the
+RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023`, and the Legacy RDFC variant) refuse
+such input instead of signing less than the document says (VC Data Integrity 1.0 §2.4.3):
+
+- Creating a proof throws `ProofGenerationException` with an inner `JsonLdDataLossException`.
+- Verification fails with `DATA_LOSS_DETECTION_ERROR`.
+
+Typical causes:
+
+- **A term no `@context` defines.** credentials/v2 has no `@vocab`. Define your terms, or list
+  `https://www.w3.org/ns/credentials/undefined-terms/v2` last, as VCDM 2.0 §5.2 requires. The offline
+  loader bundles that context.
+- **An IRI that is not well formed.** Examples: `?filter[id]=1`, a second `#`, a space, a relative IRI.
+- **An IRI the canonical form would respell.** Examples: `/a/../b`, `%41`, `HTTPS://HOST`, `:443`.
+
+Accepted input canonicalizes to the same bytes as before. See FR-9 in the PRD for the full rule.
+
 ## Native AOT and trimming
 
 All six packages declare `IsAotCompatible`: they build with zero trim, single-file and AOT analyzer

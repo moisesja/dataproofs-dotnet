@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **547**
-- Covered by at least one sample: **545**
+- Public members across 6 packages: **550**
+- Covered by at least one sample: **548**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -152,6 +152,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.DataIntegrity.ProofProblem.Code`
 - `DataProofsDotnet.DataIntegrity.ProofProblem.Message`
 - `DataProofsDotnet.DataIntegrity.ProofProblemCodes (type)`
+- `DataProofsDotnet.DataIntegrity.ProofProblemCodes.DataLossDetectionError`
 - `DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidChallengeError`
 - `DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidDomainError`
 - `DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidVerificationMethod`
@@ -540,6 +541,8 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeJsonLd`
 - `DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuads`
 - `DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuadsToMap`
+- `DataProofsDotnet.Rdfc.JsonLdDataLossException (type)`
+- `DataProofsDotnet.Rdfc.JsonLdDataLossException..ctor(String)`
 - `DataProofsDotnet.Rdfc.LoadedContextDocument (type)`
 - `DataProofsDotnet.Rdfc.LoadedContextDocument..ctor(Uri,String)`
 - `DataProofsDotnet.Rdfc.LoadedContextDocument.Content`

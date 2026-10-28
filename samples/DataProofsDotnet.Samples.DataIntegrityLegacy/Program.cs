@@ -2,6 +2,7 @@ using System.Text.Json;
 using DataProofsDotnet;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Legacy.DataIntegrity;
+using DataProofsDotnet.Rdfc;
 using NetCrypto;
 
 // ============================================================
@@ -127,7 +128,24 @@ foreach (var (proofType, keyType, label) in cases)
 // --- The RDFC variant. A single proof `type` may be signed over JCS or RDFC depending on the ---
 //     issuer; choose the canonicalization the corpus uses at construction (LegacyCanonicalization).
 //     Only one variant per `type` can be registered, so the RDFC variant uses its own registry.
+//     RDFC signs only what the document's @context defines, and credentials/v2 does not define
+//     Ed25519Signature2020 or its proof terms, so the document must also list the suite context
+//     (bundled in the offline loader). Without it, canonicalization would drop created,
+//     proofPurpose and verificationMethod, so the RDFC variant refuses to sign.
 Console.WriteLine("--- Ed25519Signature2020 (Ed25519, RDFC-1.0 variant) ---");
+JsonElement RdfcCredential() => JsonSerializer.Deserialize<JsonElement>(
+    """
+    {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://w3id.org/security/suites/ed25519-2020/v1"
+      ],
+      "type": ["VerifiableCredential"],
+      "issuer": "did:example:issuer",
+      "credentialSubject": { "id": "did:example:subject", "name": "Alice Example" }
+    }
+    """);
+
 var rdfcRegistry = CryptosuiteRegistry.CreateDefault();
 rdfcRegistry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc));
 var rdfcPipeline = new DataIntegrityProofPipeline(rdfcRegistry);
@@ -143,11 +161,22 @@ var rdfcOptions = new DataIntegrityProof
     ProofPurpose = ProofPurposes.AssertionMethod,
 };
 JsonElement rdfcSecured = await rdfcPipeline.AddProofAsync(
-    UnsignedCredential(), rdfcOptions, new KeyPairSigner(rdfcKey, crypto));
+    RdfcCredential(), rdfcOptions, new KeyPairSigner(rdfcKey, crypto));
 Check(
     rdfcPipeline.Verify(rdfcSecured, PublicKeyMaterial.FromMultikey(rdfcKey.MultibasePublicKey)).Verified,
     "Ed25519Signature2020 (RDFC variant) create→verify round-trips");
 Console.WriteLine("  RDFC variant create→verify OK");
+
+// Without the suite context, the proof terms would go unsigned: the RDFC variant fails closed.
+try
+{
+    await rdfcPipeline.AddProofAsync(UnsignedCredential(), rdfcOptions, new KeyPairSigner(rdfcKey, crypto));
+    Check(false, "Ed25519Signature2020 (RDFC variant) refuses a document that does not define its proof terms");
+}
+catch (ProofGenerationException ex) when (ex.InnerException is JsonLdDataLossException)
+{
+    Console.WriteLine("  RDFC variant refuses credentials/v2 alone (its proof terms would be dropped) OK");
+}
 Console.WriteLine();
 
 Console.WriteLine("Done! All legacy LD-Signature examples completed successfully.");
