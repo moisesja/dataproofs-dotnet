@@ -15,8 +15,9 @@ assembly resources; this directory is the provenance-tracked source of record.
 - **Pin verification:** for every file, the served bytes were additionally
   fetched from the upstream git repository at the pinned commit listed below
   and confirmed **SHA-256-identical** to the bytes served at the canonical URL.
-- **Fixture count: 7** context files (`*.jsonld`). Any test asserting on this
-  directory should expect exactly 7 context documents.
+- **Fixture count: 9** context files (`*.jsonld`). Any test asserting on this
+  directory should expect exactly 9 context documents. Files 8 and 9 were added on
+  2026-10-28 (issue #36) by the same method; their retrieval details are in their entries.
 
 ## Files
 
@@ -95,3 +96,32 @@ assembly resources; this directory is the provenance-tracked source of record.
 - Server `Last-Modified`: `Thu, 29 Jun 2023 12:36:12 GMT`; `ETag: "649d7abc-9a9"`
 - Git pin (byte-identical): `w3c/vc-jws-2020` @ `189e9544262b6940a6900318606e1125111b5e7d` (2022-08-05), path `contexts/v1/index.json`
 - SHA-256: `d648e05ddc6577827ca2bfd5e931f53e9ebc6e52a57a8da81df4ec8c46ffcd1e` (2473 bytes)
+
+### 8. `credentials-undefined-terms-v2.jsonld` — VCDM 2.0 undefined-terms context
+
+- Requested URL: `https://www.w3.org/ns/credentials/undefined-terms/v2` (no redirect; final URL identical)
+- Retrieved: 2026-10-28 (HTTP `Date`: `Wed, 28 Oct 2026 13:28:37 GMT`)
+- Served `Content-Type`: `application/ld+json`
+- Server `Last-Modified`: `Tue, 11 Mar 2025 15:06:05 GMT`; `ETag: W/"5a-630126d815140;63f8f63d8bb1b"`
+- Spec: Verifiable Credentials Data Model v2.0 §5.2 — a conforming document that does not use
+  contexts defining all its terms MUST list this context last in `@context`. It is a single
+  `@vocab` mapping to `https://www.w3.org/ns/credentials/undefined-term#`, so such terms are
+  signed instead of dropped (issue #36: RDFC canonicalization fails closed on dropped data).
+- Git pin (byte-identical): `w3c/vc-data-model` @ `ccbe460539e222c3ef954ac5802e76513c63790f` (2024-07-20), path `contexts/credentials/undefined-terms/v2`
+- SHA-256: `82dab514ba44eb18f5d1b0f638c5e140c6a556fbfb5089601bdc0fa5eb8b2581` (90 bytes)
+
+### 9. `ed25519-2020-v1.jsonld` — Ed25519Signature2020 suite context (legacy suites)
+
+- Requested URL: `https://w3id.org/security/suites/ed25519-2020/v1`
+- Final URL after redirect: `https://digitalbazaar.github.io/ed25519-signature-2020-context/contexts/ed25519-signature-2020-v1.jsonld`
+- Retrieved: 2026-10-28 (HTTP `Date`: `Wed, 28 Oct 2026 13:28:37 GMT`)
+- Served `Content-Type`: `application/ld+json`
+- Server `Last-Modified`: `Thu, 22 Apr 2021 14:22:12 GMT`; `ETag: "60818694-ba0"`
+- Defines the `Ed25519Signature2020` proof type and its proof terms (`created`, `proofPurpose`,
+  `verificationMethod`, `challenge`, `domain`, …), which the credentials/v2 context does not.
+  The `Legacy` package's RDFC variant needs it: without it, RDFC canonicalization of the proof
+  configuration would drop those terms, so it now fails closed (issue #36). There is no published
+  `EcdsaSecp256r1Signature2019` counterpart (`https://w3id.org/security/suites/ecdsa-2019/v1`
+  answers 404 as of 2026-10-28).
+- Git pin (byte-identical): `digitalbazaar/ed25519-signature-2020-context` @ `ed4eeb7b9cd172602270e53298f2562c99a9fc69` (2021-04-22), path `contexts/ed25519-signature-2020-v1.jsonld`
+- SHA-256: `b9e1ab971fd8bf2c7553e0c4a9438e0b9450afde1ea1ca5b2492368b9f549588` (2976 bytes)

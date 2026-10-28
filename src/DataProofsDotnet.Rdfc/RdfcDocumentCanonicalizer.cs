@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using DataProofsDotnet;
+using DataProofsDotnet.Rdfc.Internal;
 using Newtonsoft.Json.Linq;
 using VDS.RDF;
 using VDS.RDF.JsonLd;
@@ -21,6 +22,22 @@ namespace DataProofsDotnet.Rdfc;
 /// values, are handed to dotNetRDF as serialized JSON strings, and leave as canonical
 /// N-Quads. Every failure surfaces as <see cref="RdfCanonicalizationException"/>. Immutable
 /// and thread-safe after construction (NFR-4).
+/// <para>
+/// Canonicalization <b>fails closed on data loss</b> (issue #36, VC Data Integrity 1.0 §2.4.3).
+/// dotNetRDF on its own drops what it cannot turn into RDF, silently or with a warning, and
+/// normalizes IRIs when it prints them. Whatever is dropped or respelled would not be signed.
+/// So a JSON-LD input is rejected with <see cref="JsonLdDataLossException"/> when it uses a term
+/// its <c>@context</c> does not define, has an IRI that is not a well-formed absolute IRI in any
+/// position (subject, type, property, value, named graph, list member, datatype), has a
+/// malformed language tag, uses a blank node as a property, uses <c>@direction</c> or
+/// <c>@index</c>, or has an IRI the canonical N-Quads would spell differently (dot segments,
+/// percent-encoded unreserved or non-ASCII characters, upper-case scheme or host, a default
+/// port). Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
+/// output is spelled as in the input. N-Quads input with an IRI that would be respelled is
+/// rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
+/// top-level value or node that carries nothing but an <c>@id</c>) are not data loss here, and
+/// numbers are signed in their canonical XSD form, so <c>1</c> and <c>1.0</c> sign the same.
+/// </para>
 /// </remarks>
 public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 {
@@ -83,13 +100,29 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
         var options = new JsonLdProcessorOptions
         {
             DocumentLoader = LoadRemoteDocument,
+            // Reports what expansion drops (undefined terms, malformed language tags) as warnings
+            // instead of discarding it silently (issue #36).
+            SafeMode = true,
         };
 
         var store = new TripleStore();
+        string? loss;
         try
         {
-            var parser = new JsonLdParser(options);
-            parser.Load(store, new StringReader(json));
+            loss = JsonLdLossAudit.FindLoss(json, options);
+            if (loss is null)
+            {
+                // The parse itself is unchanged, so accepted input canonicalizes to the same bytes
+                // as before; its warnings back up the audit, and the handler catches respellings.
+                var handler = new ExactIriStoreHandler(store);
+                var parser = new JsonLdParser(options);
+                var warned = false;
+                parser.Warning += _ => warned = true;
+                parser.Load(handler, new StringReader(json), store.UriFactory);
+                loss = warned ? JsonLdLossAudit.IgnoredContent
+                    : handler.RespelledIri ? JsonLdLossAudit.RespelledIri
+                    : null;
+            }
         }
         catch (Exception ex)
         {
@@ -103,20 +136,32 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
             throw new RdfCanonicalizationException("JSON-LD expansion failed.", ex);
         }
 
+        if (loss is not null)
+        {
+            throw new JsonLdDataLossException($"The JSON-LD input cannot be canonicalized without losing data: it {loss}.");
+        }
+
         return store;
     }
 
     private static TripleStore ParseNQuads(string nQuads)
     {
         var store = new TripleStore();
+        var handler = new ExactIriStoreHandler(store);
         try
         {
             var parser = new NQuadsParser();
-            parser.Load(store, new StringReader(nQuads));
+            parser.Load(handler, new StringReader(nQuads), store.UriFactory);
         }
         catch (Exception ex)
         {
             throw new RdfCanonicalizationException("The N-Quads input could not be parsed.", ex);
+        }
+
+        if (handler.RespelledIri)
+        {
+            throw new RdfCanonicalizationException(
+                $"The N-Quads input cannot be canonicalized as written: it {JsonLdLossAudit.RespelledIri}.");
         }
 
         return store;

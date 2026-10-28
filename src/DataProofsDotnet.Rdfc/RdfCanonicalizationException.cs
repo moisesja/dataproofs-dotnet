@@ -11,9 +11,10 @@ namespace DataProofsDotnet.Rdfc;
 /// <remarks>
 /// This is the documented wrapper exception of the <c>Rdfc</c> canonicalizer interface
 /// (FR-9): no <c>dotNetRDF</c> or <c>Newtonsoft</c> exception type ever surfaces to a
-/// caller. Messages never carry key material or secrets (FR-23).
+/// caller. Messages never carry key material or secrets (FR-23). Input that JSON-LD processing
+/// would only partly carry into RDF raises the derived <see cref="JsonLdDataLossException"/>.
 /// </remarks>
-public sealed class RdfCanonicalizationException : DataProofsException
+public class RdfCanonicalizationException : DataProofsException
 {
     /// <summary>Creates an exception with a message.</summary>
     public RdfCanonicalizationException(string message)

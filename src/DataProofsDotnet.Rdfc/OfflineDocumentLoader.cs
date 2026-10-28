@@ -16,6 +16,13 @@ namespace DataProofsDotnet.Rdfc;
 /// <see cref="CachingNetworkDocumentLoader"/>.
 /// </para>
 /// <para>
+/// Besides the core W3C contexts, it bundles <c>https://www.w3.org/ns/credentials/undefined-terms/v2</c>,
+/// which VCDM 2.0 §5.2 asks a document to list last when its other contexts do not define every
+/// term it uses (RDFC canonicalization rejects undefined terms, issue #36), and
+/// <c>https://w3id.org/security/suites/ed25519-2020/v1</c>, which defines the
+/// <c>Ed25519Signature2020</c> proof terms the <c>Legacy</c> package's RDFC variant signs.
+/// </para>
+/// <para>
 /// The bundled contexts and their provenance are recorded in the package's
 /// <c>Contexts/PROVENANCE.md</c> (and <c>tests/fixtures/contexts/PROVENANCE.md</c>, the
 /// source of record). This loader is immutable and thread-safe (NFR-4).
@@ -41,6 +48,8 @@ public sealed class OfflineDocumentLoader : IDocumentLoader
             ["https://w3id.org/security/multikey/v1"] = "DataProofsDotnet.Rdfc.Contexts.multikey-v1.jsonld",
             ["https://w3id.org/security/bbs/v1"] = "DataProofsDotnet.Rdfc.Contexts.bbs-v1.jsonld",
             ["https://w3id.org/security/suites/jws-2020/v1"] = "DataProofsDotnet.Rdfc.Contexts.jws-2020-v1.jsonld",
+            ["https://www.w3.org/ns/credentials/undefined-terms/v2"] = "DataProofsDotnet.Rdfc.Contexts.credentials-undefined-terms-v2.jsonld",
+            ["https://w3id.org/security/suites/ed25519-2020/v1"] = "DataProofsDotnet.Rdfc.Contexts.ed25519-2020-v1.jsonld",
         };
 
     private static readonly Assembly ResourceAssembly = typeof(OfflineDocumentLoader).Assembly;
