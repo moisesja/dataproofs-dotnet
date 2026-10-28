@@ -14,6 +14,11 @@ internal static class HostileJson
 {
     public const string Context = "https://www.w3.org/ns/credentials/v2";
 
+    // VCDM 2.0 §5.2: a document whose contexts do not define its terms lists this one last.
+    // Without it RDFC canonicalization would drop the fixtures' undefined members, which it now
+    // refuses (issue #36), and these suites test JSON hygiene, not JSON-LD vocabulary.
+    public const string UndefinedTermsContext = "https://www.w3.org/ns/credentials/undefined-terms/v2";
+
     // The check's message phrases (JsonInputCheck.FindProblem), asserted exactly so that every
     // negative case fails against the pre-fix code whichever way that code mishandled the input.
     public const string Surrogate = "contains a JSON escape for an unpaired UTF-16 surrogate";
@@ -44,8 +49,8 @@ internal static class HostileJson
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, null),
     };
 
-    /// <summary>A minimal JSON-LD document over the VCDM 2.0 context.</summary>
-    public static string BaseDocument => "{\"@context\":[\"" + Context + "\"],\"a\":1}";
+    /// <summary>A minimal JSON-LD document over the VCDM 2.0 contexts.</summary>
+    public static string BaseDocument => "{\"@context\":[\"" + Context + "\",\"" + UndefinedTermsContext + "\"],\"a\":1}";
 
     /// <summary>
     /// Parses as a caller might: depth up to 256 and duplicates kept, so the hostile content
