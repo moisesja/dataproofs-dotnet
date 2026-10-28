@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - it has a malformed language tag or uses a blank node as a property;
   - it uses `@direction` or `@index`, which RDF canonicalization cannot carry;
   - the canonical N-Quads would spell one of its IRIs differently: dot segments, percent-encoded
-    unreserved or non-ASCII characters, upper-case scheme or host, a default port.
+    unreserved or non-ASCII characters, upper-case scheme or host, a default port;
+  - it sets a non-null `@base`. dotNetRDF resolves relative IRIs against it with `System.Uri`, which
+    respells them during expansion, so `users/%61lice` would sign as `users/alice`.
 
   The parse itself is unchanged, so accepted input canonicalizes to exactly the bytes it did before,
   and every W3C vector passes unchanged. Messages name the cause and never quote the input.
@@ -62,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   library created over such documents. To upgrade:
   - define your terms in a context, or list `https://www.w3.org/ns/credentials/undefined-terms/v2`
     last in `@context`;
-  - write IRIs well formed and in normalized form;
+  - write IRIs well formed, absolute (no `@base`) and in normalized form;
   - for a credentials/v1 document, also list `https://w3id.org/security/data-integrity/v2` (bundled);
   - for the Legacy RDFC variant, list `https://w3id.org/security/suites/ed25519-2020/v1`
     (`Ed25519Signature2020`), or supply a context that defines the `EcdsaSecp256r1Signature2019`

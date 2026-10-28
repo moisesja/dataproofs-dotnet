@@ -32,7 +32,8 @@ namespace DataProofsDotnet.Rdfc;
 /// malformed language tag, uses a blank node as a property, uses <c>@direction</c> or
 /// <c>@index</c>, or has an IRI the canonical N-Quads would spell differently (dot segments,
 /// percent-encoded unreserved or non-ASCII characters, upper-case scheme or host, a default
-/// port). Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
+/// port), or sets <c>@base</c>: dotNetRDF resolves relative IRIs against it with <see cref="Uri"/>,
+/// which respells them before any check could compare. Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
 /// output is spelled as in the input. N-Quads input with an IRI that would be respelled is
 /// rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
 /// top-level value or node that carries nothing but an <c>@id</c>) are not data loss here, and
@@ -142,7 +143,7 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 
         if (loss is not null)
         {
-            throw new JsonLdDataLossException($"The JSON-LD input cannot be canonicalized without losing data: it {loss}.");
+            throw new JsonLdDataLossException(DataLossMessage(loss));
         }
 
         return store;
@@ -185,6 +186,9 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
             throw new RdfCanonicalizationException("RDF Dataset Canonicalization (RDFC-1.0) failed.", ex);
         }
     }
+
+    private static string DataLossMessage(string loss)
+        => $"The JSON-LD input cannot be canonicalized without losing data: it {loss}.";
 
     private static string ToHashName(RdfCanonicalizationHashAlgorithm hashAlgorithm) => hashAlgorithm switch
     {

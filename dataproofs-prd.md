@@ -119,7 +119,8 @@ Forbidden everywhere: `net-did` packages, `jose-jwt`, SdJwt.Net (runtime), NSec,
 - it has a malformed language tag;
 - it uses a blank node as a property;
 - it uses `@direction` or `@index`, which RDF canonicalization cannot carry;
-- an IRI would be spelled differently in the canonical form: dot segments, percent-encoded unreserved or non-ASCII characters, an upper-case scheme or host, a default port.
+- an IRI would be spelled differently in the canonical form: dot segments, percent-encoded unreserved or non-ASCII characters, an upper-case scheme or host, a default port;
+- it sets a non-null `@base`. dotNetRDF resolves relative IRIs against it with `System.Uri`, which respells them during expansion. Without `@base`, the base stays null (as VC Data Integrity §2.4.3 requires of the processing base), so no relative IRI is ever resolved.
 
 The parse is unchanged, so accepted input canonicalizes to the same bytes as before, and every output IRI is spelled as in the input. N-Quads input with an IRI that would be respelled is rejected too. Not data loss: constructs that produce no RDF by definition, namely `null` values and top-level values or `@id`-only nodes. Numbers are signed in canonical XSD form, so `1` and `1.0` sign the same. The suites report the error as `DATA_LOSS_DETECTION_ERROR` when verifying and wrap it in `ProofGenerationException` when creating. A credential with terms no context defines lists `https://www.w3.org/ns/credentials/undefined-terms/v2` last (VCDM 2.0 §5.2). Messages name the cause but never quote the input (FR-23).
 

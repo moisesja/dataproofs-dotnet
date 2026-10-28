@@ -32,6 +32,7 @@ public sealed class Issue36DataLossTests
     private const string Index = "uses @index, which the canonical form does not carry";
     private const string RespelledIri = "has an IRI that the canonical form would spell differently";
     private const string IgnoredContent = "has content that JSON-LD processing ignores";
+    private const string Base = "sets @base, and relative IRIs resolved against it would be respelled";
 
     private static readonly RdfcDocumentCanonicalizer Canonicalizer = new();
 
@@ -90,6 +91,10 @@ public sealed class Issue36DataLossTests
         { "respelled: default port", Vc("\"credentialSubject\":{\"id\":\"https://e.example:443/users/alice\",\"name\":\"n\"}"), RespelledIri, ":443" },
         { "respelled: fragment escape", Vc("\"credentialSubject\":{\"id\":\"https://e.example/users#%61lice\",\"name\":\"n\"}"), RespelledIri, "%61" },
         { "respelled: query escape", Vc("\"credentialSubject\":{\"id\":\"https://e.example/users?q=%7e\",\"name\":\"n\"}"), RespelledIri, "%7e" },
+        // dotNetRDF resolves against @base with System.Uri, so "users/%61lice" would sign as
+        // <https://e.example/users/alice>, the same as "users/alice" (adversarial review, B1).
+        { "@base respelling a relative IRI", "{\"@context\":{\"@base\":\"https://e.example/\",\"name\":\"https://schema.org/name\"},\"@id\":\"users/%61lice\",\"name\":\"n\"}", Base, "%61lice" },
+        { "@base in a scoped context", Vc(Subject("\"name\":\"n\""), V2With("{\"knows\":{\"@id\":\"https://schema.org/knows\",\"@context\":{\"@base\":\"https://e.example/\"}}}")), Base, "e.example" },
         { "respelled datatype IRI", Vc(Subject("\"name\":{\"@value\":\"x\",\"@type\":\"https://e.example/x/../datatype\"}")), RespelledIri, "datatype" },
     };
 
@@ -122,6 +127,7 @@ public sealed class Issue36DataLossTests
         { "@json literal", Vc(Subject("\"data\":{\"a\":[1,2]}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "\"{\\\"a\\\":[1,2]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON>" },
         { "null value", Vc(Subject("\"name\":\"n\",\"description\":null")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "blank-node subject", Vc("\"credentialSubject\":{\"name\":\"n\"}"), "_:c14n0 <https://schema.org/name> \"n\" ." },
+        { "@base: null", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":null}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
     };
 
     [Theory]
@@ -162,6 +168,22 @@ public sealed class Issue36DataLossTests
 
         nquads.Should().Be("<did:example:alice> <https://e.example/vocab#clearance> \"admin\" .\n");
         loader.Loads.Should().Be(1);
+    }
+
+    [Fact]
+    public void CanonicalizeJsonLd_Import_FailsClosed()
+    {
+        // @import merges a remote context into a local one, so it could carry a @base along, which the
+        // input check cannot see. dotNetRDF fails on @import while the base is null; if an upgrade
+        // makes it work, this fails and the remote @base needs the input check's treatment.
+        var canonicalizer = new RdfcDocumentCanonicalizer(new ChangingLoader(
+            "{\"@context\":{\"@base\":\"https://e.example/\"}}", "{\"@context\":{\"@base\":\"https://e.example/\"}}"));
+        var document = Parse("{\"@context\":{\"@version\":1.1,\"@import\":\"" + ChangingLoader.Url + "\",\"name\":\"https://schema.org/name\"},"
+            + "\"@id\":\"users/%61lice\",\"name\":\"n\"}");
+
+        var act = () => canonicalizer.CanonicalizeJsonLd(document);
+
+        act.Should().Throw<RdfCanonicalizationException>();
     }
 
     private sealed class ChangingLoader(string first, string later) : IDocumentLoader

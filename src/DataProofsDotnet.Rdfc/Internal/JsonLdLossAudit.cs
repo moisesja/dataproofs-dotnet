@@ -24,6 +24,12 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// <c>JsonLdParser.Load</c> does, fails on any expansion warning, and then applies dotNetRDF's own
 /// IRI test to every position of the expanded form. IRIs that survive but would be respelled in
 /// the canonical N-Quads are caught where they are emitted, by <see cref="ExactIriStoreHandler"/>.
+/// One respelling happens earlier, where that check cannot see it: dotNetRDF resolves a relative
+/// IRI against <c>@base</c> with <see cref="Uri"/>, which also decodes percent-escapes and normalizes
+/// case and port, so the expanded string is already respelled. Input that sets <c>@base</c> is
+/// therefore refused (<see cref="HasBase"/>); without it the base stays null and nothing is resolved.
+/// A remote context's <c>@base</c> is ignored (JSON-LD 1.1 §4.1.2), and dotNetRDF fails on
+/// <c>@import</c> while the base is null, so the input is the only place one can take effect.
 /// Each result is a predicate phrase for a message ("uses a term that…") and never quotes the
 /// input (FR-23).
 /// </para>
@@ -38,6 +44,7 @@ internal static class JsonLdLossAudit
     public const string Index = "uses @index, which the canonical form does not carry";
     public const string RespelledIri = "has an IRI that the canonical form would spell differently";
     public const string IgnoredContent = "has content that JSON-LD processing ignores";
+    public const string Base = "sets @base, and relative IRIs resolved against it would be respelled";
 
     /// <summary>
     /// Expands <paramref name="json"/> as <c>JsonLdParser.Load</c> does and returns why its RDF
@@ -50,6 +57,11 @@ internal static class JsonLdLossAudit
         using (var reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None })
         {
             input = JToken.ReadFrom(reader);
+        }
+
+        if (HasBase(input))
+        {
+            return Base;
         }
 
         var warnings = new List<JsonLdProcessorWarning>();
@@ -204,6 +216,17 @@ internal static class JsonLdLossAudit
             ? null
             : MalformedIri;
     }
+
+    /// <summary>
+    /// Whether <paramref name="token"/> holds a non-null <c>@base</c> member at any depth, in an
+    /// inline context or a scoped one.
+    /// </summary>
+    private static bool HasBase(JToken token) => token switch
+    {
+        JObject obj => obj.Properties().Any(p => (p.Name == "@base" && p.Value.Type != JTokenType.Null) || HasBase(p.Value)),
+        JArray array => array.Any(HasBase),
+        _ => false,
+    };
 
     private static bool IsJsonLiteral(JToken datatype)
         => datatype.Type == JTokenType.String && (string)datatype! == "@json";
