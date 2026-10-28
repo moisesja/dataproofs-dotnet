@@ -19,9 +19,8 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// defines, because it processes scoped contexts as local ones (adversarial review, F1). The
 /// <c>@base</c> check (<see cref="JsonLdLossAudit"/>) therefore also expands with
 /// <see cref="Options"/><c>(withoutBase: true)</c>, which serves every context without its
-/// <c>@base</c> members. It records, too, whether a loaded context aliases a term to <c>@set</c>,
-/// for the check that serves contexts with that keyword read as <c>@list</c> (see
-/// <see cref="JsonLdLossAudit"/>).
+/// <c>@base</c> members. It also collects the terms loaded contexts define as aliases of <c>@set</c>
+/// and <c>@index</c>, for the check on a set object's dropped <c>@index</c>.
 /// </para>
 /// </remarks>
 internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
@@ -31,8 +30,14 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
     /// <summary>Whether any context loaded so far holds a non-null <c>@base</c> member.</summary>
     public bool AnySetsBase { get; private set; }
 
-    /// <summary>Whether any context loaded so far aliases a term to <c>@set</c>.</summary>
-    public bool AnyAliasesSet { get; private set; }
+    private readonly HashSet<string> _setAliases = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _indexAliases = new(StringComparer.Ordinal);
+
+    /// <summary>The terms loaded contexts define as aliases of <c>@set</c>.</summary>
+    public IReadOnlyCollection<string> SetAliases => _setAliases;
+
+    /// <summary>The terms loaded contexts define as aliases of <c>@index</c>.</summary>
+    public IReadOnlyCollection<string> IndexAliases => _indexAliases;
 
     /// <summary>Processor options that load contexts through this cache, served as <paramref name="view"/>.</summary>
     public JsonLdProcessorOptions Options(ContextView view) => new()
@@ -72,15 +77,7 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
             }
         }
 
-        var setAsList = JsonLdLossAudit.SetAsList(token);
-        if (!JToken.DeepEquals(setAsList, token))
-        {
-            AnyAliasesSet = true;
-            if (view == ContextView.SetAsList)
-            {
-                token = setAsList;
-            }
-        }
+        JsonLdLossAudit.CollectAliases(token, _setAliases, _indexAliases);
 
         return new RemoteDocument
         {
@@ -98,7 +95,4 @@ internal enum ContextView
 
     /// <summary>Without their <c>@base</c> members.</summary>
     WithoutBase,
-
-    /// <summary>With every alias of <c>@set</c> made an alias of <c>@list</c>.</summary>
-    SetAsList,
 }

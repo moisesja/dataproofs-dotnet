@@ -89,6 +89,11 @@ public sealed class Issue36DataLossTests
         // re-review 5686538504); aliases of either keyword count.
         { "@index on a set object", Vc(Subject("\"name\":{\"@set\":[\"Alice\"],\"@index\":\"admin\"}")), Index, "admin" },
         { "@index on a set object, both keywords aliased", Vc(Subject("\"name\":{\"set\":[\"Alice\"],\"idx\":\"admin\"}"), V2With("{\"set\":\"@set\",\"idx\":\"@index\"}")), Index, "admin" },
+        { "@index on a set under @reverse", Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"@set\":[{\"id\":\"did:example:bob\"}],\"@index\":\"admin\"}}}"), Index, "admin" },
+        { "@index on a set at the root", "{\"@context\":{\"name\":\"https://schema.org/name\"},\"@set\":[{\"@id\":\"urn:a\",\"name\":\"A\"}],\"@index\":\"admin\"}", Index, "admin" },
+        { "@index on a set in @graph", "{\"@context\":{\"name\":\"https://schema.org/name\"},\"@graph\":[{\"@set\":[{\"@id\":\"urn:a\",\"name\":\"A\"}],\"@index\":\"admin\"}]}", Index, "admin" },
+        { "@index on a set under @included", Vc(Subject("\"name\":\"n\",\"@included\":{\"@set\":[{\"id\":\"urn:a\",\"name\":\"A\"}],\"@index\":\"admin\"}")), Index, "admin" },
+        { "@index on a set inside a list", Vc(Subject("\"steps\":[{\"@set\":[\"a\"],\"@index\":\"admin\"}]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@container\":\"@list\"}}")), Index, "admin" },
         { "@index on a set object, @set aliased by @id", Vc(Subject("\"name\":{\"set\":[\"Alice\"],\"@index\":\"admin\"}"), V2With("{\"set\":{\"@id\":\"@set\"}}")), Index, "admin" },
         { "@index map key", Vc(Subject("\"notes\":{\"first\":\"a\"}"), V2With("{\"notes\":{\"@id\":\"https://e.example/vocab#notes\",\"@container\":\"@index\"}}")), Index, "first" },
         { "respelled: %2E%2E segment", Vc("\"credentialSubject\":{\"id\":\"https://e.example/x/%2E%2E/users/alice\",\"name\":\"n\"}"), RespelledIri, "%2E" },
@@ -153,6 +158,15 @@ public sealed class Issue36DataLossTests
         { "set object without @index", Vc(Subject("\"name\":{\"@set\":[\"Alice\"]}")), "<did:example:alice> <https://schema.org/name> \"Alice\" ." },
         { "@json term whose payload holds @set and @index", Vc(Subject("\"data\":{\"@set\":[1],\"@index\":\"x\"}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<https://e.example/vocab#data> \"{\\\"@index\\\":\\\"x\\\",\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
         { "@json value object whose payload holds @set and @index", Vc(Subject("\"data\":{\"@value\":{\"@set\":[1],\"@index\":\"x\"},\"@type\":\"@json\"}"), V2With("{\"data\":\"https://e.example/vocab#data\"}")), "<https://e.example/vocab#data> \"{\\\"@index\\\":\\\"x\\\",\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        // The set-object check rewrites only objects holding a set key and an index key, so these stay as
+        // written: JSON literals holding keyword-shaped keys, and sets under @reverse (PR #37 review 5687415441).
+        { "@json term whose payload holds @set and @list", Vc(Subject("\"data\":{\"@set\":[1],\"@list\":[2]}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "\"{\\\"@list\\\":[2],\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "@json term whose payload holds @list then @set", Vc(Subject("\"data\":{\"@list\":[2],\"@set\":[1]}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "\"{\\\"@list\\\":[2],\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "@json value object whose payload holds @set and @list", Vc(Subject("\"data\":{\"@type\":\"@json\",\"@value\":{\"@set\":[1],\"@list\":[2]}}"), V2With("{\"data\":\"https://e.example/vocab#data\"}")), "\"{\\\"@list\\\":[2],\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "@json payload holding @set, @index and @graph", Vc(Subject("\"data\":{\"@set\":[1],\"@index\":\"x\",\"@graph\":[2]}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "\"{\\\"@graph\\\":[2],\\\"@index\\\":\\\"x\\\",\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "set under @reverse", Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"@set\":[{\"id\":\"did:example:bob\"}]}}}"), "<did:example:bob> <https://schema.org/knows> <did:example:alice> ." },
+        { "aliased set under @reverse", Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"set\":[{\"id\":\"did:example:bob\"}]}}}", V2With("{\"set\":\"@set\"}")), "<did:example:bob> <https://schema.org/knows> <did:example:alice> ." },
+        { "properties that share names with aliases defined only in a literal", Vc(Subject("\"data\":{\"@context\":{\"s\":\"@set\",\"idx\":\"@index\"}},\"knows\":{\"id\":\"urn:n\",\"s\":\"1\",\"idx\":\"x\"}"), V2With("{\"s\":\"https://e.example/vocab#s\",\"idx\":\"https://e.example/vocab#idx\",\"knows\":\"https://schema.org/knows\",\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<urn:n> <https://e.example/vocab#idx> \"x\" ." },
         { "@base: null", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":null}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "@base that resolves nothing", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":\"https://e.example/\"}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "@json term whose payload holds a @base key", Vc(Subject("\"data\":{\"@base\":\"ordinary application data\"}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<https://e.example/vocab#data> \"{\\\"@base\\\":\\\"ordinary application data\\\"}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
@@ -577,6 +591,46 @@ public sealed class Issue36DataLossTests
             .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a changed value breaks the signature");
         suite.VerifyProof(Name("{\"@set\":[\"Alice\"]}"), proof, publicKey).Verified
             .Should().BeTrue("a set without @index carries nothing more than its values");
+    }
+
+    public static TheoryData<string, string, string> SetAndLiteralShapes()
+    {
+        // Lossless documents the set-object check must leave alone, signed and verified by both suites,
+        // each with a change that must still break the signature (PR #37 review 5687415441).
+        var literal = V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}");
+        var shapes = new (string Document, string Tampered)[]
+        {
+            (Vc(Subject("\"data\":{\"@set\":[1],\"@list\":[2]}"), literal), Vc(Subject("\"data\":{\"@set\":[1],\"@list\":[3]}"), literal)),
+            (Vc(Subject("\"data\":{\"@type\":\"@json\",\"@value\":{\"@list\":[2],\"@set\":[1]}}"), V2With("{\"data\":\"https://e.example/vocab#data\"}")),
+             Vc(Subject("\"data\":{\"@type\":\"@json\",\"@value\":{\"@list\":[2],\"@set\":[3]}}"), V2With("{\"data\":\"https://e.example/vocab#data\"}"))),
+            (Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"@set\":[{\"id\":\"did:example:bob\"}]}}}"),
+             Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"@set\":[{\"id\":\"did:example:mallory\"}]}}}")),
+            (Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"set\":[{\"id\":\"did:example:bob\"}]}}}", V2With("{\"set\":\"@set\"}")),
+             Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"set\":[{\"id\":\"did:example:mallory\"}]}}}", V2With("{\"set\":\"@set\"}"))),
+        };
+
+        var data = new TheoryData<string, string, string>();
+        foreach (var cryptosuite in new[] { EddsaRdfc2022Cryptosuite.CryptosuiteName, EcdsaRdfc2019Cryptosuite.CryptosuiteName })
+        {
+            foreach (var (document, tampered) in shapes)
+            {
+                data.Add(cryptosuite, document, tampered);
+            }
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(SetAndLiteralShapes))]
+    public async Task LosslessSetAndLiteralShapes_SignAndVerify(string cryptosuite, string document, string tampered)
+    {
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        var proof = await suite.CreateProofAsync(Parse(document), Options(cryptosuite), signer);
+
+        suite.VerifyProof(Parse(document), proof, publicKey).Verified.Should().BeTrue();
+        suite.VerifyProof(Parse(tampered), proof, publicKey).Problems
+            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
     }
 
     [Theory]
