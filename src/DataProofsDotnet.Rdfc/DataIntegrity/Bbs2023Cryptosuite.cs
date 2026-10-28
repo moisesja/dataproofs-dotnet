@@ -66,6 +66,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <summary>The cryptosuite identifier, <c>bbs-2023</c>.</summary>
     public const string CryptosuiteName = "bbs-2023";
 
+    private const string DataLossMessage =
+        "The document or proof configuration cannot be RDFC-canonicalized without losing data, so it cannot be secured.";
+
     private static readonly DefaultKeyGenerator KeyGenerator = new();
 
     private readonly IRdfCanonicalizer _canonicalizer;
@@ -348,6 +351,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             // Capability faults propagate (a verifier with no BBS cannot make a verdict).
             throw;
         }
+        catch (ProofGenerationException ex) when (ex.InnerException is JsonLdDataLossException)
+        {
+            // Content the canonical form would drop is unsigned, so it may have been altered (issue #36).
+            return ProofVerificationResult.Failure(
+                ProofProblemCodes.DataLossDetectionError,
+                "The reveal document or proof configuration cannot be RDFC-canonicalized without losing data.", proof);
+        }
         catch (Exception ex)
         {
             return ProofVerificationResult.Failure(
@@ -516,6 +526,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         {
             canonical = _canonicalizer.CanonicalizeJsonLd(document, RdfCanonicalizationHashAlgorithm.Sha256);
         }
+        catch (JsonLdDataLossException ex)
+        {
+            // VC Data Integrity 1.0 §2.4.3: what JSON-LD processing drops would not be signed (issue #36).
+            throw new ProofGenerationException(DataLossMessage, ex);
+        }
         catch (RdfCanonicalizationException ex)
         {
             throw new ProofGenerationException("The document could not be RDFC-canonicalized.", ex);
@@ -563,6 +578,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             canonical = _canonicalizer.CanonicalizeJsonLd(
                 JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo),
                 RdfCanonicalizationHashAlgorithm.Sha256);
+        }
+        catch (JsonLdDataLossException ex)
+        {
+            throw new ProofGenerationException(DataLossMessage, ex);
         }
         catch (RdfCanonicalizationException ex)
         {

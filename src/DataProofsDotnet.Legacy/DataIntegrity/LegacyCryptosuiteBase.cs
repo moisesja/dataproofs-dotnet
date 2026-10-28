@@ -46,14 +46,17 @@ namespace DataProofsDotnet.Legacy.DataIntegrity;
 /// chains), JCS <em>fails closed</em> — create throws, verify does not pass. Use the RDFC
 /// variant (predecessors live in the canonicalized document) or a 2022/2019 suite for chains.
 /// </description></item>
-/// <item><description><b>RDFC + undefined terms:</b> RDF Dataset Canonicalization binds only
-/// terms defined in the active JSON-LD <c>@context</c>; members not defined there — including
-/// unmodeled proof extensions such as <c>capabilityChain</c> under a context that does not
-/// define them — are dropped during JSON-LD expansion and are therefore NOT cryptographically
-/// bound. This is inherent to JSON-LD/RDFC and shared with the conformant <c>rdfc-*</c> suites.
-/// The <see cref="LegacyCanonicalization.Jcs"/> default binds every member verbatim; prefer it
-/// for documents/proofs carrying unmodeled extension members, or use an <c>@context</c> that
-/// defines every term.</description></item>
+/// <item><description><b>RDFC needs every term defined:</b> RDF Dataset Canonicalization can
+/// only sign terms the active JSON-LD <c>@context</c> defines, so the RDFC variant <em>fails
+/// closed</em> on anything else (issue #36): create throws <see cref="ProofGenerationException"/>
+/// and verify does not pass. That includes the proof configuration. The credentials/v2 context
+/// does not define <c>Ed25519Signature2020</c> or <c>EcdsaSecp256r1Signature2019</c>, and without
+/// them <c>created</c>, <c>proofPurpose</c>, <c>verificationMethod</c>, <c>challenge</c> and
+/// <c>domain</c> would go unsigned. Include <c>https://w3id.org/security/suites/ed25519-2020/v1</c>
+/// (bundled offline) for <c>Ed25519Signature2020</c>. No context is published for
+/// <c>EcdsaSecp256r1Signature2019</c>, so supply one that defines its terms. Unmodeled proof
+/// extensions such as <c>capabilityChain</c> need a defining context too. The
+/// <see cref="LegacyCanonicalization.Jcs"/> default binds every member verbatim.</description></item>
 /// </list>
 /// </para>
 /// </remarks>
@@ -194,6 +197,12 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         {
             throw new ProofGenerationException(
                 "The document or proof configuration could not be JCS-canonicalized.", ex);
+        }
+        catch (JsonLdDataLossException ex)
+        {
+            // VC Data Integrity 1.0 §2.4.3: what JSON-LD processing drops would not be signed (issue #36).
+            throw new ProofGenerationException(
+                "The document or proof configuration cannot be RDFC-canonicalized without losing data, so it cannot be secured.", ex);
         }
         catch (RdfCanonicalizationException ex)
         {
