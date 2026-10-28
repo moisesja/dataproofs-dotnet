@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using NetCid;
 
 namespace DataProofsDotnet.Rdfc.Internal;
@@ -19,13 +18,15 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// (<see cref="HmacSha256"/>); base64url-no-pad encoding routes through NetCid. No
 /// <c>System.Security.Cryptography</c> primitive is used.
 /// </para>
-/// <para>Pure functions; the regexes are compiled once and stateless.</para>
+/// <para>
+/// Labels are found and replaced as <em>terms</em> (<see cref="RewriteTerms"/>), never as text: a
+/// literal can contain <c>_:b0</c> or <c>&lt;urn:bnid:_:b0&gt;</c>, and rewriting it let two
+/// different literal values reach the signature as the same message (adversarial review).
+/// </para>
+/// <para>Pure functions.</para>
 /// </remarks>
 internal static class BlankNodeLabels
 {
-    // Matches every blank-node label token "_:<name>" in an N-Quad line.
-    private static readonly Regex BlankNodePattern = new(@"_:([A-Za-z0-9]+)", RegexOptions.Compiled);
-
     /// <summary>
     /// Builds the HMAC-shuffled label map: each distinct canonical blank-node label
     /// (without the <c>_:</c> prefix, e.g. <c>c14n0</c>) maps to a sequential <c>b*</c>
@@ -41,14 +42,15 @@ internal static class BlankNodeLabels
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var nquad in canonicalNQuads)
         {
-            foreach (Match match in BlankNodePattern.Matches(nquad))
+            RewriteTerms(nquad, blankNode: label =>
             {
-                var label = match.Groups[1].Value;
                 if (seen.Add(label))
                 {
                     labels.Add(label);
                 }
-            }
+
+                return "_:" + label;
+            });
         }
 
         var digests = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -107,10 +109,59 @@ internal static class BlankNodeLabels
         return lines;
     }
 
-    private static string Relabel(string nquad, IReadOnlyDictionary<string, string> labelMap)
-        => BlankNodePattern.Replace(nquad, match =>
+    /// <summary>
+    /// Rewrites the blank-node and IRI terms of one canonical N-Quad line, copying every literal
+    /// whole. <paramref name="blankNode"/> gets a label without <c>_:</c>, <paramref name="iri"/> an
+    /// IRI without its angle brackets; each returns the term's replacement text.
+    /// </summary>
+    public static string RewriteTerms(string nquad, Func<string, string>? blankNode = null, Func<string, string>? iri = null)
+    {
+        var result = new StringBuilder(nquad.Length);
+        var i = 0;
+        while (i < nquad.Length)
         {
-            var label = match.Groups[1].Value;
-            return labelMap.TryGetValue(label, out var replacement) ? "_:" + replacement : match.Value;
-        });
+            if (nquad[i] == '"')
+            {
+                // A literal ends at the first quote not escaped by a backslash.
+                var end = i + 1;
+                while (end < nquad.Length && nquad[end] != '"')
+                {
+                    end += nquad[end] == '\\' ? 2 : 1;
+                }
+
+                end = Math.Min(end + 1, nquad.Length);
+                result.Append(nquad, i, end - i);
+                i = end;
+            }
+            else if (nquad[i] == '<' && nquad.IndexOf('>', i) is var close and > 0)
+            {
+                var content = nquad.Substring(i + 1, close - i - 1);
+                result.Append(iri is null ? "<" + content + ">" : iri(content));
+                i = close + 1;
+            }
+            else if (nquad[i] == '_' && i + 1 < nquad.Length && nquad[i + 1] == ':')
+            {
+                var end = i + 2;
+                while (end < nquad.Length && char.IsAsciiLetterOrDigit(nquad[end]))
+                {
+                    end++;
+                }
+
+                var label = nquad.Substring(i + 2, end - i - 2);
+                result.Append(blankNode is null ? "_:" + label : blankNode(label));
+                i = end;
+            }
+            else
+            {
+                result.Append(nquad[i]);
+                i++;
+            }
+        }
+
+        return result.ToString();
+    }
+
+    private static string Relabel(string nquad, IReadOnlyDictionary<string, string> labelMap)
+        => RewriteTerms(nquad, blankNode: label =>
+            labelMap.TryGetValue(label, out var replacement) ? "_:" + replacement : "_:" + label);
 }

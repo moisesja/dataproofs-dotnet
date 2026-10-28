@@ -47,7 +47,7 @@ internal sealed class ProofInputPath : ISmokePath
             var rejected = false;
             try
             {
-                _ = await suite.CreateProofAsync(Credential(), options, Signer(Ed));
+                _ = await suite.CreateProofAsync(UndefinedTermsCredential(), options, Signer(Ed));
             }
             catch (ProofGenerationException ex)
             {
@@ -60,8 +60,8 @@ internal sealed class ProofInputPath : ISmokePath
             {
                 AdditionalProperties = new Dictionary<string, JsonElement> { ["ProofValue"] = Parse("\"metadata\"") },
             };
-            var proof = await suite.CreateProofAsync(Credential(), validOptions, Signer(Ed));
-            Gate.Expect(suite.VerifyProof(Credential(), proof, Pk(Ed)).Verified,
+            var proof = await suite.CreateProofAsync(UndefinedTermsCredential(), validOptions, Signer(Ed));
+            Gate.Expect(suite.VerifyProof(UndefinedTermsCredential(), proof, Pk(Ed)).Verified,
                 $"{suite.Name} accepts the case-distinct extension and verifies its proof");
         }
     }
@@ -246,11 +246,11 @@ internal sealed class LegacyPath : ISmokePath
         Gate.Expect(Jcs.Verify(p256Jcs, Pk(P256), AssertionMethod).Verified, "EcdsaSecp256r1Signature2019 (JCS) verifies");
         report.Artifact("legacy.ecdsaSecp256r1Signature2019.jcs", new() { ["secured"] = Wrap(p256Jcs) });
 
-        var edRdfc = await Rdfc.AddProofAsync(Credential(), LegacyProof(Ed25519Signature2020Cryptosuite.ProofType, Ed), Signer(Ed));
+        var edRdfc = await Rdfc.AddProofAsync(Ed25519SuiteCredential(), LegacyProof(Ed25519Signature2020Cryptosuite.ProofType, Ed), Signer(Ed));
         Gate.Expect(Rdfc.Verify(edRdfc, Pk(Ed), AssertionMethod).Verified, "Ed25519Signature2020 (RDFC) verifies");
         report.Det("legacy.ed25519Signature2020.rdfc.secured", Compact(edRdfc));
 
-        var p256 = await Rdfc.AddProofAsync(Credential(), LegacyProof(EcdsaSecp256r1Signature2019Cryptosuite.ProofType, P256), Signer(P256));
+        var p256 = await Rdfc.AddProofAsync(UndefinedTermsCredential(), LegacyProof(EcdsaSecp256r1Signature2019Cryptosuite.ProofType, P256), Signer(P256));
         Gate.Expect(Rdfc.Verify(p256, Pk(P256), AssertionMethod).Verified, "EcdsaSecp256r1Signature2019 (RDFC) verifies");
         report.Artifact("legacy.ecdsaSecp256r1Signature2019.rdfc", new() { ["secured"] = Wrap(p256) });
     }

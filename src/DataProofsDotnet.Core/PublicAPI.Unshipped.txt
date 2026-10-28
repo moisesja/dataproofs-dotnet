@@ -2,6 +2,7 @@
 const DataProofsDotnet.DataIntegrity.DataIntegrityProof.DataIntegrityProofType = "DataIntegrityProof" -> string!
 const DataProofsDotnet.DataIntegrity.EcdsaJcs2019Cryptosuite.CryptosuiteName = "ecdsa-jcs-2019" -> string!
 const DataProofsDotnet.DataIntegrity.EddsaJcs2022Cryptosuite.CryptosuiteName = "eddsa-jcs-2022" -> string!
+const DataProofsDotnet.DataIntegrity.ProofProblemCodes.DataLossDetectionError = "DATA_LOSS_DETECTION_ERROR" -> string!
 const DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidChallengeError = "INVALID_CHALLENGE_ERROR" -> string!
 const DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidDomainError = "INVALID_DOMAIN_ERROR" -> string!
 const DataProofsDotnet.DataIntegrity.ProofProblemCodes.InvalidVerificationMethod = "INVALID_VERIFICATION_METHOD" -> string!

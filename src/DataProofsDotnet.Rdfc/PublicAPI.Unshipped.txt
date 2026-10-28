@@ -38,6 +38,8 @@ DataProofsDotnet.Rdfc.IRdfCanonicalizer
 DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeJsonLd(System.Text.Json.JsonElement document, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> byte[]!
 DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuads(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> string!
 DataProofsDotnet.Rdfc.IRdfCanonicalizer.CanonicalizeNQuadsToMap(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+DataProofsDotnet.Rdfc.JsonLdDataLossException
+DataProofsDotnet.Rdfc.JsonLdDataLossException.JsonLdDataLossException(string! message) -> void
 DataProofsDotnet.Rdfc.LoadedContextDocument
 DataProofsDotnet.Rdfc.LoadedContextDocument.Content.get -> string!
 DataProofsDotnet.Rdfc.LoadedContextDocument.DocumentUrl.get -> System.Uri!

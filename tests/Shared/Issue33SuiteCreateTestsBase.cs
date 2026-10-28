@@ -164,7 +164,7 @@ public abstract class Issue33SuiteCreateTestsBase
         var escaped = HostileJson.LastMember(
             HostileJson.BaseDocument,
             "\"" + HostileJson.Esc(0xE9) + "\":\"" + pair + "\",\"s\":\"a\\/b\",\"x\":{\"a\":1},\"y\":{\"a\":2}");
-        var lenient = "{/* c */\"@context\":[\"" + HostileJson.Context + "\",],\"a\":1, // line\n}";
+        var lenient = "{/* c */\"@context\":[\"" + HostileJson.Context + "\",\"" + HostileJson.UndefinedTermsContext + "\",],\"a\":1, // line\n}";
         var deep = HostileJson.LastMember(HostileJson.BaseDocument, "\"d\":" + HostileJson.Nest(63));
         var options = WithExtension("x", HostileJson.Parse("\"" + HostileJson.Esc(0xE9) + pair + "\""));
 

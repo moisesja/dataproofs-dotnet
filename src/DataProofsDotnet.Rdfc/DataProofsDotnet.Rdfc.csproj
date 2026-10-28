@@ -29,7 +29,7 @@
   </ItemGroup>
 
   <!-- FR-10: version-pinned core W3C JSON-LD contexts embedded as assembly resources for the
-       offline-default document loader. Six core contexts are embedded directly from the single
+       offline-default document loader. Nine contexts are embedded directly from the single
        provenance source of record (tests/fixtures/contexts/, see its PROVENANCE.md) under stable
        logical names so the package's served bytes never drift from the provenance record; the
        credentials/examples/v2 context is authored locally (see Contexts/PROVENANCE.md). -->
@@ -41,6 +41,8 @@
     <EmbeddedResource Include="../../tests/fixtures/contexts/multikey-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.multikey-v1.jsonld" />
     <EmbeddedResource Include="../../tests/fixtures/contexts/bbs-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.bbs-v1.jsonld" />
     <EmbeddedResource Include="../../tests/fixtures/contexts/jws-2020-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.jws-2020-v1.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/credentials-undefined-terms-v2.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.credentials-undefined-terms-v2.jsonld" />
+    <EmbeddedResource Include="../../tests/fixtures/contexts/ed25519-2020-v1.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.ed25519-2020-v1.jsonld" />
     <EmbeddedResource Include="Contexts/credentials-examples-v2.jsonld" LogicalName="DataProofsDotnet.Rdfc.Contexts.credentials-examples-v2.jsonld" />
   </ItemGroup>
 

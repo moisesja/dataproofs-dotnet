@@ -5,6 +5,140 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Unreleased
+
+### Security
+
+- **RDFC canonicalization fails closed when JSON-LD processing would drop or respell data**
+  (issue [#36](https://github.com/moisesja/dataproofs-dotnet/issues/36)). `RdfcDocumentCanonicalizer`
+  handed JSON-LD to dotNetRDF, which silently drops what it cannot turn into RDF and prints IRIs
+  normalized. Whatever it dropped or respelled was not signed, so a holder could add or change it
+  without breaking an RDFC proof. Each of these verified on 1.4.0:
+  - changing a claim the contexts do not define. credentials/v2 has no `@vocab`, so this is every
+    custom claim of a credential that lists only that context;
+  - injecting a second `credentialSubject`, a `refreshService`, a nested node or a `type` entry whose
+    IRI .NET does not consider well formed (`did:example:m[0]`, `?filter[id]=1`, `a#b#c`);
+  - rewriting `issuer`, `validFrom` and `validUntil` when the credential's own `id` was such an IRI;
+  - respelling an IRI (`/x/%2E%2E/users/alice` for `/users/alice`, `HTTPS://HOST` for `https://host`).
+
+  The canonicalizer now rejects such input with the new `JsonLdDataLossException`. Creating a proof
+  throws `ProofGenerationException` with it as the inner exception, and verification fails with the new
+  `DATA_LOSS_DETECTION_ERROR`, as VC Data Integrity 1.0 §2.4.3 requires. It is rejected when:
+  - it uses a term no `@context` defines, or a keyword-like member;
+  - any IRI is not a well-formed absolute IRI: a subject, type, property, value, named-graph name,
+    list member or datatype;
+  - it has a malformed language tag or uses a blank node as a property;
+  - it uses `@direction` or `@index`, which RDF canonicalization cannot carry. That includes an
+    `@index` that expansion drops before any check sees it: a set object's (`{"@set": [...], "@index": "x"}`)
+    or a null value's. Keyword aliases count, resolved by the JSON-LD processor itself (chains and scope
+    included), and keys inside `@json` literals are data;
+  - the canonical N-Quads would spell one of its IRIs differently: dot segments, percent-encoded
+    unreserved or non-ASCII characters, upper-case scheme or host, a default port;
+  - it resolves a relative IRI against an `@base`. dotNetRDF resolves with `System.Uri`, which respells
+    the IRI during expansion, so `users/%61lice` would sign as `users/alice`. A `@base` that resolves
+    nothing passes, and so does a `"@base"` key that is data inside a `@json` literal;
+  - two distinct RDF terms would merge in dotNetRDF's store, which compares parsed URI components.
+    For example, a subject `https://e.example/` appended next to a signed `https://e.example` lost its
+    statements and still verified. A statement could likewise be moved into a graph named
+    `https://g.example/` beside a signed `https://g.example`. Exact duplicate statements stay harmless;
+  - a `@base` takes effect in a scoped context that a loaded context defines (dotNetRDF honors these,
+    though it ignores a remote context's own `@base`);
+  - a language tag is not ASCII letters, digits and hyphens: `en\n` passed dotNetRDF's pattern and put
+    a line break into the quad;
+  - a number is beyond the double range: `1e400` and `2e400` both signed as `Infinity`;
+  - the JSON's meaning is unpredictable under RFC 8259: an unpaired-surrogate escape (read as U+FFFD),
+    a duplicate member name (the last one won), invalid UTF-8, or nesting past 64. The suites already
+    refused these; `CanonicalizeJsonLd` called directly now does too, with `RdfCanonicalizationException`.
+    N-Quads input with an unpaired surrogate is refused as well.
+
+  The parse itself is unchanged, so accepted input canonicalizes to exactly the bytes it did before,
+  and every W3C vector passes unchanged. Messages name the cause and never quote the input.
+  Affected: `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023` and the Legacy RDFC variant. The JCS suites,
+  JOSE, COSE and SD-JWT never used JSON-LD processing.
+- **bbs-2023: a holder could change a disclosed literal without breaking the derived proof.**
+  Blank-node relabeling and deskolemization rewrote text across whole N-Quad lines, literals included.
+  So a literal `<urn:bnid:_:b0>` reached the signature as `_:b0`, and a reveal carrying `_:b0` instead
+  still verified. A literal `_:c14n0` did not verify at all. Both now rewrite only blank-node and IRI
+  terms.
+
+  Creating and deriving also refuse a document that already uses the `urn:bnid:` namespace bbs-2023
+  reserves for its blank-node ids, checked on the canonical form, so compact IRIs count.
+
+  Creating, deriving **and verifying** refuse a document that skolemization would change. Skolemization
+  works on compact JSON, and it added an `@id` to `@json` values and `@id` maps, which the reveal
+  document then showed. The check also runs on the holder's reveal. Before, a holder could delete an
+  `@id` member from a signed `@json` value: verification's skolemization re-inserted it, recreating
+  the signed bytes, and the deletion still verified. Now it fails with `DATA_LOSS_DETECTION_ERROR`.
+- **The Legacy RDFC variant left its proof configuration largely unsigned** under credentials/v2
+  alone. That context does not define `Ed25519Signature2020` or `EcdsaSecp256r1Signature2019`, so
+  `created`, `proofPurpose`, `verificationMethod`, `challenge` and `domain` were dropped from the
+  signed bytes. That left proof purpose and replay binding unprotected. It is now refused (see Changed).
+- **RDFC proofs over credentials/v1 documents left their proof configuration largely unsigned** when
+  the document did not also list `https://w3id.org/security/data-integrity/v2`. credentials/v1 does
+  not define `DataIntegrityProof`, so `cryptosuite`, `proofPurpose`, `verificationMethod` and the rest
+  were dropped. It is now refused. The W3C vectors list that context, so they were never affected.
+
+### Added
+
+- `JsonLdDataLossException` (Rdfc), derived from `RdfCanonicalizationException`, which is no longer
+  `sealed`.
+- `ProofProblemCodes.DataLossDetectionError` (`DATA_LOSS_DETECTION_ERROR`, Core).
+- Two contexts in `OfflineDocumentLoader`, each pinned to a byte-identical upstream commit:
+  - `https://www.w3.org/ns/credentials/undefined-terms/v2`: VCDM 2.0 §5.2 asks a credential with terms
+    no context defines to list it last, and it makes those terms signable;
+  - `https://w3id.org/security/suites/ed25519-2020/v1`: the `Ed25519Signature2020` proof terms.
+
+### Changed
+
+- **Behavioral change: RDFC accept-set narrowing.** Documents that signed and verified under 1.4.0
+  now fail when JSON-LD processing would drop or respell part of them. That includes proofs this
+  library created over such documents. To upgrade:
+  - define your terms in a context, or list `https://www.w3.org/ns/credentials/undefined-terms/v2`
+    last in `@context`;
+  - write IRIs well formed, absolute (not resolved against an `@base`), in normalized form, and keep
+    distinct IRIs from differing only in an empty path (`https://host` vs `https://host/`);
+  - for a credentials/v1 document, also list `https://w3id.org/security/data-integrity/v2` (bundled);
+  - for the Legacy RDFC variant, list `https://w3id.org/security/suites/ed25519-2020/v1`
+    (`Ed25519Signature2020`), or supply a context that defines the `EcdsaSecp256r1Signature2019`
+    terms (none is published);
+  - give RDFC proof options only extension members the context defines.
+
+  **Interop note:** dotNetRDF's IRI test is stricter than jsonld.js's. Brackets in a query and non-BMP
+  characters, for example, are refused here, where jsonld.js would sign them.
+- `CanonicalizeNQuads` and `CanonicalizeNQuadsToMap` reject an IRI the canonical form would respell.
+- `bbs-2023` verification reports data loss as `DATA_LOSS_DETECTION_ERROR`, where it used to report
+  "Verification failed unexpectedly".
+- Each JSON-LD canonicalization now runs one extra JSON-LD expansion for the checks: up to about
+  1 ms more for a typical credential on a developer laptop.
+
+### Known limitations
+
+- **Not treated as data loss.** JSON-LD expansion discards these before any check can see them, and
+  they carry no statements, so this is the same in every JSON-LD processor:
+  - `null` values;
+  - top-level values, and nodes that carry nothing but an `@id`.
+
+  Some values have several spellings that sign the same: numbers are signed in the canonical XSD form
+  the JSON-LD-to-RDF algorithm defines (`1` and `1.0` sign the same), and dotNetRDF lower-cases language
+  tags, which BCP 47 compares case-insensitively.
+- **bbs-2023 cannot yet sign** `@json` values without an `@id` member, container maps (language, `@id`,
+  `@type`) or keyword aliases. Its skolemization works on compact JSON, so for these it refuses rather
+  than alter the data. A `@json` value that already carries an `@id` member is signed as written. The fix is the expanded-form skolemization the spec describes
+  ([#38](https://github.com/moisesja/dataproofs-dotnet/issues/38)).
+- The Legacy suites' verification keeps its dual-variant result codes. A data-loss failure of the RDFC
+  variant fails closed, but it is reported as `PROOF_VERIFICATION_ERROR` or `PROOF_TRANSFORMATION_ERROR`.
+- The COSE lossy-UTF-8 limitation listed under 1.4.0 remains open
+  ([#31](https://github.com/moisesja/dataproofs-dotnet/issues/31)).
+
+### Why this is a minor and not a patch
+
+This release adds public API: a new exception type, a new problem code, and an exception type
+unsealed, all source-compatible. Its accept-set narrowing also rejects input that is valid JSON-LD.
+An undefined term is legal JSON-LD that every processor silently drops. VCDM 2.0 makes such a
+credential non-conforming, and VC Data Integrity requires the error. Under the versioning policy in
+[`RELEASING.md`](RELEASING.md), each alone is minor material, and the narrowing also rejects this
+library's own earlier output.
+
 ## [1.4.0] - 2026-10-27
 
 ### Added

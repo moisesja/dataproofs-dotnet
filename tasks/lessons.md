@@ -330,3 +330,68 @@ The review found two gaps after individually validating a document and proof con
   nested extensions to avoid unnecessarily narrowing the extension namespace.
 
 A green input-validation matrix does not prove later composition preserves the checked invariants.
+
+## 2026-10-28 — A fail-closed invariant must run at every boundary that handles untrusted input (PR #37)
+
+**Mistake:** For bbs-2023 I added "skolemization must not change the document's data" at creation
+and derivation, then claimed the affected documents were "refused rather than altered". Verification
+still skolemized the holder's reveal without the check. A holder could delete an `@id` member from a
+signed `@json` value: verification's skolemization re-inserted it, recreating the signed bytes, and
+the deletion verified. The owner's re-review caught it. I had even reasoned about exactly that
+collision earlier, assumed a guard covered it, then shipped a narrower guard (IRI terms only) without
+re-checking the case.
+
+**Why it happened:** I placed the invariant where the problem was first seen (issuance) instead of at
+the boundary that matters most for forgery: verification, where the input is the attacker's. And I
+let a claim in the docs stand on reasoning I had not re-tested after changing the design.
+
+**The rule for myself:**
+- An invariant that keeps signed data and presented data the same belongs at **verification first**.
+  Then add it at creation and derivation too. List every entry point that transforms untrusted input
+  (create, derive, verify; direct suite API and pipeline) and put the check on each, sharing one function.
+- When a design changes mid-fix (here: JSON scan → canonical-form IRI scan), re-run every attack I
+  previously reasoned about against the *new* design before claiming coverage.
+- For each "X is refused" sentence in a CHANGELOG or PR body, cite the test that proves it at every
+  boundary, or narrow the sentence.
+
+## 2026-10-28 — A detection probe must not change what it does not suspect (PR #37)
+
+**Mistake:** To catch a set object's dropped `@index`, I re-expanded the whole document with
+*every* `@set` read as `@list`, and treated any failure of that expansion as "indexed set". The
+rewrite reached into JSON literal payloads (a key collision threw), and it made valid sets invalid
+where a list may not stand (`@reverse`), so lossless documents and earlier proofs were refused. The
+owner's re-review caught both.
+
+**The rule for myself:**
+- A probe that rewrites input to make hidden loss visible must touch **only the constructs it
+  suspects**, here objects holding both a set key and an index key. It must use a surrogate that
+  is valid everywhere the original is (`@graph`, not `@list`).
+- Never let "the probe failed" be the finding. The finding must be a positive observation (an
+  `@index` that survived). A probe failure is only a fail-closed fallback, and should be unreachable.
+- Before shipping a rewrite-based check, test it against lossless inputs that contain the rewritten
+  keywords in every position they are legal: literals (both forms, both key orders), `@reverse`,
+  lists, `@included`, root, `@graph`, and aliases. These are the false-positive controls.
+
+## 2026-10-28 — Let the processor resolve what the processor decides (PR #37)
+
+**Mistake:** To find a set object's `@set` and `@index` keys, I compared each context term's value
+with the literal keyword and took the union of names from every context, scopes ignored. JSON-LD
+resolves aliases through other terms (`"i2":"i"`, `{"@id":"s"}`) and only where their context is
+active. So chained aliases bypassed the check again. An alias from a scoped context that is never
+activated rewrote an ordinary `@json`-coerced property, and lossless documents were refused. The
+owner's re-review caught both.
+
+**The rule for myself:**
+- When the answer depends on how the processor reads the input (alias resolution, scope, coercion,
+  propagation), never re-derive it from the text. Rewrite the *definitions* the processor reads
+  (here: every term defined as `@index`, and every `"@index"` key), let the processor resolve them in
+  its own active context, and observe its output.
+- This refines the earlier probe rule. A probe's failure may be the finding only when the probe
+  provably differs from the input at the suspected sites alone, and the processor, not my code,
+  identifies those sites. Then failure, a warning, or a different expansion are all attributable.
+  When my code picks the sites, failure stays a fallback.
+- Make the probe unforgeable: use a fresh random name per call, so no input can define it or
+  neutralize it.
+- For anything alias-based, include these controls: chains (string and `{"@id":...}` forms, inline
+  and across a remote context), a property-scoped alias, an alias defined but unused, and an alias
+  defined only in a scope never activated, over a property with a coercion.

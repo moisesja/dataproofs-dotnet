@@ -66,6 +66,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <summary>The cryptosuite identifier, <c>bbs-2023</c>.</summary>
     public const string CryptosuiteName = "bbs-2023";
 
+    private const string DataLossMessage =
+        "The document or proof configuration cannot be RDFC-canonicalized without losing data, so it cannot be secured.";
+
     private static readonly DefaultKeyGenerator KeyGenerator = new();
 
     private readonly IRdfCanonicalizer _canonicalizer;
@@ -348,6 +351,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             // Capability faults propagate (a verifier with no BBS cannot make a verdict).
             throw;
         }
+        catch (ProofGenerationException ex) when (ex.InnerException is JsonLdDataLossException)
+        {
+            // Content the canonical form would drop is unsigned, so it may have been altered (issue #36).
+            return ProofVerificationResult.Failure(
+                ProofProblemCodes.DataLossDetectionError,
+                "The reveal document or proof configuration cannot be RDFC-canonicalized without losing data.", proof);
+        }
         catch (Exception ex)
         {
             return ProofVerificationResult.Failure(
@@ -381,8 +391,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private TransformResult Transform(
         JsonElement document, ReadOnlySpan<byte> hmacKey, IReadOnlyList<string> mandatoryPointers)
     {
+        var canonicalDocument = RequireNoSkolemIris(document);
         var skolemized = JsonLdSkolemizer.Skolemize(document);
         var stableNQuads = SkolemizedToStableNQuads(skolemized);
+        RequireSameDataset(canonicalDocument, stableNQuads);
 
         var labelMap = BlankNodeLabels.CreateHmacIdLabelMap(stableNQuads, hmacKey);
         var nquads = BlankNodeLabels.RelabelAndSort(stableNQuads, labelMap);
@@ -486,6 +498,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private VerifyData CreateVerifyData(JsonElement revealDocument, Bbs2023ProofValue.DerivedProofComponents components)
     {
         var stable = SkolemizedToStableNQuads(JsonLdSkolemizer.Skolemize(revealDocument));
+
+        // The holder's reveal gets the same check as the issuer's document: skolemizing it must not
+        // change its data. Otherwise deleting a member the skolemizer re-inserts, such as an @id in a
+        // @json value, recreates the signed bytes and still verifies (PR #37 review). The reveal's
+        // skolem ids are read back as the blank nodes they stand for.
+        RequireSameDataset(JsonLdSkolemizer.Deskolemize(CanonicalNQuadLines(revealDocument)), stable);
+
         var disclosedMessages = BlankNodeLabels.RelabelAndSort(stable, components.LabelMap);
 
         var revealedIndexes = components.MandatoryIndexes
@@ -495,6 +514,61 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             .ToList();
 
         return new VerifyData(disclosedMessages, revealedIndexes);
+    }
+
+    // Skolem ids are urn:bnid: IRIs that deskolemization reads back as blank nodes, so the issuer's
+    // document must not hold one of its own: it would become a blank node too, and could merge with
+    // the skolemized node it collides with (adversarial review). Checked on the canonical form, so a
+    // compact IRI that only a context expands into urn:bnid: is caught as well. The reveal document
+    // carries skolem ids by design, so verification does not run this.
+    private IReadOnlyList<string> RequireNoSkolemIris(JsonElement document)
+    {
+        var usesNamespace = false;
+        var canonical = CanonicalNQuadLines(document);
+        foreach (var line in canonical)
+        {
+            BlankNodeLabels.RewriteTerms(line, iri: iri =>
+            {
+                usesNamespace |= iri.StartsWith(JsonLdSkolemizer.UrnPrefix, StringComparison.Ordinal);
+                return iri;
+            });
+        }
+
+        if (usesNamespace)
+        {
+            throw new ProofGenerationException(DataLossMessage, new JsonLdDataLossException(
+                "The JSON-LD input cannot be canonicalized without losing data: it uses the urn:bnid: namespace, "
+                + "which bbs-2023 reserves for its blank-node identifiers."));
+        }
+
+        return canonical;
+    }
+
+    // Skolemization works on compact JSON without the context, so it can mistake a JSON value for a
+    // node and add an @id to it, such as a @json literal or an @id map: the signed data and the reveal
+    // document would then carry a member the issuer never wrote (adversarial review). So at every
+    // boundary (create, derive and verify) the document as given and the skolemized document, both
+    // with skolem ids read back as blank nodes, must canonicalize to the same dataset.
+    private void RequireSameDataset(IReadOnlyList<string> document, IReadOnlyList<string> stableNQuads)
+    {
+        string given;
+        string skolemized;
+        try
+        {
+            given = _canonicalizer.CanonicalizeNQuads(string.Concat(document));
+            skolemized = _canonicalizer.CanonicalizeNQuads(string.Concat(stableNQuads));
+        }
+        catch (RdfCanonicalizationException ex)
+        {
+            throw new ProofGenerationException("The document could not be RDFC-canonicalized.", ex);
+        }
+
+        if (!string.Equals(given, skolemized, StringComparison.Ordinal))
+        {
+            throw new ProofGenerationException(DataLossMessage, new JsonLdDataLossException(
+                "The JSON-LD input cannot be canonicalized without losing data: bbs-2023 skolemization would change "
+                + "it, which happens for a @json value or a container map."));
+        }
     }
 
     // Skolemize → canonicalize (only named nodes survive) → deskolemize back to stable _:b*
@@ -515,6 +589,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         try
         {
             canonical = _canonicalizer.CanonicalizeJsonLd(document, RdfCanonicalizationHashAlgorithm.Sha256);
+        }
+        catch (JsonLdDataLossException ex)
+        {
+            // VC Data Integrity 1.0 §2.4.3: what JSON-LD processing drops would not be signed (issue #36).
+            throw new ProofGenerationException(DataLossMessage, ex);
         }
         catch (RdfCanonicalizationException ex)
         {
@@ -563,6 +642,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             canonical = _canonicalizer.CanonicalizeJsonLd(
                 JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo),
                 RdfCanonicalizationHashAlgorithm.Sha256);
+        }
+        catch (JsonLdDataLossException ex)
+        {
+            throw new ProofGenerationException(DataLossMessage, ex);
         }
         catch (RdfCanonicalizationException ex)
         {

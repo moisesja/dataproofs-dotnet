@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Legacy.DataIntegrity;
 using DataProofsDotnet.Legacy.Tests.TestSupport;
+using DataProofsDotnet.Rdfc;
 using FluentAssertions;
 using NetCrypto;
 using Xunit;
@@ -10,13 +11,13 @@ using Xunit;
 namespace DataProofsDotnet.Legacy.Tests;
 
 /// <summary>
-/// CHARACTERIZATION of a DOCUMENTED limitation (adversarial findings #4 / #5): the RDFC variant
-/// binds only terms defined in the active JSON-LD <c>@context</c>. Members not defined there — e.g.
-/// <c>capabilityChain</c> under the credentials/v2 context — are dropped during RDF expansion and
-/// are NOT cryptographically bound. This is inherent to JSON-LD/RDFC and shared by the conformant
-/// <c>rdfc-*</c> suites. The <see cref="LegacyCanonicalization.Jcs"/> default binds every member
-/// verbatim (asserted here for contrast). These tests pin the security boundary so it cannot change
-/// silently and so the JCS guarantee is never mistaken for an RDFC one.
+/// The security boundary for members the active JSON-LD <c>@context</c> does not define, e.g.
+/// <c>capabilityChain</c> under the credentials/v2 context (adversarial findings #4 / #5). RDF
+/// expansion would drop such a member, so the RDFC variant cannot sign it and fails closed: create
+/// throws and a proof with such a member injected does not verify (issue #36; until 1.5.0 it was
+/// silently left unsigned). The <see cref="LegacyCanonicalization.Jcs"/> default binds every member
+/// verbatim. These tests pin both, so the boundary cannot shift unnoticed and the JCS guarantee is
+/// never mistaken for an RDFC one.
 /// </summary>
 public class RdfcExtensionBindingCharacterizationTests
 {
@@ -30,6 +31,18 @@ public class RdfcExtensionBindingCharacterizationTests
           "type": "ExampleCredential",
           "issuer": "did:example:issuer",
           "credentialSubject": { "id": "did:example:subject", "claim": "value" }
+        }
+        """);
+
+    // Every term defined (ed25519-2020/v1 supplies the proof's), so only an undefined extension
+    // in the proof can make RDFC drop data.
+    private static JsonElement Ed25519Document() => JsonSerializer.Deserialize<JsonElement>($$"""
+        {
+          "@context": ["{{Ctx}}", "https://w3id.org/security/suites/ed25519-2020/v1"],
+          "id": "urn:uuid:rdfc-ext",
+          "type": "VerifiableCredential",
+          "issuer": "did:example:issuer",
+          "credentialSubject": { "id": "did:example:subject", "name": "value" }
         }
         """);
 
@@ -75,17 +88,28 @@ public class RdfcExtensionBindingCharacterizationTests
     }
 
     [Fact]
-    public async Task Rdfc_DoesNotBindContextUndefinedExtension_DocumentedLimitation()
+    public async Task Rdfc_RefusesToSignContextUndefinedExtension()
     {
-        var (pipeline, signer, publicKey, methodId) = Setup(LegacyCanonicalization.Rdfc);
-        var secured = await pipeline.AddProofAsync(Document(), Options(methodId), signer);
+        var (pipeline, signer, _, methodId) = Setup(LegacyCanonicalization.Rdfc);
 
-        // capabilityChain is undefined in credentials/v2, so RDF expansion drops it from BOTH the
-        // signed bytes and the verifier's recomputation. Tampering it therefore does NOT break the
-        // signature: a DOCUMENTED limitation of the RDFC variant (use JCS, or a @context that
-        // defines the term). Pinning it here prevents the boundary from shifting unnoticed.
+        var act = () => pipeline.AddProofAsync(Ed25519Document(), Options(methodId), signer);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>())
+            .WithInnerException<JsonLdDataLossException>()
+            .WithMessage("*uses a term that its @context does not define*");
+    }
+
+    [Fact]
+    public async Task Rdfc_InjectedContextUndefinedExtension_DoesNotVerify()
+    {
+        // Signed without the extension under contexts that define every term, then the undefined
+        // member injected: RDF expansion would drop it, so verification refuses the document.
+        var (pipeline, signer, publicKey, methodId) = Setup(LegacyCanonicalization.Rdfc);
+        var secured = await pipeline.AddProofAsync(
+            Ed25519Document(), Options(methodId) with { AdditionalProperties = null }, signer);
+
         pipeline.Verify(secured, publicKey).Verified.Should().BeTrue();
         pipeline.Verify(TamperCapabilityChain(secured), publicKey).Verified
-            .Should().BeTrue("RDFC binds only context-defined terms; capabilityChain is not in credentials/v2");
+            .Should().BeFalse("capabilityChain is not defined by the contexts, so RDFC could not have signed it");
     }
 }

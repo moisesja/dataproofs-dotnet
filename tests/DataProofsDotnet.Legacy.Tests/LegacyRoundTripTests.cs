@@ -19,7 +19,17 @@ namespace DataProofsDotnet.Legacy.Tests;
 /// </summary>
 public class LegacyRoundTripTests
 {
-    private const string SubjectContext = "https://www.w3.org/ns/credentials/v2";
+    // RDFC signs only what the contexts define (issue #36). ed25519-2020/v1 defines the
+    // Ed25519Signature2020 proof terms; EcdsaSecp256r1Signature2019 has no published context, so
+    // its proof terms, like the example's own, are carried by undefined-terms/v2 (VCDM 2.0 §5.2).
+    private const string Contexts = """
+        "https://www.w3.org/ns/credentials/v2", "https://www.w3.org/ns/credentials/undefined-terms/v2"
+        """;
+
+    private const string Ed25519Contexts = """
+        "https://www.w3.org/ns/credentials/v2", "https://w3id.org/security/suites/ed25519-2020/v1",
+        "https://www.w3.org/ns/credentials/undefined-terms/v2"
+        """;
 
     public static TheoryData<string, KeyType, LegacyCanonicalization> Matrix() => new()
     {
@@ -48,11 +58,11 @@ public class LegacyRoundTripTests
         return (pipeline, signer, publicKey, methodId);
     }
 
-    private static JsonElement Document() => JsonSerializer.Deserialize<JsonElement>($$"""
+    private static JsonElement Document(string legacyType) => JsonSerializer.Deserialize<JsonElement>($$"""
         {
-          "@context": "{{SubjectContext}}",
+          "@context": [{{(legacyType == Ed25519Signature2020Cryptosuite.ProofType ? Ed25519Contexts : Contexts)}}],
           "id": "urn:uuid:legacy-roundtrip-subject",
-          "type": "ExampleCredential",
+          "type": ["VerifiableCredential", "ExampleCredential"],
           "issuer": "did:example:issuer",
           "credentialSubject": { "id": "did:example:subject", "claim": "value" }
         }
@@ -74,7 +84,7 @@ public class LegacyRoundTripTests
             Created = "2026-06-14T00:00:00.000000Z",
         };
 
-        var secured = await pipeline.AddProofAsync(Document(), proofOptions, signer);
+        var secured = await pipeline.AddProofAsync(Document(legacyType), proofOptions, signer);
 
         var proof = secured.GetProperty("proof");
         proof.GetProperty("type").GetString().Should().Be(legacyType);
@@ -104,7 +114,7 @@ public class LegacyRoundTripTests
             Created = "2026-06-14T00:00:00.000000Z",
         };
 
-        var secured = await pipeline.AddProofAsync(Document(), proofOptions, signer);
+        var secured = await pipeline.AddProofAsync(Document(legacyType), proofOptions, signer);
 
         var result = await pipeline.VerifyAsync(
             secured,

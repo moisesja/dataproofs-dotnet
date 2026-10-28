@@ -240,11 +240,17 @@ public abstract class Issue33PipelineTestsBase
     {
         // A BMP escape and a surrogate-pair escape in a member name and a value, and an escaped
         // solidus; then the signed output re-spelled with every non-ASCII character and every
-        // solidus escaped, which canonicalizes to the same bytes.
+        // solidus escaped, which canonicalizes to the same bytes. The pair-named member gets a term
+        // definition: under @vocab its IRI would hold a non-BMP character, which RDFC cannot carry
+        // (issue #36), and this case is about JSON escapes, not IRIs.
         var pair = HostileJson.Esc(0xD83D) + HostileJson.Esc(0xDE00);
         var bmp = HostileJson.Esc(0xE9);
-        var document = HostileJson.LastMember(
+        var withTerm = HostileJson.Splice(
             HostileJson.BaseDocument,
+            "\"" + HostileJson.UndefinedTermsContext + "\"]",
+            "\"" + HostileJson.UndefinedTermsContext + "\",{\"" + pair + "\":\"urn:example:pair\"}]");
+        var document = HostileJson.LastMember(
+            withTerm,
             "\"" + bmp + "\":\"" + bmp + "\",\"" + pair + "\":\"" + pair + "\",\"s\":\"a\\/b\"");
 
         var secured = await Pipeline.AddProofAsync(HostileJson.Parse(document), Options(), Signer);
@@ -260,7 +266,7 @@ public abstract class Issue33PipelineTestsBase
     {
         // A lenient parse leaves comments and trailing commas in the element's raw text. They never
         // reach a canonicalizer, and such documents have always signed and verified.
-        var lenient = "{/* c */\"@context\":[\"" + HostileJson.Context + "\",],\"a\":1, // line\n}";
+        var lenient = "{/* c */\"@context\":[\"" + HostileJson.Context + "\",\"" + HostileJson.UndefinedTermsContext + "\",],\"a\":1, // line\n}";
         var secured = await Pipeline.AddProofAsync(HostileJson.ParseLenient(lenient), Options(), Signer);
         var commented = "{/* c */" + Fixtures.Single[1..^1] + ",}";
 
@@ -281,8 +287,8 @@ public abstract class Issue33PipelineTestsBase
     [Fact]
     public async Task SameNameInSiblingObjects_StillSignsAndVerifies()
     {
-        // Names that differ only in case are distinct names.
-        var document = HostileJson.LastMember(HostileJson.BaseDocument, "\"x\":{\"a\":1},\"y\":{\"a\":2},\"z\":[{\"a\":3},{\"a\":4}],\"w\":{\"id\":1,\"ID\":2}");
+        // Names that differ only in case are distinct names. ("id" aliases @id, so its value is an IRI.)
+        var document = HostileJson.LastMember(HostileJson.BaseDocument, "\"x\":{\"a\":1},\"y\":{\"a\":2},\"z\":[{\"a\":3},{\"a\":4}],\"w\":{\"id\":\"urn:example:w\",\"ID\":2}");
 
         var secured = await Pipeline.AddProofAsync(HostileJson.Parse(document), Options(), Signer);
 
@@ -398,7 +404,7 @@ public abstract class Issue33PipelineTestsBase
         "nested member name" => HostileJson.LastMember(Fixtures.Single, "\"n\":{\"" + e + "\":1}"),
         "member value" => HostileJson.LastMember(Fixtures.Single, "\"v\":\"" + e + "\""),
         "array element" => HostileJson.LastMember(Fixtures.Single, "\"n\":[\"" + e + "\"]"),
-        "@context value" => HostileJson.Splice(Fixtures.Single, "\"" + HostileJson.Context + "\"]", "\"" + HostileJson.Context + "\",\"" + e + "\"]"),
+        "@context value" => HostileJson.Splice(Fixtures.Single, "\"" + HostileJson.UndefinedTermsContext + "\"]", "\"" + HostileJson.UndefinedTermsContext + "\",\"" + e + "\"]"),
         "proof member name" => HostileJson.InProof(Fixtures.Single, "\"" + e + "\":1"),
         "proof member value" => HostileJson.InProof(Fixtures.Single, "\"x\":\"" + e + "\""),
         "referenced proof id" => HostileJson.Splice(Fixtures.Chain, "\"id\":\"urn:p1\"", "\"id\":\"" + e + "\""),

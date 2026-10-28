@@ -128,6 +128,12 @@ internal abstract class RdfcCryptosuite : ICryptosuite
             canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(proofConfigElement, hash);
             canonicalDocument = _canonicalizer.CanonicalizeJsonLd(unsecuredDocument, hash);
         }
+        catch (JsonLdDataLossException ex)
+        {
+            // VC Data Integrity 1.0 §2.4.3: what JSON-LD processing drops would not be signed (issue #36).
+            throw new ProofGenerationException(
+                "The document or proof configuration cannot be RDFC-canonicalized without losing data, so it cannot be secured.", ex);
+        }
         catch (RdfCanonicalizationException ex)
         {
             throw new ProofGenerationException("The document or proof configuration could not be RDFC-canonicalized.", ex);
@@ -208,6 +214,13 @@ internal abstract class RdfcCryptosuite : ICryptosuite
                 canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(
                     JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo), hash);
                 canonicalDocument = _canonicalizer.CanonicalizeJsonLd(unsecuredDocument, hash);
+            }
+            catch (JsonLdDataLossException)
+            {
+                // Content the canonical form would drop is unsigned, so it may have been altered (issue #36).
+                return ProofVerificationResult.Failure(
+                    ProofProblemCodes.DataLossDetectionError,
+                    "The document or proof configuration cannot be RDFC-canonicalized without losing data.", proof);
             }
             catch (RdfCanonicalizationException)
             {

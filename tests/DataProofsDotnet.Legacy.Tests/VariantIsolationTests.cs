@@ -38,8 +38,18 @@ public class VariantIsolationTests
         return (signer, publicKey, methodId);
     }
 
+    // ed25519-2020/v1 defines the proof's terms, which RDFC otherwise could not sign (issue #36);
+    // undefined-terms/v2 carries "claim" (VCDM 2.0 §5.2).
     private static JsonElement Document() => JsonSerializer.Deserialize<JsonElement>("""
-        { "@context": "https://www.w3.org/ns/credentials/v2", "id": "urn:uuid:variant", "claim": "v" }
+        {
+          "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://w3id.org/security/suites/ed25519-2020/v1",
+            "https://www.w3.org/ns/credentials/undefined-terms/v2"
+          ],
+          "id": "urn:uuid:variant",
+          "claim": "v"
+        }
         """);
 
     private static async Task<JsonElement> SignWith(LegacyCanonicalization variant, KeyPairSigner signer, string methodId)

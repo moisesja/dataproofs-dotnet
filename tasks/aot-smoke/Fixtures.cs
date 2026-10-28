@@ -37,6 +37,16 @@ internal static class Fixtures
     private const string CredentialJson =
         """{"@context":["https://www.w3.org/ns/credentials/v2"],"type":["VerifiableCredential"],"issuer":"did:example:issuer","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:subject","name":"Alice Example"}}""";
 
+    // RDFC signs only what the contexts define and refuses the rest (issue #36). undefined-terms/v2
+    // carries terms no other context defines (VCDM 2.0 §5.2), such as a proof extension or the
+    // EcdsaSecp256r1Signature2019 proof terms, which have no published context; ed25519-2020/v1
+    // defines the Ed25519Signature2020 proof terms. Both are bundled in the offline loader.
+    private const string UndefinedTermsCredentialJson =
+        """{"@context":["https://www.w3.org/ns/credentials/v2","https://www.w3.org/ns/credentials/undefined-terms/v2"],"type":["VerifiableCredential"],"issuer":"did:example:issuer","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:subject","name":"Alice Example"}}""";
+
+    private const string Ed25519SuiteCredentialJson =
+        """{"@context":["https://www.w3.org/ns/credentials/v2","https://w3id.org/security/suites/ed25519-2020/v1"],"type":["VerifiableCredential"],"issuer":"did:example:issuer","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:subject","name":"Alice Example"}}""";
+
     private const string BbsCredentialJson =
         """{"@context":["https://www.w3.org/ns/credentials/v2","https://www.w3.org/ns/credentials/examples/v2"],"type":["VerifiableCredential","AlumniCredential"],"issuer":"https://vc.example/issuers/5678","validFrom":"2026-01-01T00:00:00Z","credentialSubject":{"id":"did:example:abcdefgh","alumniOf":"The School of Examples","gpa":"4.0","favoriteColor":"purple"}}""";
 
@@ -46,6 +56,8 @@ internal static class Fixtures
 
     public static byte[] CredentialBytes => Encoding.UTF8.GetBytes(CredentialJson);
     public static JsonElement Credential() => Parse(CredentialJson);
+    public static JsonElement UndefinedTermsCredential() => Parse(UndefinedTermsCredentialJson);
+    public static JsonElement Ed25519SuiteCredential() => Parse(Ed25519SuiteCredentialJson);
     public static JsonElement BbsCredential() => Parse(BbsCredentialJson);
     public static JsonElement InlineContextDoc() => Parse(InlineContextJson);
 

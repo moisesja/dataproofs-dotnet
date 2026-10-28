@@ -18,6 +18,12 @@ public interface IRdfCanonicalizer
     /// <param name="document">The JSON-LD document to canonicalize (a JSON object).</param>
     /// <param name="hashAlgorithm">The RDFC-1.0 blank-node hashing algorithm (default SHA-256).</param>
     /// <returns>The canonical N-Quads as UTF-8 bytes.</returns>
+    /// <exception cref="JsonLdDataLossException">
+    /// The document cannot be canonicalized without losing data: JSON-LD processing would drop
+    /// part of it (an undefined term, an IRI that is not well formed, …) or the canonical form
+    /// would spell one of its IRIs differently. Implementations must not return N-Quads that carry
+    /// less than the document, since a proof over them would not secure the rest.
+    /// </exception>
     /// <exception cref="RdfCanonicalizationException">
     /// JSON-LD processing or canonicalization failed, or a referenced context could not be
     /// loaded (the offline loader fails closed).
@@ -31,7 +37,10 @@ public interface IRdfCanonicalizer
     /// <param name="nQuads">The input dataset as N-Quads text.</param>
     /// <param name="hashAlgorithm">The RDFC-1.0 blank-node hashing algorithm (default SHA-256).</param>
     /// <returns>The canonical N-Quads string.</returns>
-    /// <exception cref="RdfCanonicalizationException">The input is malformed or canonicalization was rejected.</exception>
+    /// <exception cref="RdfCanonicalizationException">
+    /// The input is malformed, has an IRI the canonical form would spell differently, or
+    /// canonicalization was rejected.
+    /// </exception>
     string CanonicalizeNQuads(string nQuads, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256);
 
     /// <summary>
@@ -42,6 +51,9 @@ public interface IRdfCanonicalizer
     /// <param name="nQuads">The input dataset as N-Quads text.</param>
     /// <param name="hashAlgorithm">The RDFC-1.0 blank-node hashing algorithm (default SHA-256).</param>
     /// <returns>The issued-identifier map, keyed by original blank-node identifier (without the <c>_:</c> prefix).</returns>
-    /// <exception cref="RdfCanonicalizationException">The input is malformed or canonicalization was rejected.</exception>
+    /// <exception cref="RdfCanonicalizationException">
+    /// The input is malformed, has an IRI the canonical form would spell differently, or
+    /// canonicalization was rejected.
+    /// </exception>
     IReadOnlyDictionary<string, string> CanonicalizeNQuadsToMap(string nQuads, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256);
 }

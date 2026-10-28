@@ -6,7 +6,7 @@ The loader fails closed on any context outside this set.
 
 ## Vendored W3C contexts (embedded from the provenance source of record)
 
-The seven core contexts are embedded **directly from** the repository's single
+The nine vendored contexts are embedded **directly from** the repository's single
 provenance-tracked source directory, `tests/fixtures/contexts/`, via `<EmbeddedResource>`
 items in `DataProofsDotnet.Rdfc.csproj` (with stable logical names). Their full origin,
 retrieval method, git pins, and SHA-256 hashes are recorded in
@@ -22,6 +22,8 @@ package's served bytes are byte-identical to the provenance record (no drift):
 | `https://w3id.org/security/multikey/v1` | `multikey-v1.jsonld` |
 | `https://w3id.org/security/bbs/v1` | `bbs-v1.jsonld` |
 | `https://w3id.org/security/suites/jws-2020/v1` | `jws-2020-v1.jsonld` |
+| `https://www.w3.org/ns/credentials/undefined-terms/v2` | `credentials-undefined-terms-v2.jsonld` |
+| `https://w3id.org/security/suites/ed25519-2020/v1` | `ed25519-2020-v1.jsonld` |
 
 ## Locally authored context
 

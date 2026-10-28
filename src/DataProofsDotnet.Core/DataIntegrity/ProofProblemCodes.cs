@@ -16,6 +16,13 @@ public static class ProofProblemCodes
     /// <summary>The document or proof configuration could not be transformed (canonicalized).</summary>
     public const string ProofTransformationError = "PROOF_TRANSFORMATION_ERROR";
 
+    /// <summary>
+    /// The document or proof configuration cannot be transformed without losing data: a JSON-LD
+    /// processor would drop part of it, such as a term its <c>@context</c> does not define, so a
+    /// proof over the result would not secure that part (VC Data Integrity 1.0 §2.4.3).
+    /// </summary>
+    public const string DataLossDetectionError = "DATA_LOSS_DETECTION_ERROR";
+
     /// <summary>The proof's <c>domain</c> did not match the expected domain.</summary>
     public const string InvalidDomainError = "INVALID_DOMAIN_ERROR";
 
