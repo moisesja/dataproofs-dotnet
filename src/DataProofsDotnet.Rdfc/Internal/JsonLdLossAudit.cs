@@ -26,10 +26,12 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// the canonical N-Quads are caught where they are emitted, by <see cref="ExactIriStoreHandler"/>.
 /// One respelling happens earlier, where that check cannot see it: dotNetRDF resolves a relative
 /// IRI against <c>@base</c> with <see cref="Uri"/>, which also decodes percent-escapes and normalizes
-/// case and port, so the expanded string is already respelled. Input that sets <c>@base</c> is
-/// therefore refused (<see cref="HasBase"/>); without it the base stays null and nothing is resolved.
-/// A remote context's <c>@base</c> is ignored (JSON-LD 1.1 §4.1.2), and dotNetRDF fails on
-/// <c>@import</c> while the base is null, so the input is the only place one can take effect.
+/// case and port, so the expanded string is already respelled. So when the input holds a
+/// <c>@base</c> member, it is expanded again with every <c>@base</c> removed, and any difference
+/// outside JSON literal payloads means a relative IRI was resolved: refused. A <c>@base</c> that
+/// resolves nothing, or a <c>"@base"</c> key that is only data inside a JSON literal, passes
+/// (PR #37 review). A remote context's <c>@base</c> is ignored (JSON-LD 1.1 §4.1.2), and dotNetRDF
+/// fails on <c>@import</c> while the base is null, so the input is the only place one takes effect.
 /// Each result is a predicate phrase for a message ("uses a term that…") and never quotes the
 /// input (FR-23).
 /// </para>
@@ -43,8 +45,9 @@ internal static class JsonLdLossAudit
     public const string Direction = "uses @direction, which the canonical form does not carry";
     public const string Index = "uses @index, which the canonical form does not carry";
     public const string RespelledIri = "has an IRI that the canonical form would spell differently";
+    public const string MergedTerms = "has distinct terms that the canonical form would merge into one";
     public const string IgnoredContent = "has content that JSON-LD processing ignores";
-    public const string Base = "sets @base, and relative IRIs resolved against it would be respelled";
+    public const string Base = "resolves a relative IRI against @base, which the canonical form would respell";
 
     /// <summary>
     /// Expands <paramref name="json"/> as <c>JsonLdParser.Load</c> does and returns why its RDF
@@ -59,10 +62,7 @@ internal static class JsonLdLossAudit
             input = JToken.ReadFrom(reader);
         }
 
-        if (HasBase(input))
-        {
-            return Base;
-        }
+        var withoutBase = HasBase(input) ? WithoutBase(input) : null;
 
         var warnings = new List<JsonLdProcessorWarning>();
         var expanded = JsonLdProcessor.Expand(input, options, warnings);
@@ -74,6 +74,11 @@ internal static class JsonLdLossAudit
                 JsonLdErrorCode.MalformedLanguageTag => MalformedLanguageTag,
                 _ => IgnoredContent,
             };
+        }
+
+        if (withoutBase is not null && ResolvesAgainstBase(expanded, withoutBase, options))
+        {
+            return Base;
         }
 
         foreach (var item in expanded)
@@ -217,16 +222,67 @@ internal static class JsonLdLossAudit
             : MalformedIri;
     }
 
-    /// <summary>
-    /// Whether <paramref name="token"/> holds a non-null <c>@base</c> member at any depth, in an
-    /// inline context or a scoped one.
-    /// </summary>
+    // Whether the input holds a non-null @base member at any depth: a cheap trigger for the check
+    // below, which tells a context's @base from a "@base" key that is only data.
     private static bool HasBase(JToken token) => token switch
     {
         JObject obj => obj.Properties().Any(p => (p.Name == "@base" && p.Value.Type != JTokenType.Null) || HasBase(p.Value)),
         JArray array => array.Any(HasBase),
         _ => false,
     };
+
+    private static JToken WithoutBase(JToken input)
+    {
+        // HasBase found a member, so the input is an object or array.
+        var copy = (JContainer)input.DeepClone();
+        foreach (var member in copy.Descendants().OfType<JProperty>().Where(p => p.Name == "@base").ToList())
+        {
+            member.Remove();
+        }
+
+        return copy;
+    }
+
+    // Whether a @base changed the expansion. Expanding without it fails when something needed it,
+    // such as a relative context URL; otherwise the two expansions match unless an IRI was resolved.
+    private static bool ResolvesAgainstBase(JArray expanded, JToken withoutBase, JsonLdProcessorOptions options)
+    {
+        JArray unresolved;
+        try
+        {
+            unresolved = JsonLdProcessor.Expand(withoutBase, options, new List<JsonLdProcessorWarning>());
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+
+        return !SameOutsideJsonLiterals(expanded, unresolved);
+    }
+
+    // Deep equality that does not look inside JSON literal payloads, which are opaque data: removing
+    // a "@base" key from one changes the payload but resolves nothing.
+    private static bool SameOutsideJsonLiterals(JToken a, JToken b)
+    {
+        switch (a, b)
+        {
+            case (JObject x, JObject y):
+                if (IsJsonLiteralValue(x) && IsJsonLiteralValue(y))
+                {
+                    return true;
+                }
+
+                return x.Count == y.Count
+                    && x.Properties().All(p => y.TryGetValue(p.Name, out var other) && SameOutsideJsonLiterals(p.Value, other));
+            case (JArray x, JArray y):
+                return x.Count == y.Count && x.Zip(y).All(pair => SameOutsideJsonLiterals(pair.First, pair.Second));
+            default:
+                return JToken.DeepEquals(a, b);
+        }
+    }
+
+    private static bool IsJsonLiteralValue(JObject value)
+        => value.ContainsKey("@value") && value.TryGetValue("@type", out var datatype) && IsJsonLiteral(datatype);
 
     private static bool IsJsonLiteral(JToken datatype)
         => datatype.Type == JTokenType.String && (string)datatype! == "@json";

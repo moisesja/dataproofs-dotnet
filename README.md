@@ -49,7 +49,9 @@ Typical causes:
   `https://w3id.org/security/suites/ed25519-2020/v1`. Both are bundled.
 - **An IRI that is not well formed.** Examples: `?filter[id]=1`, a second `#`, a space, a relative IRI.
 - **An IRI the canonical form would respell.** Examples: `/a/../b`, `%41`, `HTTPS://HOST`, `:443`.
-  Relative IRIs resolved against an `@base` are respelled too, so `@base` is refused.
+  Relative IRIs resolved against an `@base` are respelled too, so they are refused.
+- **Distinct IRIs dotNetRDF treats as one.** Example: `https://host` next to `https://host/`. Their
+  statements would merge.
 
 Accepted input canonicalizes to the same bytes as before. See FR-9 in the PRD for the full rule.
 

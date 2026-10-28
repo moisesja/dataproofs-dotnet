@@ -32,7 +32,8 @@ public sealed class Issue36DataLossTests
     private const string Index = "uses @index, which the canonical form does not carry";
     private const string RespelledIri = "has an IRI that the canonical form would spell differently";
     private const string IgnoredContent = "has content that JSON-LD processing ignores";
-    private const string Base = "sets @base, and relative IRIs resolved against it would be respelled";
+    private const string Base = "resolves a relative IRI against @base, which the canonical form would respell";
+    private const string MergedTerms = "has distinct terms that the canonical form would merge into one";
 
     private static readonly RdfcDocumentCanonicalizer Canonicalizer = new();
 
@@ -48,8 +49,9 @@ public sealed class Issue36DataLossTests
 
     private static readonly string WithUndefinedTerms = "\"" + V2 + "\",\"" + UndefinedTerms + "\"";
 
-    // Built at run time from its code point, so no tool can decode an escape into the source.
+    // Built at run time from code points, so no tool can decode an escape into the source.
     private static readonly string Grinning = char.ConvertFromUtf32(0x1F600);
+    private static readonly string Decomposed = "e" + (char)0x0301;
 
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
@@ -94,7 +96,11 @@ public sealed class Issue36DataLossTests
         // dotNetRDF resolves against @base with System.Uri, so "users/%61lice" would sign as
         // <https://e.example/users/alice>, the same as "users/alice" (adversarial review, B1).
         { "@base respelling a relative IRI", "{\"@context\":{\"@base\":\"https://e.example/\",\"name\":\"https://schema.org/name\"},\"@id\":\"users/%61lice\",\"name\":\"n\"}", Base, "%61lice" },
-        { "@base in a scoped context", Vc(Subject("\"name\":\"n\""), V2With("{\"knows\":{\"@id\":\"https://schema.org/knows\",\"@context\":{\"@base\":\"https://e.example/\"}}}")), Base, "e.example" },
+        { "@base in a scoped context", Vc(Subject("\"knows\":{\"id\":\"users/%61lice\"}"), V2With("{\"knows\":{\"@id\":\"https://schema.org/knows\",\"@context\":{\"@base\":\"https://e.example/\"}}}")), Base, "%61lice" },
+        // dotNetRDF's node equality compares parsed URI components, so the store would hold one
+        // subject (or datatype) for two distinct RDF IRIs and drop the second's statements (PR #37 review).
+        { "subjects differing only by an empty path", Vc("\"credentialSubject\":[{\"id\":\"https://e.example\",\"name\":\"A\"},{\"id\":\"https://e.example/\",\"name\":\"A\"}]"), MergedTerms, "e.example" },
+        { "datatypes differing only by an empty path", Vc(Subject("\"name\":[{\"@value\":\"x\",\"@type\":\"https://e.example\"},{\"@value\":\"x\",\"@type\":\"https://e.example/\"}]")), MergedTerms, "e.example" },
         { "respelled datatype IRI", Vc(Subject("\"name\":{\"@value\":\"x\",\"@type\":\"https://e.example/x/../datatype\"}")), RespelledIri, "datatype" },
     };
 
@@ -128,6 +134,12 @@ public sealed class Issue36DataLossTests
         { "null value", Vc(Subject("\"name\":\"n\",\"description\":null")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "blank-node subject", Vc("\"credentialSubject\":{\"name\":\"n\"}"), "_:c14n0 <https://schema.org/name> \"n\" ." },
         { "@base: null", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":null}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
+        { "@base that resolves nothing", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":\"https://e.example/\"}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
+        { "@json term whose payload holds a @base key", Vc(Subject("\"data\":{\"@base\":\"ordinary application data\"}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<https://e.example/vocab#data> \"{\\\"@base\\\":\\\"ordinary application data\\\"}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "@json value object whose payload holds a @base key", Vc(Subject("\"data\":{\"@value\":{\"@base\":\"x\"},\"@type\":\"@json\"}"), V2With("{\"data\":\"https://e.example/vocab#data\"}")), "<https://e.example/vocab#data> \"{\\\"@base\\\":\\\"x\\\"}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "IRIs differing by an empty query or fragment", Vc("\"credentialSubject\":[{\"id\":\"https://e.example/a?\",\"name\":\"A\"},{\"id\":\"https://e.example/a#\",\"name\":\"A\"}]"), "<https://e.example/a#> <https://schema.org/name> \"A\" .\n<https://e.example/a?> <https://schema.org/name> \"A\" ." },
+        // Literal values are not Unicode-normalized: a decomposed é is signed as written.
+        { "decomposed (NFD) literal", Vc(Subject("\"name\":\"" + Decomposed + "\"")), "<https://schema.org/name> \"" + Decomposed + "\" ." },
     };
 
     [Theory]
@@ -150,6 +162,22 @@ public sealed class Issue36DataLossTests
             .WithMessage($"The N-Quads input cannot be canonicalized as written: it {RespelledIri}.");
         map.Should().Throw<RdfCanonicalizationException>();
         Canonicalizer.CanonicalizeNQuads(exact).Should().Be(exact);
+    }
+
+    [Fact]
+    public void CanonicalizeNQuads_DistinctTermsTheStoreWouldMerge_Throws()
+    {
+        const string merged = "<https://e.example> <urn:p> <urn:o> .\n<https://e.example/> <urn:p> <urn:o> .\n";
+        const string duplicate = "<https://e.example> <urn:p> <urn:o> .\n<https://e.example> <urn:p> <urn:o> .\n";
+        const string twoStatements = "<https://e.example> <urn:p> <urn:o> .\n<https://e.example/> <urn:q> <urn:o> .\n";
+
+        var canonicalize = () => Canonicalizer.CanonicalizeNQuads(merged);
+
+        canonicalize.Should().Throw<RdfCanonicalizationException>()
+            .WithMessage($"The N-Quads input cannot be canonicalized as written: it {MergedTerms}.");
+        Canonicalizer.CanonicalizeNQuads(duplicate).Should().Be("<https://e.example> <urn:p> <urn:o> .\n", "an exact duplicate is the same RDF statement");
+        Canonicalizer.CanonicalizeNQuads(twoStatements).Should().Be(
+            "<https://e.example/> <urn:q> <urn:o> .\n<https://e.example> <urn:p> <urn:o> .\n", "each statement keeps its own spelling");
     }
 
     [Fact]
@@ -332,6 +360,47 @@ public sealed class Issue36DataLossTests
         var result = suite.VerifyProof(Tamper(Parse(Signed), tamper), proof, publicKey);
         result.Verified.Should().BeFalse(tamper);
         result.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+    }
+
+    [Theory]
+    [MemberData(nameof(Suites))]
+    public async Task VerifyProof_SubjectTheStoreWouldMergeWithASignedOne_IsDataLossDetectionError(string cryptosuite)
+    {
+        // PR #37 review, P1: before the fix, appending the trailing-slash subject still verified.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        var document = Parse(Vc("\"credentialSubject\":[{\"id\":\"https://e.example\",\"name\":\"Alice\"}]"));
+        var proof = await suite.CreateProofAsync(document, Options(cryptosuite), signer);
+
+        JsonElement Append(string id) => Fx.Mutate(document, vc =>
+            ((JsonArray)vc["credentialSubject"]!).Add(new JsonObject { ["id"] = id, ["name"] = "Alice" }));
+
+        var merged = suite.VerifyProof(Append("https://e.example/"), proof, publicKey);
+        merged.Verified.Should().BeFalse();
+        merged.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+
+        var added = suite.VerifyProof(Append("https://e.example/other"), proof, publicKey);
+        added.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "an ordinary extra statement breaks the signature");
+
+        suite.VerifyProof(Append("https://e.example"), proof, publicKey).Verified
+            .Should().BeTrue("an exact duplicate adds no RDF statement");
+    }
+
+    [Theory]
+    [MemberData(nameof(Suites))]
+    public async Task JsonLiteralHoldingABaseKey_IsSignedVerbatim(string cryptosuite)
+    {
+        // PR #37 review, P2: a "@base" key inside a JSON literal is data, not a context.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        var document = Parse(Vc(
+            Subject("\"data\":{\"@base\":\"ordinary application data\"}"),
+            V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")));
+        var proof = await suite.CreateProofAsync(document, Options(cryptosuite), signer);
+
+        suite.VerifyProof(document, proof, publicKey).Verified.Should().BeTrue();
+
+        var tampered = Fx.Mutate(document, vc => vc["credentialSubject"]!["data"]!["@base"] = "other application data");
+        suite.VerifyProof(tampered, proof, publicKey).Problems
+            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "the literal is signed");
     }
 
     [Theory]

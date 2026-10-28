@@ -31,8 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - it uses `@direction` or `@index`, which RDF canonicalization cannot carry;
   - the canonical N-Quads would spell one of its IRIs differently: dot segments, percent-encoded
     unreserved or non-ASCII characters, upper-case scheme or host, a default port;
-  - it sets a non-null `@base`. dotNetRDF resolves relative IRIs against it with `System.Uri`, which
-    respells them during expansion, so `users/%61lice` would sign as `users/alice`.
+  - it resolves a relative IRI against an `@base`. dotNetRDF resolves with `System.Uri`, which respells
+    the IRI during expansion, so `users/%61lice` would sign as `users/alice`. A `@base` that resolves
+    nothing passes, and so does a `"@base"` key that is data inside a `@json` literal;
+  - two distinct RDF terms would merge in dotNetRDF's store, which compares parsed URI components.
+    For example, a subject `https://e.example/` appended next to a signed `https://e.example` lost its
+    statements and still verified. Exact duplicate statements stay harmless.
 
   The parse itself is unchanged, so accepted input canonicalizes to exactly the bytes it did before,
   and every W3C vector passes unchanged. Messages name the cause and never quote the input.
@@ -64,7 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   library created over such documents. To upgrade:
   - define your terms in a context, or list `https://www.w3.org/ns/credentials/undefined-terms/v2`
     last in `@context`;
-  - write IRIs well formed, absolute (no `@base`) and in normalized form;
+  - write IRIs well formed, absolute (not resolved against an `@base`), in normalized form, and keep
+    distinct IRIs from differing only in an empty path (`https://host` vs `https://host/`);
   - for a credentials/v1 document, also list `https://w3id.org/security/data-integrity/v2` (bundled);
   - for the Legacy RDFC variant, list `https://w3id.org/security/suites/ed25519-2020/v1`
     (`Ed25519Signature2020`), or supply a context that defines the `EcdsaSecp256r1Signature2019`

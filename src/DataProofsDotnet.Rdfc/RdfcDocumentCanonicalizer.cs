@@ -32,8 +32,10 @@ namespace DataProofsDotnet.Rdfc;
 /// malformed language tag, uses a blank node as a property, uses <c>@direction</c> or
 /// <c>@index</c>, or has an IRI the canonical N-Quads would spell differently (dot segments,
 /// percent-encoded unreserved or non-ASCII characters, upper-case scheme or host, a default
-/// port), or sets <c>@base</c>: dotNetRDF resolves relative IRIs against it with <see cref="Uri"/>,
-/// which respells them before any check could compare. Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
+/// port), resolves a relative IRI against <c>@base</c> (dotNetRDF resolves with <see cref="Uri"/>,
+/// which respells it before any check could compare), or has two distinct terms the store would
+/// merge (dotNetRDF's node equality compares parsed URI components, so <c>https://e.example</c> and
+/// <c>https://e.example/</c> would be one subject). Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
 /// output is spelled as in the input. N-Quads input with an IRI that would be respelled is
 /// rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
 /// top-level value or node that carries nothing but an <c>@id</c>) are not data loss here, and
@@ -126,6 +128,7 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
                 parser.Load(handler, new StringReader(json), store.UriFactory);
                 loss = warned ? JsonLdLossAudit.IgnoredContent
                     : handler.RespelledIri ? JsonLdLossAudit.RespelledIri
+                    : handler.MergedStatements ? JsonLdLossAudit.MergedTerms
                     : null;
             }
         }
@@ -163,10 +166,12 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
             throw new RdfCanonicalizationException("The N-Quads input could not be parsed.", ex);
         }
 
-        if (handler.RespelledIri)
+        var problem = handler.RespelledIri ? JsonLdLossAudit.RespelledIri
+            : handler.MergedStatements ? JsonLdLossAudit.MergedTerms
+            : null;
+        if (problem is not null)
         {
-            throw new RdfCanonicalizationException(
-                $"The N-Quads input cannot be canonicalized as written: it {JsonLdLossAudit.RespelledIri}.");
+            throw new RdfCanonicalizationException($"The N-Quads input cannot be canonicalized as written: it {problem}.");
         }
 
         return store;
