@@ -371,3 +371,27 @@ owner's re-review caught both.
 - Before shipping a rewrite-based check, test it against lossless inputs that contain the rewritten
   keywords in every position they are legal: literals (both forms, both key orders), `@reverse`,
   lists, `@included`, root, `@graph`, and aliases. These are the false-positive controls.
+
+## 2026-10-28 — Let the processor resolve what the processor decides (PR #37)
+
+**Mistake:** To find a set object's `@set` and `@index` keys, I compared each context term's value
+with the literal keyword and took the union of names from every context, scopes ignored. JSON-LD
+resolves aliases through other terms (`"i2":"i"`, `{"@id":"s"}`) and only where their context is
+active. So chained aliases bypassed the check again. An alias from a scoped context that is never
+activated rewrote an ordinary `@json`-coerced property, and lossless documents were refused. The
+owner's re-review caught both.
+
+**The rule for myself:**
+- When the answer depends on how the processor reads the input (alias resolution, scope, coercion,
+  propagation), never re-derive it from the text. Rewrite the *definitions* the processor reads
+  (here: every term defined as `@index`, and every `"@index"` key), let the processor resolve them in
+  its own active context, and observe its output.
+- This refines the earlier probe rule. A probe's failure may be the finding only when the probe
+  provably differs from the input at the suspected sites alone, and the processor, not my code,
+  identifies those sites. Then failure, a warning, or a different expansion are all attributable.
+  When my code picks the sites, failure stays a fallback.
+- Make the probe unforgeable: use a fresh random name per call, so no input can define it or
+  neutralize it.
+- For anything alias-based, include these controls: chains (string and `{"@id":...}` forms, inline
+  and across a remote context), a property-scoped alias, an alias defined but unused, and an alias
+  defined only in a scope never activated, over a property with a coercion.

@@ -28,7 +28,7 @@ namespace DataProofsDotnet.Rdfc;
 /// its <c>@context</c> does not define, has an IRI that is not a well-formed absolute IRI in any
 /// position (subject, type, property, value, named graph, list member, datatype), has a
 /// malformed language tag, uses a blank node as a property, uses <c>@direction</c> or
-/// <c>@index</c> (including a set object's, which expansion drops silently), or has an IRI the canonical N-Quads would spell differently (dot segments,
+/// <c>@index</c> (including one that expansion drops silently, as from a set object or a null value, through any alias in scope), or has an IRI the canonical N-Quads would spell differently (dot segments,
 /// percent-encoded unreserved or non-ASCII characters, upper-case scheme or host, a default
 /// port), resolves a relative IRI against <c>@base</c> (dotNetRDF resolves with <see cref="Uri"/>,
 /// which respells it before any check could compare), or has two distinct terms the store would
@@ -124,7 +124,7 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
                 // The parse itself is unchanged, so accepted input canonicalizes to the same bytes
                 // as before; its warnings back up the audit, and the handler catches respellings.
                 var handler = new ExactIriStoreHandler(store);
-                var parser = new JsonLdParser(contexts.Options(ContextView.AsLoaded));
+                var parser = new JsonLdParser(contexts.Options());
                 var warned = false;
                 parser.Warning += _ => warned = true;
                 parser.Load(handler, new StringReader(json), store.UriFactory);

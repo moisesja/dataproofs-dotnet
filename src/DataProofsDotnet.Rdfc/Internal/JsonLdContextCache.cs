@@ -14,13 +14,12 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// Each expansion gets a fresh token, so none sees another's state.
 /// </para>
 /// <para>
-/// The cache also records whether a loaded context sets <c>@base</c>. dotNetRDF ignores a remote
-/// context's own <c>@base</c>, but honors one in a property- or type-scoped context the remote context
-/// defines, because it processes scoped contexts as local ones (adversarial review, F1). The
-/// <c>@base</c> check (<see cref="JsonLdLossAudit"/>) therefore also expands with
-/// <see cref="Options"/><c>(withoutBase: true)</c>, which serves every context without its
-/// <c>@base</c> members. It also collects the terms loaded contexts define as aliases of <c>@set</c>
-/// and <c>@index</c>, for the check on a set object's dropped <c>@index</c>.
+/// The audit's probes expand the input again with every context rewritten the way the input is
+/// (<see cref="Options"/> with a <c>serve</c> function), so the processor resolves the rewritten
+/// terms in its own active context. The cache records what triggers them: whether a loaded context
+/// sets <c>@base</c> (dotNetRDF ignores a remote context's own <c>@base</c>, but honors one in a
+/// property- or type-scoped context the remote context defines, because it processes scoped
+/// contexts as local ones; adversarial review, F1), and whether one names <c>@index</c>.
 /// </para>
 /// </remarks>
 internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
@@ -30,19 +29,16 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
     /// <summary>Whether any context loaded so far holds a non-null <c>@base</c> member.</summary>
     public bool AnySetsBase { get; private set; }
 
-    private readonly HashSet<string> _setAliases = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _indexAliases = new(StringComparer.Ordinal);
+    /// <summary>Whether any context loaded so far defines a term as <c>@index</c>.</summary>
+    public bool AnyNamesIndex { get; private set; }
 
-    /// <summary>The terms loaded contexts define as aliases of <c>@set</c>.</summary>
-    public IReadOnlyCollection<string> SetAliases => _setAliases;
-
-    /// <summary>The terms loaded contexts define as aliases of <c>@index</c>.</summary>
-    public IReadOnlyCollection<string> IndexAliases => _indexAliases;
-
-    /// <summary>Processor options that load contexts through this cache, served as <paramref name="view"/>.</summary>
-    public JsonLdProcessorOptions Options(ContextView view) => new()
+    /// <summary>
+    /// Processor options that load contexts through this cache, each served through
+    /// <paramref name="serve"/> when one is given.
+    /// </summary>
+    public JsonLdProcessorOptions Options(Func<JToken, JToken>? serve = null) => new()
     {
-        DocumentLoader = (uri, _) => Load(uri, view),
+        DocumentLoader = (uri, _) => Load(uri, serve),
         // Reports what expansion drops (undefined terms, malformed language tags) as warnings
         // instead of discarding it silently (issue #36).
         SafeMode = true,
@@ -50,7 +46,7 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
 
     // Bridges the public IDocumentLoader to dotNetRDF's JSON-LD document-loader callback.
     // Newtonsoft's JToken lives only on this side of the boundary.
-    private RemoteDocument Load(Uri uri, ContextView view)
+    private RemoteDocument Load(Uri uri, Func<JToken, JToken>? serve)
     {
         if (!_loaded.TryGetValue(uri.AbsoluteUri, out var loaded))
         {
@@ -68,31 +64,13 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
             throw new RdfCanonicalizationException($"The context '{uri.AbsoluteUri}' did not contain valid JSON.", ex);
         }
 
-        if (JsonLdLossAudit.HasBase(token))
-        {
-            AnySetsBase = true;
-            if (view == ContextView.WithoutBase)
-            {
-                token = JsonLdLossAudit.WithoutBase(token);
-            }
-        }
-
-        JsonLdLossAudit.CollectAliases(token, _setAliases, _indexAliases);
+        AnySetsBase |= JsonLdLossAudit.HasBase(token);
+        AnyNamesIndex |= JsonLdLossAudit.NamesIndex(token);
 
         return new RemoteDocument
         {
-            Document = token,
+            Document = serve is null ? token : serve(token),
             DocumentUrl = loaded.DocumentUrl,
         };
     }
-}
-
-/// <summary>How <see cref="JsonLdContextCache"/> serves the contexts it loaded.</summary>
-internal enum ContextView
-{
-    /// <summary>As the loader returned them.</summary>
-    AsLoaded,
-
-    /// <summary>Without their <c>@base</c> members.</summary>
-    WithoutBase,
 }

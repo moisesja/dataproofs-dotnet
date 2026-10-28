@@ -36,17 +36,18 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// while the base is null.
 /// </para>
 /// <para>
-/// Expansion also drops the <c>@index</c> of a set object (<c>{"@set": [...], "@index": "x"}</c>)
-/// without a warning, while it keeps a graph object's. Only an object holding both a set key and an
-/// index key (the keyword or an alias any context defines) can be one, so when the input has such
-/// an object, it is expanded once more with just those objects' set key read as <c>@graph</c>
-/// (<see cref="IndexesASet"/>). Every other part of the input, ordinary sets included, is left as
-/// written. A graph object stands wherever a set object can (a property value, a reverse property's
-/// value, a list item, the top level) and keeps <c>@index</c>. The first walk refused every other
-/// <c>@index</c>, so one outside JSON literals in that expansion came from a set, and is refused
-/// (PR #37 reviews). An object whose keys only share names with aliases defined elsewhere becomes a
-/// node holding a graph and yields no <c>@index</c>. Rewriting inside a JSON literal payload changes
-/// nothing, since expansion does not read it.
+/// Expansion also drops some <c>@index</c> entries without a warning: a set object's
+/// (<c>{"@set": [...], "@index": "x"}</c>) and a null value's, so the walk never sees them. Which keys
+/// expand to <c>@index</c> is for the processor to decide: aliases chain through other terms and
+/// hold only in their scope (PR #37 reviews). So when the input or a context it loads names
+/// <c>@index</c>, the input is expanded once more with every <c>"@index"</c> key outside contexts,
+/// and every term a context defines as <c>@index</c>, naming a fresh unpredictable IRI instead
+/// (<see cref="WithIndexAs"/>). The processor then resolves every alias to that IRI in its own active
+/// context, and a term in a scope it never activates changes nothing. The probe differs from the
+/// input only at keys that expand to <c>@index</c>, and the walk refused every <c>@index</c> that
+/// survived. So if the probe fails (a set or value object takes no property), warns, or expands to
+/// anything else outside JSON literal payloads, which expansion does not read, an <c>@index</c> was
+/// dropped: refused.
 /// Each result is a predicate phrase for a message ("uses a term that…") and never quotes the
 /// input (FR-23).
 /// </para>
@@ -83,9 +84,10 @@ internal static class JsonLdLossAudit
         }
 
         var inputSetsBase = HasBase(input);
+        var inputNamesIndex = NamesIndex(input);
 
         var warnings = new List<JsonLdProcessorWarning>();
-        var expanded = JsonLdProcessor.Expand(input, contexts.Options(ContextView.AsLoaded), warnings);
+        var expanded = JsonLdProcessor.Expand(input, contexts.Options(), warnings);
         if (warnings.Count > 0)
         {
             return warnings[0].ErrorCode switch
@@ -109,7 +111,7 @@ internal static class JsonLdLossAudit
             }
         }
 
-        if (IndexesASet(json, contexts))
+        if ((inputNamesIndex || contexts.AnyNamesIndex) && DropsAnIndex(expanded, json, contexts))
         {
             return Index;
         }
@@ -277,9 +279,8 @@ internal static class JsonLdLossAudit
 
     public static JToken WithoutBase(JToken input)
     {
-        // HasBase found a member, so the input is an object or array.
-        var copy = (JContainer)input.DeepClone();
-        foreach (var member in copy.Descendants().OfType<JProperty>().Where(p => p.Name == "@base").ToList())
+        var copy = input.DeepClone();
+        foreach (var member in (copy as JContainer)?.Descendants().OfType<JProperty>().Where(p => p.Name == "@base").ToList() ?? [])
         {
             member.Remove();
         }
@@ -292,16 +293,10 @@ internal static class JsonLdLossAudit
     // expansions match unless an IRI was resolved.
     private static bool ResolvesAgainstBase(JArray expanded, string json, JsonLdContextCache contexts)
     {
-        var input = ReadJson(json);
-        if (HasBase(input))
-        {
-            input = WithoutBase(input);
-        }
-
         JArray unresolved;
         try
         {
-            unresolved = JsonLdProcessor.Expand(input, contexts.Options(ContextView.WithoutBase), new List<JsonLdProcessorWarning>());
+            unresolved = JsonLdProcessor.Expand(WithoutBase(ReadJson(json)), contexts.Options(WithoutBase), new List<JsonLdProcessorWarning>());
         }
         catch (Exception)
         {
@@ -311,20 +306,74 @@ internal static class JsonLdLossAudit
         return !SameOutsideJsonLiterals(expanded, unresolved);
     }
 
+    // Whether a JSON-LD document or context document names @index: a cheap trigger for the check below.
+    public static bool NamesIndex(JToken token) => IndexMembers(token).Count > 0;
+
     /// <summary>
-    /// Adds to <paramref name="setKeys"/> and <paramref name="indexKeys"/> every term that a context
-    /// in <paramref name="token"/> (inline, scoped, or a loaded context document) defines as an alias
-    /// of <c>@set</c> or <c>@index</c>. Scoping is ignored: the check that uses them refuses only
-    /// what expansion confirms.
+    /// A copy of a JSON-LD document or context document in which nothing expands to <c>@index</c>:
+    /// each member <see cref="IndexMembers"/> finds names <paramref name="probe"/> instead. Every
+    /// alias defined through one of those terms follows it, in whatever scope the processor finds it.
     /// </summary>
-    public static void CollectAliases(JToken token, ISet<string> setKeys, ISet<string> indexKeys)
+    public static JToken WithIndexAs(JToken input, string probe)
+    {
+        var copy = input.DeepClone();
+
+        // Innermost first: renaming a key replaces its member, and with it the members inside.
+        foreach (var member in Enumerable.Reverse(IndexMembers(copy)))
+        {
+            if (member.Name == "@index")
+            {
+                member.Replace(new JProperty(probe, member.Value));
+            }
+            else
+            {
+                member.Value = probe;
+            }
+        }
+
+        return copy;
+    }
+
+    // Whether expansion dropped an @index the walk could not see (see the remarks). The probe differs
+    // from the input only at keys that expand to @index, so wherever it fails, warns or expands to
+    // something else outside JSON literal payloads, expansion processed one of them.
+    private static bool DropsAnIndex(JArray expanded, string json, JsonLdContextCache contexts)
+    {
+        // Unpredictable, so no input or context can define it as a term.
+        var probe = "urn:uuid:" + Guid.NewGuid().ToString("D");
+        var warnings = new List<JsonLdProcessorWarning>();
+        JArray probed;
+        try
+        {
+            probed = JsonLdProcessor.Expand(WithIndexAs(ReadJson(json), probe), contexts.Options(c => WithIndexAs(c, probe)), warnings);
+        }
+        catch (JsonLdProcessorException)
+        {
+            // A set or value object, which takes no property, now holds one.
+            return true;
+        }
+
+        return warnings.Count > 0 || !SameOutsideJsonLiterals(expanded, probed);
+    }
+
+    // The members of a JSON-LD document or context document that can expand to @index, outer ones
+    // first: each "@index" key outside contexts, and, in contexts (scoped ones included), each term
+    // defined as @index or the @id that defines it. Any other alias reaches @index through one of them.
+    private static List<JProperty> IndexMembers(JToken token)
+    {
+        var found = new List<JProperty>();
+        CollectIndexKeys(token, found);
+        return found;
+    }
+
+    private static void CollectIndexKeys(JToken token, List<JProperty> found)
     {
         switch (token)
         {
             case JArray array:
                 foreach (var item in array)
                 {
-                    CollectAliases(item, setKeys, indexKeys);
+                    CollectIndexKeys(item, found);
                 }
 
                 break;
@@ -333,135 +382,63 @@ internal static class JsonLdLossAudit
                 {
                     if (member.Name == "@context")
                     {
-                        CollectContextAliases(member.Value, setKeys, indexKeys);
+                        CollectIndexTerms(member.Value, found);
+                        continue;
                     }
-                    else
+
+                    if (member.Name == "@index")
                     {
-                        CollectAliases(member.Value, setKeys, indexKeys);
+                        found.Add(member);
                     }
+
+                    CollectIndexKeys(member.Value, found);
                 }
 
                 break;
         }
     }
 
-    private static void CollectContextAliases(JToken context, ISet<string> setKeys, ISet<string> indexKeys)
+    private static void CollectIndexTerms(JToken context, List<JProperty> found)
     {
-        if (context is JArray contexts)
+        switch (context)
         {
-            foreach (var item in contexts)
-            {
-                CollectContextAliases(item, setKeys, indexKeys);
-            }
-
-            return;
-        }
-
-        if (context is not JObject definitions)
-        {
-            return;
-        }
-
-        foreach (var term in definitions.Properties().Where(p => !p.Name.StartsWith('@')))
-        {
-            var target = term.Value switch
-            {
-                JValue { Type: JTokenType.String } keyword => (string)keyword!,
-                JObject { } definition when definition["@id"] is JValue { Type: JTokenType.String } id => (string)id!,
-                _ => null,
-            };
-            if (target == "@set")
-            {
-                setKeys.Add(term.Name);
-            }
-            else if (target == "@index")
-            {
-                indexKeys.Add(term.Name);
-            }
-
-            if (term.Value is JObject { } scoped && scoped["@context"] is { } scopedContext)
-            {
-                CollectContextAliases(scopedContext, setKeys, indexKeys);
-            }
-        }
-    }
-
-    // Whether the input holds a set object whose @index expansion would drop (see the remarks).
-    private static bool IndexesASet(string json, JsonLdContextCache contexts)
-    {
-        var input = ReadJson(json);
-        var setKeys = new HashSet<string>(contexts.SetAliases, StringComparer.Ordinal) { "@set" };
-        var indexKeys = new HashSet<string>(contexts.IndexAliases, StringComparer.Ordinal) { "@index" };
-        CollectAliases(input, setKeys, indexKeys);
-
-        if (!ReadIndexedSetsAsGraphs(input, setKeys, indexKeys))
-        {
-            return false;
-        }
-
-        try
-        {
-            return HasIndex(JsonLdProcessor.Expand(input, contexts.Options(ContextView.AsLoaded), new List<JsonLdProcessorWarning>()));
-        }
-        catch (Exception)
-        {
-            // Not expected: a graph object stands wherever the first expansion accepted a set. Fail closed.
-            return true;
-        }
-    }
-
-    // In each object outside contexts that holds a set key and an index key, renames the set key to
-    // @graph, which keeps @index through expansion, unless that would collide with an existing @graph.
-    // Returns whether any object holds both keys.
-    private static bool ReadIndexedSetsAsGraphs(JToken token, ISet<string> setKeys, ISet<string> indexKeys)
-    {
-        var found = false;
-        switch (token)
-        {
-            case JArray array:
-                foreach (var item in array)
+            case JArray contexts:
+                foreach (var item in contexts)
                 {
-                    found |= ReadIndexedSetsAsGraphs(item, setKeys, indexKeys);
+                    CollectIndexTerms(item, found);
                 }
 
                 break;
-            case JObject obj:
-                var members = obj.Properties().Where(p => p.Name != "@context").ToList();
-                if (members.Any(p => setKeys.Contains(p.Name)) && members.Any(p => indexKeys.Contains(p.Name)))
+            case JObject definitions:
+                foreach (var term in definitions.Properties().Where(p => !p.Name.StartsWith('@')))
                 {
-                    found = true;
-                    foreach (var member in members.Where(p => setKeys.Contains(p.Name)))
+                    if (IsIndexKeyword(term.Value))
                     {
-                        if (!obj.ContainsKey("@graph"))
+                        found.Add(term);
+                    }
+                    else if (term.Value is JObject definition)
+                    {
+                        if (definition.Property("@id") is { } id && IsIndexKeyword(id.Value))
                         {
-                            // As an array: a set means the same either way, and dotNetRDF fails on a
-                            // scalar @graph value.
-                            member.Replace(new JProperty("@graph", member.Value as JArray ?? new JArray(member.Value)));
+                            found.Add(id);
+                        }
+
+                        if (definition["@context"] is { } scoped)
+                        {
+                            CollectIndexTerms(scoped, found);
                         }
                     }
                 }
 
-                foreach (var member in obj.Properties().Where(p => p.Name != "@context").ToList())
-                {
-                    found |= ReadIndexedSetsAsGraphs(member.Value, setKeys, indexKeys);
-                }
-
                 break;
         }
-
-        return found;
     }
 
-    private static bool HasIndex(JToken token) => token switch
-    {
-        JObject obj when IsJsonLiteralValue(obj) => false,
-        JObject obj => obj.ContainsKey("@index") || obj.Properties().Any(p => HasIndex(p.Value)),
-        JArray array => array.Any(HasIndex),
-        _ => false,
-    };
+    private static bool IsIndexKeyword(JToken token)
+        => token.Type == JTokenType.String && (string)token! == "@index";
 
     // Deep equality that does not look inside JSON literal payloads, which are opaque data: removing
-    // a "@base" key from one changes the payload but resolves nothing.
+    // a "@base" key from one, or renaming an "@index" key in it, changes the payload but nothing else.
     private static bool SameOutsideJsonLiterals(JToken a, JToken b)
     {
         switch (a, b)

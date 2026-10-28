@@ -28,9 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - any IRI is not a well-formed absolute IRI: a subject, type, property, value, named-graph name,
     list member or datatype;
   - it has a malformed language tag or uses a blank node as a property;
-  - it uses `@direction` or `@index`, which RDF canonicalization cannot carry. That includes the
-    `@index` of a set object (`{"@set": [...], "@index": "x"}`), which expansion drops before any check
-    sees it. Keyword aliases count, and keys inside `@json` literals are data;
+  - it uses `@direction` or `@index`, which RDF canonicalization cannot carry. That includes an
+    `@index` that expansion drops before any check sees it: a set object's (`{"@set": [...], "@index": "x"}`)
+    or a null value's. Keyword aliases count, resolved by the JSON-LD processor itself (chains and scope
+    included), and keys inside `@json` literals are data;
   - the canonical N-Quads would spell one of its IRIs differently: dot segments, percent-encoded
     unreserved or non-ASCII characters, upper-case scheme or host, a default port;
   - it resolves a relative IRI against an `@base`. dotNetRDF resolves with `System.Uri`, which respells

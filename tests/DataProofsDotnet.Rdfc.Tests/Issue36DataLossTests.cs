@@ -95,6 +95,14 @@ public sealed class Issue36DataLossTests
         { "@index on a set under @included", Vc(Subject("\"name\":\"n\",\"@included\":{\"@set\":[{\"id\":\"urn:a\",\"name\":\"A\"}],\"@index\":\"admin\"}")), Index, "admin" },
         { "@index on a set inside a list", Vc(Subject("\"steps\":[{\"@set\":[\"a\"],\"@index\":\"admin\"}]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@container\":\"@list\"}}")), Index, "admin" },
         { "@index on a set object, @set aliased by @id", Vc(Subject("\"name\":{\"set\":[\"Alice\"],\"@index\":\"admin\"}"), V2With("{\"set\":{\"@id\":\"@set\"}}")), Index, "admin" },
+        // The processor resolves aliases through chains and in scope (PR #37 re-review 5688560817).
+        { "@index on a set object, both keywords aliased through a chain", Vc(Subject("\"name\":{\"s2\":[\"Alice\"],\"i2\":\"admin\"}"), V2With("{\"s\":\"@set\",\"s2\":\"s\",\"i\":\"@index\",\"i2\":\"i\"}")), Index, "admin" },
+        { "@index on a set object, @set aliased through a chain", Vc(Subject("\"name\":{\"s2\":[\"Alice\"],\"@index\":\"admin\"}"), V2With("{\"s\":\"@set\",\"s2\":\"s\"}")), Index, "admin" },
+        { "@index on a set object, @index aliased through a chain", Vc(Subject("\"name\":{\"@set\":[\"Alice\"],\"i2\":\"admin\"}"), V2With("{\"i\":\"@index\",\"i2\":\"i\"}")), Index, "admin" },
+        { "@index on a set object, @set aliased by @id through a chain", Vc(Subject("\"name\":{\"s2\":[\"Alice\"],\"@index\":\"admin\"}"), V2With("{\"s\":\"@set\",\"s2\":{\"@id\":\"s\"}}")), Index, "admin" },
+        { "@index on a set object, aliases from a property-scoped context", Vc(Subject("\"label\":{\"s\":[\"Alice\"],\"i\":\"admin\"}"), V2With("{\"label\":{\"@id\":\"https://schema.org/name\",\"@context\":{\"s\":\"@set\",\"i\":\"@index\"}}}")), Index, "admin" },
+        // Expansion drops a null value with its @index, so the index would go unsigned too.
+        { "@index on a null value", Vc(Subject("\"name\":\"n\",\"description\":{\"@value\":null,\"@index\":\"admin\"}")), Index, "admin" },
         { "@index map key", Vc(Subject("\"notes\":{\"first\":\"a\"}"), V2With("{\"notes\":{\"@id\":\"https://e.example/vocab#notes\",\"@container\":\"@index\"}}")), Index, "first" },
         { "respelled: %2E%2E segment", Vc("\"credentialSubject\":{\"id\":\"https://e.example/x/%2E%2E/users/alice\",\"name\":\"n\"}"), RespelledIri, "%2E" },
         { "respelled: .. segment", Vc("\"credentialSubject\":{\"id\":\"https://e.example/x/../users/alice\",\"name\":\"n\"}"), RespelledIri, "/x/" },
@@ -166,7 +174,11 @@ public sealed class Issue36DataLossTests
         { "@json payload holding @set, @index and @graph", Vc(Subject("\"data\":{\"@set\":[1],\"@index\":\"x\",\"@graph\":[2]}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "\"{\\\"@graph\\\":[2],\\\"@index\\\":\\\"x\\\",\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
         { "set under @reverse", Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"@set\":[{\"id\":\"did:example:bob\"}]}}}"), "<did:example:bob> <https://schema.org/knows> <did:example:alice> ." },
         { "aliased set under @reverse", Vc("\"credentialSubject\":{\"id\":\"did:example:alice\",\"@reverse\":{\"https://schema.org/knows\":{\"set\":[{\"id\":\"did:example:bob\"}]}}}", V2With("{\"set\":\"@set\"}")), "<did:example:bob> <https://schema.org/knows> <did:example:alice> ." },
-        { "properties that share names with aliases defined only in a literal", Vc(Subject("\"data\":{\"@context\":{\"s\":\"@set\",\"idx\":\"@index\"}},\"knows\":{\"id\":\"urn:n\",\"s\":\"1\",\"idx\":\"x\"}"), V2With("{\"s\":\"https://e.example/vocab#s\",\"idx\":\"https://e.example/vocab#idx\",\"knows\":\"https://schema.org/knows\",\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<urn:n> <https://e.example/vocab#idx> \"x\" ." },
+        // A scoped context that is never activated defines nothing where the terms are used, so the
+        // JSON-coerced "s" stays a literal (PR #37 re-review 5688560817).
+        { "aliases in a scoped context that is never activated", "{\"@context\":[\"" + V2 + "\",{\"s\":{\"@id\":\"urn:s\",\"@type\":\"@json\"},\"i\":\"urn:i\",\"unused\":{\"@id\":\"urn:unused\",\"@context\":{\"s\":\"@set\",\"i\":\"@index\"}}}],\"id\":\"urn:doc\",\"s\":{\"@value\":{\"foo\":\"bar\"}},\"i\":\"x\"}", "<urn:doc> <urn:i> \"x\" .\n<urn:doc> <urn:s> \"{\\\"@value\\\":{\\\"foo\\\":\\\"bar\\\"}}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "@index alias that nothing uses", Vc(Subject("\"name\":{\"@set\":[\"Alice\"]}"), V2With("{\"i\":\"@index\",\"i2\":\"i\"}")), "<did:example:alice> <https://schema.org/name> \"Alice\" ." },
+        { "properties that share names with aliases defined only in a literal",Vc(Subject("\"data\":{\"@context\":{\"s\":\"@set\",\"idx\":\"@index\"}},\"knows\":{\"id\":\"urn:n\",\"s\":\"1\",\"idx\":\"x\"}"), V2With("{\"s\":\"https://e.example/vocab#s\",\"idx\":\"https://e.example/vocab#idx\",\"knows\":\"https://schema.org/knows\",\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<urn:n> <https://e.example/vocab#idx> \"x\" ." },
         { "@base: null", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":null}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "@base that resolves nothing", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":\"https://e.example/\"}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "@json term whose payload holds a @base key", Vc(Subject("\"data\":{\"@base\":\"ordinary application data\"}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<https://e.example/vocab#data> \"{\\\"@base\\\":\\\"ordinary application data\\\"}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
@@ -279,11 +291,16 @@ public sealed class Issue36DataLossTests
         var canonicalizer = new RdfcDocumentCanonicalizer(loader);
         var indexed = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"urn:s\",\"label\":{\"set\":[\"A\"],\"idx\":\"admin\"}}");
         var plain = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"urn:s\",\"label\":{\"set\":[\"A\"]}}");
+        // An inline alias of the remote one (PR #37 re-review 5688560817).
+        var chained = Parse("{\"@context\":[\"" + MapLoader.Url + "\",{\"idx2\":\"idx\"}],\"@id\":\"urn:s\",\"label\":{\"set\":[\"A\"],\"idx2\":\"admin\"}}");
 
-        var act = () => canonicalizer.CanonicalizeJsonLd(indexed);
+        foreach (var document in new[] { indexed, chained })
+        {
+            var act = () => canonicalizer.CanonicalizeJsonLd(document);
+            act.Should().Throw<JsonLdDataLossException>()
+                .WithMessage($"The JSON-LD input cannot be canonicalized without losing data: it {Index}.");
+        }
 
-        act.Should().Throw<JsonLdDataLossException>()
-            .WithMessage($"The JSON-LD input cannot be canonicalized without losing data: it {Index}.");
         Encoding.UTF8.GetString(canonicalizer.CanonicalizeJsonLd(plain)).Should().Be("<urn:s> <https://schema.org/name> \"A\" .\n");
     }
 
@@ -567,29 +584,55 @@ public sealed class Issue36DataLossTests
         elsewhere.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a real move is a signature failure");
     }
 
-    [Theory]
-    [MemberData(nameof(Suites))]
-    public async Task SetObjectIndex_IsRefusedAtCreateAndVerify(string cryptosuite)
+    public static TheoryData<string, string, string, string> IndexedSetShapes()
     {
-        // PR #37 re-review (5686538504): replacing a signed name with {"@set":[name],"@index":...}
-        // verified, whatever the index said, because expansion dropped it.
-        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
-        var document = Parse(Vc(Subject("\"name\":\"Alice\"")));
-        var proof = await suite.CreateProofAsync(document, Options(cryptosuite), signer);
-        JsonElement Name(string json) => Fx.Mutate(document, vc => vc["credentialSubject"]!["name"] = JsonNode.Parse(json));
+        // contexts, set key, index key: the keywords, and aliases the processor resolves through a
+        // chain (PR #37 re-reviews 5686538504 and 5688560817)
+        var shapes = new (string Contexts, string Set, string Index)[]
+        {
+            ("\"" + V2 + "\"", "@set", "@index"),
+            (V2With("{\"s\":\"@set\",\"s2\":\"s\",\"i\":\"@index\",\"i2\":\"i\"}"), "s2", "i2"),
+            (V2With("{\"s\":\"@set\",\"s2\":\"s\"}"), "s2", "@index"),
+            (V2With("{\"i\":\"@index\",\"i2\":\"i\"}"), "@set", "i2"),
+            (V2With("{\"s\":\"@set\",\"s2\":{\"@id\":\"s\"}}"), "s2", "@index"),
+        };
 
-        var create = () => suite.CreateProofAsync(Name("{\"@set\":[\"Alice\"],\"@index\":\"admin\"}"), Options(cryptosuite), signer);
+        var data = new TheoryData<string, string, string, string>();
+        foreach (var cryptosuite in new[] { EddsaRdfc2022Cryptosuite.CryptosuiteName, EcdsaRdfc2019Cryptosuite.CryptosuiteName })
+        {
+            foreach (var (contexts, set, index) in shapes)
+            {
+                data.Add(cryptosuite, contexts, set, index);
+            }
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(IndexedSetShapes))]
+    public async Task SetObjectIndex_IsRefusedAtCreateAndVerify(string cryptosuite, string contexts, string setKey, string indexKey)
+    {
+        // Replacing a signed name with {"@set":[name],"@index":...} verified, whatever the index said,
+        // because expansion dropped it.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        var document = Parse(Vc(Subject("\"name\":\"Alice\""), contexts));
+        var proof = await suite.CreateProofAsync(document, Options(cryptosuite), signer);
+        JsonElement Name(string value, string? index = null) => Fx.Mutate(document, vc => vc["credentialSubject"]!["name"] = JsonNode.Parse(
+            "{\"" + setKey + "\":[\"" + value + "\"]" + (index is null ? "" : ",\"" + indexKey + "\":\"" + index + "\"") + "}"));
+
+        var create = () => suite.CreateProofAsync(Name("Alice", "admin"), Options(cryptosuite), signer);
         (await create.Should().ThrowAsync<ProofGenerationException>()).WithInnerException<JsonLdDataLossException>();
 
         foreach (var index in new[] { "admin", "guest" })
         {
-            suite.VerifyProof(Name("{\"@set\":[\"Alice\"],\"@index\":\"" + index + "\"}"), proof, publicKey).Problems
+            suite.VerifyProof(Name("Alice", index), proof, publicKey).Problems
                 .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
         }
 
-        suite.VerifyProof(Name("{\"@set\":[\"Mallory\"]}"), proof, publicKey).Problems
+        suite.VerifyProof(Name("Mallory"), proof, publicKey).Problems
             .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a changed value breaks the signature");
-        suite.VerifyProof(Name("{\"@set\":[\"Alice\"]}"), proof, publicKey).Verified
+        suite.VerifyProof(Name("Alice"), proof, publicKey).Verified
             .Should().BeTrue("a set without @index carries nothing more than its values");
     }
 
@@ -598,8 +641,11 @@ public sealed class Issue36DataLossTests
         // Lossless documents the set-object check must leave alone, signed and verified by both suites,
         // each with a change that must still break the signature (PR #37 review 5687415441).
         var literal = V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}");
+        // Aliases only a scoped context defines, and it is never activated (PR #37 re-review 5688560817).
+        var inactive = V2With("{\"s\":{\"@id\":\"urn:s\",\"@type\":\"@json\"},\"i\":\"urn:i\",\"unused\":{\"@id\":\"urn:unused\",\"@context\":{\"s\":\"@set\",\"i\":\"@index\"}}}");
         var shapes = new (string Document, string Tampered)[]
         {
+            (Vc("\"s\":{\"@value\":{\"foo\":\"bar\"}},\"i\":\"x\"", inactive), Vc("\"s\":{\"@value\":{\"foo\":\"baz\"}},\"i\":\"x\"", inactive)),
             (Vc(Subject("\"data\":{\"@set\":[1],\"@list\":[2]}"), literal), Vc(Subject("\"data\":{\"@set\":[1],\"@list\":[3]}"), literal)),
             (Vc(Subject("\"data\":{\"@type\":\"@json\",\"@value\":{\"@list\":[2],\"@set\":[1]}}"), V2With("{\"data\":\"https://e.example/vocab#data\"}")),
              Vc(Subject("\"data\":{\"@type\":\"@json\",\"@value\":{\"@list\":[2],\"@set\":[3]}}"), V2With("{\"data\":\"https://e.example/vocab#data\"}"))),
