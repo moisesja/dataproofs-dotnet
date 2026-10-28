@@ -34,6 +34,14 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// <c>@base</c> in a scoped context that a remote context defines, though it ignores the remote
 /// context's own (JSON-LD 1.1 §4.1.2; adversarial review, F1). dotNetRDF fails on <c>@import</c>
 /// while the base is null.
+/// </para>
+/// <para>
+/// Expansion also drops the <c>@index</c> of a set object (<c>{"@set": [...], "@index": "x"}</c>)
+/// without a warning, while it keeps a list object's. So when the input or a loaded context uses
+/// <c>@set</c>, the input is expanded once more with every <c>@set</c> key, and every alias of
+/// <c>@set</c>, read as <c>@list</c>: an <c>@index</c> outside JSON literals in that expansion came
+/// from a set, and is refused (PR #37 review). dotNetRDF resolves the aliases itself, of
+/// <c>@index</c> too, and JSON literal payloads stay opaque.
 /// Each result is a predicate phrase for a message ("uses a term that…") and never quotes the
 /// input (FR-23).
 /// </para>
@@ -70,9 +78,11 @@ internal static class JsonLdLossAudit
         }
 
         var inputSetsBase = HasBase(input);
+        var setAsList = SetAsList(input);
+        var inputUsesSet = !JToken.DeepEquals(setAsList, input);
 
         var warnings = new List<JsonLdProcessorWarning>();
-        var expanded = JsonLdProcessor.Expand(input, contexts.Options(withoutBase: false), warnings);
+        var expanded = JsonLdProcessor.Expand(input, contexts.Options(ContextView.AsLoaded), warnings);
         if (warnings.Count > 0)
         {
             return warnings[0].ErrorCode switch
@@ -94,6 +104,11 @@ internal static class JsonLdLossAudit
             {
                 return loss;
             }
+        }
+
+        if ((inputUsesSet || contexts.AnyAliasesSet) && IndexesASet(setAsList, contexts))
+        {
+            return Index;
         }
 
         return null;
@@ -283,7 +298,7 @@ internal static class JsonLdLossAudit
         JArray unresolved;
         try
         {
-            unresolved = JsonLdProcessor.Expand(input, contexts.Options(withoutBase: true), new List<JsonLdProcessorWarning>());
+            unresolved = JsonLdProcessor.Expand(input, contexts.Options(ContextView.WithoutBase), new List<JsonLdProcessorWarning>());
         }
         catch (Exception)
         {
@@ -292,6 +307,100 @@ internal static class JsonLdLossAudit
 
         return !SameOutsideJsonLiterals(expanded, unresolved);
     }
+
+    /// <summary>
+    /// A copy of a JSON-LD document or context in which every <c>@set</c> key, and every term
+    /// defined as an alias of <c>@set</c>, reads as <c>@list</c>. <c>@container</c> values stay.
+    /// </summary>
+    public static JToken SetAsList(JToken token)
+    {
+        var copy = token.DeepClone();
+        RenameSet(copy, inContext: false);
+        return copy;
+    }
+
+    private static void RenameSet(JToken token, bool inContext)
+    {
+        switch (token)
+        {
+            case JArray array:
+                foreach (var item in array)
+                {
+                    RenameSet(item, inContext);
+                }
+
+                break;
+            case JObject obj when inContext:
+                // A context: each term is an alias when its definition, or that definition's @id, is "@set".
+                foreach (var term in obj.Properties().ToList())
+                {
+                    if (term.Name.StartsWith('@'))
+                    {
+                        continue;
+                    }
+
+                    if (term.Value.Type == JTokenType.String && (string)term.Value! == "@set")
+                    {
+                        term.Value = "@list";
+                    }
+                    else if (term.Value is JObject definition)
+                    {
+                        if (definition["@id"] is JValue { Type: JTokenType.String } id && (string)id! == "@set")
+                        {
+                            definition["@id"] = "@list";
+                        }
+
+                        if (definition["@context"] is { } scoped)
+                        {
+                            RenameSet(scoped, inContext: true);
+                        }
+                    }
+                }
+
+                break;
+            case JObject obj:
+                foreach (var member in obj.Properties().ToList())
+                {
+                    if (member.Name == "@context")
+                    {
+                        RenameSet(member.Value, inContext: true);
+                    }
+                    else
+                    {
+                        RenameSet(member.Value, inContext: false);
+                        if (member.Name == "@set")
+                        {
+                            member.Replace(new JProperty("@list", member.Value));
+                        }
+                    }
+                }
+
+                break;
+        }
+    }
+
+    // Whether a set carried an @index: expanded with @set read as @list, the input holds an @index
+    // outside JSON literals. The first expansion already refused every other @index, so this one
+    // came from a set. An expansion that fails here is refused too.
+    private static bool IndexesASet(JToken setAsList, JsonLdContextCache contexts)
+    {
+        try
+        {
+            return HasIndex(JsonLdProcessor.Expand(setAsList, contexts.Options(ContextView.SetAsList), new List<JsonLdProcessorWarning>()));
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
+    private static bool HasIndex(JToken token) => token switch
+    {
+        JObject obj when IsJsonLiteralValue(obj) => false,
+        JObject obj => obj.ContainsKey("@index") || obj.Properties().Any(p => HasIndex(p.Value)),
+        JArray array => array.Any(HasIndex),
+        _ => false,
+    };
 
     // Deep equality that does not look inside JSON literal payloads, which are opaque data: removing
     // a "@base" key from one changes the payload but resolves nothing.

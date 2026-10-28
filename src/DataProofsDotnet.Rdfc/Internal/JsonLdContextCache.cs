@@ -19,7 +19,9 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// defines, because it processes scoped contexts as local ones (adversarial review, F1). The
 /// <c>@base</c> check (<see cref="JsonLdLossAudit"/>) therefore also expands with
 /// <see cref="Options"/><c>(withoutBase: true)</c>, which serves every context without its
-/// <c>@base</c> members.
+/// <c>@base</c> members. It records, too, whether a loaded context aliases a term to <c>@set</c>,
+/// for the check that serves contexts with that keyword read as <c>@list</c> (see
+/// <see cref="JsonLdLossAudit"/>).
 /// </para>
 /// </remarks>
 internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
@@ -29,10 +31,13 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
     /// <summary>Whether any context loaded so far holds a non-null <c>@base</c> member.</summary>
     public bool AnySetsBase { get; private set; }
 
-    /// <summary>Processor options that load contexts through this cache.</summary>
-    public JsonLdProcessorOptions Options(bool withoutBase) => new()
+    /// <summary>Whether any context loaded so far aliases a term to <c>@set</c>.</summary>
+    public bool AnyAliasesSet { get; private set; }
+
+    /// <summary>Processor options that load contexts through this cache, served as <paramref name="view"/>.</summary>
+    public JsonLdProcessorOptions Options(ContextView view) => new()
     {
-        DocumentLoader = (uri, _) => Load(uri, withoutBase),
+        DocumentLoader = (uri, _) => Load(uri, view),
         // Reports what expansion drops (undefined terms, malformed language tags) as warnings
         // instead of discarding it silently (issue #36).
         SafeMode = true,
@@ -40,7 +45,7 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
 
     // Bridges the public IDocumentLoader to dotNetRDF's JSON-LD document-loader callback.
     // Newtonsoft's JToken lives only on this side of the boundary.
-    private RemoteDocument Load(Uri uri, bool withoutBase)
+    private RemoteDocument Load(Uri uri, ContextView view)
     {
         if (!_loaded.TryGetValue(uri.AbsoluteUri, out var loaded))
         {
@@ -61,9 +66,19 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
         if (JsonLdLossAudit.HasBase(token))
         {
             AnySetsBase = true;
-            if (withoutBase)
+            if (view == ContextView.WithoutBase)
             {
                 token = JsonLdLossAudit.WithoutBase(token);
+            }
+        }
+
+        var setAsList = JsonLdLossAudit.SetAsList(token);
+        if (!JToken.DeepEquals(setAsList, token))
+        {
+            AnyAliasesSet = true;
+            if (view == ContextView.SetAsList)
+            {
+                token = setAsList;
             }
         }
 
@@ -73,4 +88,17 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
             DocumentUrl = loaded.DocumentUrl,
         };
     }
+}
+
+/// <summary>How <see cref="JsonLdContextCache"/> serves the contexts it loaded.</summary>
+internal enum ContextView
+{
+    /// <summary>As the loader returned them.</summary>
+    AsLoaded,
+
+    /// <summary>Without their <c>@base</c> members.</summary>
+    WithoutBase,
+
+    /// <summary>With every alias of <c>@set</c> made an alias of <c>@list</c>.</summary>
+    SetAsList,
 }

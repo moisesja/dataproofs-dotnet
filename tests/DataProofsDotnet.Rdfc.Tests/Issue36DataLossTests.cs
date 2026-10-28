@@ -85,6 +85,11 @@ public sealed class Issue36DataLossTests
         { "list member with brackets", Vc(Subject("\"steps\":[\"urn:step:1\",\"urn:step[2]\"]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@type\":\"@id\",\"@container\":\"@list\"}}")), MalformedIri, "step[2]" },
         { "@direction", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"ar\",\"@direction\":\"rtl\"}")), Direction, "rtl" },
         { "malformed language tag", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"not a tag\"}")), MalformedLanguageTag, "not a tag" },
+        // Expansion drops a set object's @index without a warning, so it never reached the audit (PR #37
+        // re-review 5686538504); aliases of either keyword count.
+        { "@index on a set object", Vc(Subject("\"name\":{\"@set\":[\"Alice\"],\"@index\":\"admin\"}")), Index, "admin" },
+        { "@index on a set object, both keywords aliased", Vc(Subject("\"name\":{\"set\":[\"Alice\"],\"idx\":\"admin\"}"), V2With("{\"set\":\"@set\",\"idx\":\"@index\"}")), Index, "admin" },
+        { "@index on a set object, @set aliased by @id", Vc(Subject("\"name\":{\"set\":[\"Alice\"],\"@index\":\"admin\"}"), V2With("{\"set\":{\"@id\":\"@set\"}}")), Index, "admin" },
         { "@index map key", Vc(Subject("\"notes\":{\"first\":\"a\"}"), V2With("{\"notes\":{\"@id\":\"https://e.example/vocab#notes\",\"@container\":\"@index\"}}")), Index, "first" },
         { "respelled: %2E%2E segment", Vc("\"credentialSubject\":{\"id\":\"https://e.example/x/%2E%2E/users/alice\",\"name\":\"n\"}"), RespelledIri, "%2E" },
         { "respelled: .. segment", Vc("\"credentialSubject\":{\"id\":\"https://e.example/x/../users/alice\",\"name\":\"n\"}"), RespelledIri, "/x/" },
@@ -145,6 +150,9 @@ public sealed class Issue36DataLossTests
         { "@json literal", Vc(Subject("\"data\":{\"a\":[1,2]}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "\"{\\\"a\\\":[1,2]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON>" },
         { "null value", Vc(Subject("\"name\":\"n\",\"description\":null")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "blank-node subject", Vc("\"credentialSubject\":{\"name\":\"n\"}"), "_:c14n0 <https://schema.org/name> \"n\" ." },
+        { "set object without @index", Vc(Subject("\"name\":{\"@set\":[\"Alice\"]}")), "<did:example:alice> <https://schema.org/name> \"Alice\" ." },
+        { "@json term whose payload holds @set and @index", Vc(Subject("\"data\":{\"@set\":[1],\"@index\":\"x\"}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<https://e.example/vocab#data> \"{\\\"@index\\\":\\\"x\\\",\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
+        { "@json value object whose payload holds @set and @index", Vc(Subject("\"data\":{\"@value\":{\"@set\":[1],\"@index\":\"x\"},\"@type\":\"@json\"}"), V2With("{\"data\":\"https://e.example/vocab#data\"}")), "<https://e.example/vocab#data> \"{\\\"@index\\\":\\\"x\\\",\\\"@set\\\":[1]}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
         { "@base: null", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":null}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "@base that resolves nothing", Vc(Subject("\"name\":\"n\""), V2With("{\"@base\":\"https://e.example/\"}")), "<did:example:alice> <https://schema.org/name> \"n\" ." },
         { "@json term whose payload holds a @base key", Vc(Subject("\"data\":{\"@base\":\"ordinary application data\"}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), "<https://e.example/vocab#data> \"{\\\"@base\\\":\\\"ordinary application data\\\"}\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> ." },
@@ -245,6 +253,24 @@ public sealed class Issue36DataLossTests
             act.Should().Throw<JsonLdDataLossException>()
                 .WithMessage($"The JSON-LD input cannot be canonicalized without losing data: it {Base}.");
         }
+    }
+
+    [Fact]
+    public void CanonicalizeJsonLd_SetAliasesFromARemoteContext_StillCatchADroppedIndex()
+    {
+        var loader = new MapLoader(new Dictionary<string, string>
+        {
+            [MapLoader.Url] = "{\"@context\":{\"set\":\"@set\",\"idx\":\"@index\",\"label\":\"https://schema.org/name\"}}",
+        });
+        var canonicalizer = new RdfcDocumentCanonicalizer(loader);
+        var indexed = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"urn:s\",\"label\":{\"set\":[\"A\"],\"idx\":\"admin\"}}");
+        var plain = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"urn:s\",\"label\":{\"set\":[\"A\"]}}");
+
+        var act = () => canonicalizer.CanonicalizeJsonLd(indexed);
+
+        act.Should().Throw<JsonLdDataLossException>()
+            .WithMessage($"The JSON-LD input cannot be canonicalized without losing data: it {Index}.");
+        Encoding.UTF8.GetString(canonicalizer.CanonicalizeJsonLd(plain)).Should().Be("<urn:s> <https://schema.org/name> \"A\" .\n");
     }
 
     [Fact]
@@ -525,6 +551,32 @@ public sealed class Issue36DataLossTests
             Parse(WithGraphs("{\"@id\":\"https://g.example\",\"@graph\":[" + a + "]},{\"@id\":\"https://h.example/\",\"@graph\":[" + b + "]}")),
             proof, publicKey);
         elsewhere.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a real move is a signature failure");
+    }
+
+    [Theory]
+    [MemberData(nameof(Suites))]
+    public async Task SetObjectIndex_IsRefusedAtCreateAndVerify(string cryptosuite)
+    {
+        // PR #37 re-review (5686538504): replacing a signed name with {"@set":[name],"@index":...}
+        // verified, whatever the index said, because expansion dropped it.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        var document = Parse(Vc(Subject("\"name\":\"Alice\"")));
+        var proof = await suite.CreateProofAsync(document, Options(cryptosuite), signer);
+        JsonElement Name(string json) => Fx.Mutate(document, vc => vc["credentialSubject"]!["name"] = JsonNode.Parse(json));
+
+        var create = () => suite.CreateProofAsync(Name("{\"@set\":[\"Alice\"],\"@index\":\"admin\"}"), Options(cryptosuite), signer);
+        (await create.Should().ThrowAsync<ProofGenerationException>()).WithInnerException<JsonLdDataLossException>();
+
+        foreach (var index in new[] { "admin", "guest" })
+        {
+            suite.VerifyProof(Name("{\"@set\":[\"Alice\"],\"@index\":\"" + index + "\"}"), proof, publicKey).Problems
+                .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+        }
+
+        suite.VerifyProof(Name("{\"@set\":[\"Mallory\"]}"), proof, publicKey).Problems
+            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a changed value breaks the signature");
+        suite.VerifyProof(Name("{\"@set\":[\"Alice\"]}"), proof, publicKey).Verified
+            .Should().BeTrue("a set without @index carries nothing more than its values");
     }
 
     [Theory]
