@@ -117,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tags, which BCP 47 compares case-insensitively.
 - **bbs-2023 cannot yet sign** `@json` values, container maps (language, `@id`, `@type`) or keyword
   aliases. Its skolemization works on compact JSON, so for these it refuses rather than alter the
-  data. The fix is the expanded-form skolemization the spec describes.
+  data. The fix is the expanded-form skolemization the spec describes
+  ([#38](https://github.com/moisesja/dataproofs-dotnet/issues/38)).
 - The Legacy suites' verification keeps its dual-variant result codes. A data-loss failure of the RDFC
   variant fails closed, but it is reported as `PROOF_VERIFICATION_ERROR` or `PROOF_TRANSFORMATION_ERROR`.
 - The COSE lossy-UTF-8 limitation listed under 1.4.0 remains open
