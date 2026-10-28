@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Rdfc.DataIntegrity;
 using DataProofsDotnet.Rdfc.Tests.TestSupport;
+using DataProofsDotnet.Tests.Shared;
 using FluentAssertions;
 using NetCrypto;
 using Xunit;
@@ -34,6 +35,8 @@ public sealed class Issue36DataLossTests
     private const string IgnoredContent = "has content that JSON-LD processing ignores";
     private const string Base = "resolves a relative IRI against @base, which the canonical form would respell";
     private const string MergedTerms = "has distinct terms that the canonical form would merge into one";
+    private const string NonFiniteNumber = "has a number too large for a double, which the canonical form cannot carry";
+    private const string UnpairedSurrogate = "has an unpaired UTF-16 surrogate, which UTF-8 cannot carry";
 
     private static readonly RdfcDocumentCanonicalizer Canonicalizer = new();
 
@@ -100,6 +103,15 @@ public sealed class Issue36DataLossTests
         // dotNetRDF's node equality compares parsed URI components, so the store would hold one
         // subject (or datatype) for two distinct RDF IRIs and drop the second's statements (PR #37 review).
         { "subjects differing only by an empty path", Vc("\"credentialSubject\":[{\"id\":\"https://e.example\",\"name\":\"A\"},{\"id\":\"https://e.example/\",\"name\":\"A\"}]"), MergedTerms, "e.example" },
+        // The store also looks graphs up by that equality: the second graph's statements would be printed
+        // under the first graph's name (adversarial review, F2).
+        { "graph names differing only by an empty path", Vc(Subject("\"name\":\"n\",\"@included\":[{\"@id\":\"https://g.example\",\"@graph\":[{\"@id\":\"urn:a\",\"name\":\"1\"}]},{\"@id\":\"https://g.example/\",\"@graph\":[{\"@id\":\"urn:b\",\"name\":\"2\"}]}]")), MergedTerms, "g.example" },
+        // dotNetRDF's language-tag pattern ends in $, which also matches before a final newline (F3).
+        { "language tag with a trailing newline", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"en\\n\"}")), MalformedLanguageTag, "en\n" },
+        { "default language with a trailing newline", Vc(Subject("\"name\":\"x\""), V2With("{\"@language\":\"en\\n\"}")), MalformedLanguageTag, "en\n" },
+        // Newtonsoft reads both as an infinity, so they would sign as one "Infinity" (F5).
+        { "numbers beyond the double range", Vc(Subject("\"rank\":[1e400,2e400]"), WithUndefinedTerms), NonFiniteNumber, "1e400" },
+        { "number beyond the double range in @json", Vc(Subject("\"data\":{\"a\":1e400}"), V2With("{\"data\":{\"@id\":\"https://e.example/vocab#data\",\"@type\":\"@json\"}}")), NonFiniteNumber, "1e400" },
         { "datatypes differing only by an empty path", Vc(Subject("\"name\":[{\"@value\":\"x\",\"@type\":\"https://e.example\"},{\"@value\":\"x\",\"@type\":\"https://e.example/\"}]")), MergedTerms, "e.example" },
         { "respelled datatype IRI", Vc(Subject("\"name\":{\"@value\":\"x\",\"@type\":\"https://e.example/x/../datatype\"}")), RespelledIri, "datatype" },
     };
@@ -165,6 +177,92 @@ public sealed class Issue36DataLossTests
     }
 
     [Fact]
+    public void CanonicalizeJsonLd_JsonWhoseMeaningIsUnpredictable_Throws()
+    {
+        // The suites check this before calling, but the canonicalizer is public API (adversarial
+        // review, F4): an unpaired surrogate read as U+FFFD, or a duplicate member of which the last wins.
+        var surrogate = "{\"@context\":\"" + V2 + "\",\"@id\":\"urn:s\",\"name\":\"a" + HostileJson.LoneEscape("DC00") + "b\"}";
+        var duplicate = "{\"@context\":\"" + V2 + "\",\"@id\":\"urn:s\",\"name\":\"Alice\",\"name\":\"Mallory\"}";
+        var duplicateContext = "{\"@context\":\"" + V2 + "\",\"@context\":{\"name\":\"https://evil.example/name\"},\"@id\":\"urn:s\",\"name\":\"x\"}";
+
+        foreach (var (json, problem) in new[]
+        {
+            (surrogate, HostileJson.Surrogate), (duplicate, HostileJson.Duplicate), (duplicateContext, HostileJson.Duplicate),
+        })
+        {
+            var act = () => Canonicalizer.CanonicalizeJsonLd(HostileJson.Parse(json));
+            act.Should().Throw<RdfCanonicalizationException>().WithMessage($"The JSON-LD input {problem}.");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Suites))]
+    public async Task VerifyProof_DuplicateMemberCalledDirectly_IsTransformationError(string cryptosuite)
+    {
+        // Through the pipeline this was already a document-level PROOF_TRANSFORMATION_ERROR (issue #33);
+        // calling the suite directly reached the canonicalizer, which let the last duplicate win.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        var proof = await suite.CreateProofAsync(Parse(Signed), Options(cryptosuite), signer);
+        var duplicated = HostileJson.Parse(HostileJson.LastMember(Signed, "\"issuer\":\"did:example:mallory\""));
+
+        var result = suite.VerifyProof(duplicated, proof, publicKey);
+
+        result.Verified.Should().BeFalse();
+        result.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofTransformationError);
+    }
+
+    [Fact]
+    public void CanonicalizeNQuads_UnpairedSurrogateEscape_Throws()
+    {
+        // UTF-8 output would carry it as U+FFFD, the same bytes as a real U+FFFD (F4).
+        var lone = "<urn:s> <urn:p> \"a" + HostileJson.Esc(0xDC00) + "b\" .\n";
+
+        var act = () => Canonicalizer.CanonicalizeNQuads(lone);
+
+        act.Should().Throw<RdfCanonicalizationException>()
+            .WithMessage($"The N-Quads input cannot be canonicalized as written: it {UnpairedSurrogate}.");
+        Canonicalizer.CanonicalizeNQuads("<urn:s> <urn:p> \"a" + HostileJson.Esc(0xFFFD) + "b\" .\n").Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void CanonicalizeJsonLd_ScopedBaseInARemoteContext_Throws()
+    {
+        // dotNetRDF ignores a remote context's own @base but honors one in a scoped context it defines,
+        // so "users/%61lice" signed as "users/alice" (adversarial review, F1).
+        var loader = new MapLoader(new Dictionary<string, string>
+        {
+            [MapLoader.Url] = "{\"@context\":{\"label\":\"https://schema.org/name\","
+                + "\"friend\":{\"@id\":\"https://schema.org/knows\",\"@context\":{\"@base\":\"https://e.example/\"}},"
+                + "\"Person\":{\"@id\":\"https://schema.org/Person\",\"@context\":{\"@base\":\"https://e.example/\"}}}}",
+        });
+        var canonicalizer = new RdfcDocumentCanonicalizer(loader);
+        var propertyScoped = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"urn:s\",\"friend\":{\"@id\":\"users/%61lice\",\"label\":\"A\"}}");
+        var typeScoped = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"users/%61lice\",\"@type\":\"Person\",\"label\":\"A\"}");
+
+        foreach (var document in new[] { propertyScoped, typeScoped })
+        {
+            var act = () => canonicalizer.CanonicalizeJsonLd(document);
+            act.Should().Throw<JsonLdDataLossException>()
+                .WithMessage($"The JSON-LD input cannot be canonicalized without losing data: it {Base}.");
+        }
+    }
+
+    [Fact]
+    public void CanonicalizeJsonLd_RemoteContextsOwnBase_ResolvesNothing()
+    {
+        // JSON-LD 1.1 ignores a remote context's own @base, so nothing is resolved and nothing refused.
+        var loader = new MapLoader(new Dictionary<string, string>
+        {
+            [MapLoader.Url] = "{\"@context\":{\"@base\":\"https://e.example/\",\"label\":\"https://schema.org/name\"}}",
+        });
+        var document = Parse("{\"@context\":\"" + MapLoader.Url + "\",\"@id\":\"https://e.example/users/alice\",\"label\":\"A\"}");
+
+        var nquads = Encoding.UTF8.GetString(new RdfcDocumentCanonicalizer(loader).CanonicalizeJsonLd(document));
+
+        nquads.Should().Be("<https://e.example/users/alice> <https://schema.org/name> \"A\" .\n");
+    }
+
+    [Fact]
     public void CanonicalizeNQuads_DistinctTermsTheStoreWouldMerge_Throws()
     {
         const string merged = "<https://e.example> <urn:p> <urn:o> .\n<https://e.example/> <urn:p> <urn:o> .\n";
@@ -175,6 +273,18 @@ public sealed class Issue36DataLossTests
 
         canonicalize.Should().Throw<RdfCanonicalizationException>()
             .WithMessage($"The N-Quads input cannot be canonicalized as written: it {MergedTerms}.");
+
+        // Graph names: the statements stay distinct, but the second would be printed in the first's graph (F2).
+        foreach (var graphs in new[]
+        {
+            "<urn:a> <urn:p> \"1\" <https://g.example> .\n<urn:b> <urn:p> \"2\" <https://g.example/> .\n",
+            "<urn:b> <urn:p> \"2\" <https://g.example/> .\n<urn:a> <urn:p> \"1\" <https://g.example> .\n",
+        })
+        {
+            var graphMerge = () => Canonicalizer.CanonicalizeNQuads(graphs);
+            graphMerge.Should().Throw<RdfCanonicalizationException>().WithMessage($"*it {MergedTerms}.");
+        }
+
         Canonicalizer.CanonicalizeNQuads(duplicate).Should().Be("<https://e.example> <urn:p> <urn:o> .\n", "an exact duplicate is the same RDF statement");
         Canonicalizer.CanonicalizeNQuads(twoStatements).Should().Be(
             "<https://e.example/> <urn:q> <urn:o> .\n<https://e.example> <urn:p> <urn:o> .\n", "each statement keeps its own spelling");
@@ -212,6 +322,15 @@ public sealed class Issue36DataLossTests
         var act = () => canonicalizer.CanonicalizeJsonLd(document);
 
         act.Should().Throw<RdfCanonicalizationException>();
+    }
+
+    private sealed class MapLoader(Dictionary<string, string> contexts) : IDocumentLoader
+    {
+        public const string Url = "https://ctx.example/friends";
+
+        public LoadedContextDocument Load(Uri url) => contexts.TryGetValue(url.AbsoluteUri, out var content)
+            ? new LoadedContextDocument(url, content)
+            : OfflineDocumentLoader.Instance.Load(url);
     }
 
     private sealed class ChangingLoader(string first, string later) : IDocumentLoader
@@ -383,6 +502,29 @@ public sealed class Issue36DataLossTests
 
         suite.VerifyProof(Append("https://e.example"), proof, publicKey).Verified
             .Should().BeTrue("an exact duplicate adds no RDF statement");
+    }
+
+    [Theory]
+    [MemberData(nameof(Suites))]
+    public async Task VerifyProof_StatementMovedIntoAGraphTheStoreWouldMerge_IsDataLossDetectionError(string cryptosuite)
+    {
+        // Adversarial review, F2: moving urn:b into graph https://g.example/ still verified.
+        var (suite, signer, publicKey) = SuiteAndKey(cryptosuite);
+        string WithGraphs(string graphs) => Vc(Subject("\"name\":\"n\",\"@included\":[" + graphs + "]"));
+        const string a = "{\"@id\":\"urn:a\",\"name\":\"1\"}";
+        const string b = "{\"@id\":\"urn:b\",\"name\":\"2\"}";
+        var signed = Parse(WithGraphs("{\"@id\":\"https://g.example\",\"@graph\":[" + a + "," + b + "]}"));
+        var proof = await suite.CreateProofAsync(signed, Options(cryptosuite), signer);
+
+        var moved = suite.VerifyProof(
+            Parse(WithGraphs("{\"@id\":\"https://g.example\",\"@graph\":[" + a + "]},{\"@id\":\"https://g.example/\",\"@graph\":[" + b + "]}")),
+            proof, publicKey);
+        moved.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+
+        var elsewhere = suite.VerifyProof(
+            Parse(WithGraphs("{\"@id\":\"https://g.example\",\"@graph\":[" + a + "]},{\"@id\":\"https://h.example/\",\"@graph\":[" + b + "]}")),
+            proof, publicKey);
+        elsewhere.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a real move is a signature failure");
     }
 
     [Theory]

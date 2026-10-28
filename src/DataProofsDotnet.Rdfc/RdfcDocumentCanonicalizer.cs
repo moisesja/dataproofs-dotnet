@@ -2,9 +2,7 @@ using System.Text;
 using System.Text.Json;
 using DataProofsDotnet;
 using DataProofsDotnet.Rdfc.Internal;
-using Newtonsoft.Json.Linq;
 using VDS.RDF;
-using VDS.RDF.JsonLd;
 using VDS.RDF.Parsing;
 
 namespace DataProofsDotnet.Rdfc;
@@ -35,9 +33,13 @@ namespace DataProofsDotnet.Rdfc;
 /// port), resolves a relative IRI against <c>@base</c> (dotNetRDF resolves with <see cref="Uri"/>,
 /// which respells it before any check could compare), or has two distinct terms the store would
 /// merge (dotNetRDF's node equality compares parsed URI components, so <c>https://e.example</c> and
-/// <c>https://e.example/</c> would be one subject). Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
-/// output is spelled as in the input. N-Quads input with an IRI that would be respelled is
-/// rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
+/// <c>https://e.example/</c> would be one subject, datatype or graph). A <c>@base</c> counts in the
+/// input and in a scoped context a loaded context defines. A language tag must be ASCII letters,
+/// digits and hyphens, and a number must fit a double. JSON whose meaning RFC 8259 leaves
+/// unpredictable (an unpaired-surrogate escape, a duplicate member name, invalid UTF-8, nesting past
+/// 64) is refused with <see cref="RdfCanonicalizationException"/>, as the suites already do. Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
+/// output is spelled as in the input. N-Quads input with an IRI that would be respelled, terms the
+/// store would merge, or an unpaired surrogate is rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
 /// top-level value or node that carries nothing but an <c>@id</c>) are not data loss here, and
 /// numbers are signed in their canonical XSD form, so <c>1</c> and <c>1.0</c> sign the same.
 /// </para>
@@ -67,7 +69,16 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
             throw new RdfCanonicalizationException("A JSON-LD document must be a JSON object or array.");
         }
 
-        var json = document.GetRawText();
+        // The JSON whose meaning RFC 8259 leaves unpredictable, which the JSON-LD processor would resolve
+        // silently: an unpaired-surrogate escape (read as U+FFFD), a duplicate member name (the last one
+        // wins), invalid UTF-8, or nesting past 64. The suites check before calling, but this is public
+        // API (adversarial review, F4; the issue #33 check, which also strips comments and trailing commas).
+        if (!JsonInputCheck.TryAccept(document, out var accepted, out var problem))
+        {
+            throw new RdfCanonicalizationException($"The JSON-LD input {problem}.");
+        }
+
+        var json = accepted.GetRawText();
         var store = ParseJsonLd(json);
         return Encoding.UTF8.GetBytes(Canonicalize(store, hashAlgorithm).SerializedNQuads);
     }
@@ -100,34 +111,26 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 
     private TripleStore ParseJsonLd(string json)
     {
-        // The audit and the parse expand the input separately, so they must see the same contexts:
-        // a loader that answered differently the second time could otherwise get past the audit
-        // input the parse then drops. Each context is loaded once per canonicalization.
-        var contexts = new Dictionary<string, LoadedContextDocument>(StringComparer.Ordinal);
-        var options = new JsonLdProcessorOptions
-        {
-            DocumentLoader = (uri, _) => LoadRemoteDocument(uri, contexts),
-            // Reports what expansion drops (undefined terms, malformed language tags) as warnings
-            // instead of discarding it silently (issue #36).
-            SafeMode = true,
-        };
+        // The audit and the parse expand the input separately, so they must see the same contexts.
+        var contexts = new JsonLdContextCache(_documentLoader);
 
         var store = new TripleStore();
         string? loss;
         try
         {
-            loss = JsonLdLossAudit.FindLoss(json, options);
+            loss = JsonLdLossAudit.FindLoss(json, contexts);
             if (loss is null)
             {
                 // The parse itself is unchanged, so accepted input canonicalizes to the same bytes
                 // as before; its warnings back up the audit, and the handler catches respellings.
                 var handler = new ExactIriStoreHandler(store);
-                var parser = new JsonLdParser(options);
+                var parser = new JsonLdParser(contexts.Options(withoutBase: false));
                 var warned = false;
                 parser.Warning += _ => warned = true;
                 parser.Load(handler, new StringReader(json), store.UriFactory);
                 loss = warned ? JsonLdLossAudit.IgnoredContent
                     : handler.RespelledIri ? JsonLdLossAudit.RespelledIri
+                    : handler.UnpairedSurrogate ? JsonLdLossAudit.UnpairedSurrogate
                     : handler.MergedStatements ? JsonLdLossAudit.MergedTerms
                     : null;
             }
@@ -167,6 +170,7 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
         }
 
         var problem = handler.RespelledIri ? JsonLdLossAudit.RespelledIri
+            : handler.UnpairedSurrogate ? JsonLdLossAudit.UnpairedSurrogate
             : handler.MergedStatements ? JsonLdLossAudit.MergedTerms
             : null;
         if (problem is not null)
@@ -204,34 +208,6 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 
     private static string StripBlankNodePrefix(string label)
         => label.StartsWith("_:", StringComparison.Ordinal) ? label[2..] : label;
-
-    // Bridges the public IDocumentLoader to dotNetRDF's JSON-LD document-loader callback.
-    // Newtonsoft's JToken lives only on this side of the boundary.
-    private RemoteDocument LoadRemoteDocument(Uri uri, Dictionary<string, LoadedContextDocument> contexts)
-    {
-        if (!contexts.TryGetValue(uri.AbsoluteUri, out var loaded))
-        {
-            loaded = _documentLoader.Load(uri);
-            contexts.Add(uri.AbsoluteUri, loaded);
-        }
-
-        // A fresh token per load: the processor must not see one expansion's state in the other.
-        JToken token;
-        try
-        {
-            token = JToken.Parse(loaded.Content);
-        }
-        catch (Exception ex)
-        {
-            throw new RdfCanonicalizationException($"The context '{uri.AbsoluteUri}' did not contain valid JSON.", ex);
-        }
-
-        return new RemoteDocument
-        {
-            Document = token,
-            DocumentUrl = loaded.DocumentUrl,
-        };
-    }
 
     // dotNetRDF wraps a document-loader exception in an RdfParseException; recover our own.
     private static RdfCanonicalizationException? Unwrap(Exception ex)

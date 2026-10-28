@@ -36,7 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     nothing passes, and so does a `"@base"` key that is data inside a `@json` literal;
   - two distinct RDF terms would merge in dotNetRDF's store, which compares parsed URI components.
     For example, a subject `https://e.example/` appended next to a signed `https://e.example` lost its
-    statements and still verified. Exact duplicate statements stay harmless.
+    statements and still verified. A statement could likewise be moved into a graph named
+    `https://g.example/` beside a signed `https://g.example`. Exact duplicate statements stay harmless;
+  - a `@base` takes effect in a scoped context that a loaded context defines (dotNetRDF honors these,
+    though it ignores a remote context's own `@base`);
+  - a language tag is not ASCII letters, digits and hyphens: `en\n` passed dotNetRDF's pattern and put
+    a line break into the quad;
+  - a number is beyond the double range: `1e400` and `2e400` both signed as `Infinity`;
+  - the JSON's meaning is unpredictable under RFC 8259: an unpaired-surrogate escape (read as U+FFFD),
+    a duplicate member name (the last one won), invalid UTF-8, or nesting past 64. The suites already
+    refused these; `CanonicalizeJsonLd` called directly now does too, with `RdfCanonicalizationException`.
+    N-Quads input with an unpaired surrogate is refused as well.
 
   The parse itself is unchanged, so accepted input canonicalizes to exactly the bytes it did before,
   and every W3C vector passes unchanged. Messages name the cause and never quote the input.

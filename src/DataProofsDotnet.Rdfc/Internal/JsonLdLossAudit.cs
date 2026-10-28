@@ -20,18 +20,20 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// a warning.
 /// </para>
 /// <para>
-/// So <see cref="FindLoss(string, JsonLdProcessorOptions)"/> expands the input exactly as
+/// So <see cref="FindLoss(string, JsonLdContextCache)"/> expands the input exactly as
 /// <c>JsonLdParser.Load</c> does, fails on any expansion warning, and then applies dotNetRDF's own
 /// IRI test to every position of the expanded form. IRIs that survive but would be respelled in
 /// the canonical N-Quads are caught where they are emitted, by <see cref="ExactIriStoreHandler"/>.
 /// One respelling happens earlier, where that check cannot see it: dotNetRDF resolves a relative
 /// IRI against <c>@base</c> with <see cref="Uri"/>, which also decodes percent-escapes and normalizes
-/// case and port, so the expanded string is already respelled. So when the input holds a
-/// <c>@base</c> member, it is expanded again with every <c>@base</c> removed, and any difference
-/// outside JSON literal payloads means a relative IRI was resolved: refused. A <c>@base</c> that
-/// resolves nothing, or a <c>"@base"</c> key that is only data inside a JSON literal, passes
-/// (PR #37 review). A remote context's <c>@base</c> is ignored (JSON-LD 1.1 §4.1.2), and dotNetRDF
-/// fails on <c>@import</c> while the base is null, so the input is the only place one takes effect.
+/// case and port, so the expanded string is already respelled. So when the input or a context it
+/// loads holds a <c>@base</c> member, the input is expanded again with every <c>@base</c> removed
+/// from both, and any difference outside JSON literal payloads means a relative IRI was resolved:
+/// refused. A <c>@base</c> that resolves nothing, or a <c>"@base"</c> key that is only data inside a
+/// JSON literal, passes (PR #37 review). Loaded contexts count because dotNetRDF honors a
+/// <c>@base</c> in a scoped context that a remote context defines, though it ignores the remote
+/// context's own (JSON-LD 1.1 §4.1.2; adversarial review, F1). dotNetRDF fails on <c>@import</c>
+/// while the base is null.
 /// Each result is a predicate phrase for a message ("uses a term that…") and never quotes the
 /// input (FR-23).
 /// </para>
@@ -48,24 +50,29 @@ internal static class JsonLdLossAudit
     public const string MergedTerms = "has distinct terms that the canonical form would merge into one";
     public const string IgnoredContent = "has content that JSON-LD processing ignores";
     public const string Base = "resolves a relative IRI against @base, which the canonical form would respell";
+    public const string UnpairedSurrogate = "has an unpaired UTF-16 surrogate, which UTF-8 cannot carry";
+    public const string NonFiniteNumber = "has a number too large for a double, which the canonical form cannot carry";
 
     /// <summary>
     /// Expands <paramref name="json"/> as <c>JsonLdParser.Load</c> does and returns why its RDF
     /// form would lose part of it, or <see langword="null"/> when nothing would be dropped.
     /// </summary>
     /// <remarks>Processing faults (invalid JSON-LD, a context the loader refuses) propagate.</remarks>
-    public static string? FindLoss(string json, JsonLdProcessorOptions options)
+    public static string? FindLoss(string json, JsonLdContextCache contexts)
     {
-        JToken input;
-        using (var reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None })
+        var input = ReadJson(json);
+
+        // Newtonsoft reads a number beyond the double range as an infinity, so 1e400 and 2e400 would
+        // sign as one "Infinity", inside @json literals too (adversarial review, F5).
+        if (HasNonFiniteNumber(input))
         {
-            input = JToken.ReadFrom(reader);
+            return NonFiniteNumber;
         }
 
-        var withoutBase = HasBase(input) ? WithoutBase(input) : null;
+        var inputSetsBase = HasBase(input);
 
         var warnings = new List<JsonLdProcessorWarning>();
-        var expanded = JsonLdProcessor.Expand(input, options, warnings);
+        var expanded = JsonLdProcessor.Expand(input, contexts.Options(withoutBase: false), warnings);
         if (warnings.Count > 0)
         {
             return warnings[0].ErrorCode switch
@@ -76,7 +83,7 @@ internal static class JsonLdLossAudit
             };
         }
 
-        if (withoutBase is not null && ResolvesAgainstBase(expanded, withoutBase, options))
+        if ((inputSetsBase || contexts.AnySetsBase) && ResolvesAgainstBase(expanded, json, contexts))
         {
             return Base;
         }
@@ -156,7 +163,7 @@ internal static class JsonLdLossAudit
         }
 
         if (value.TryGetValue("@language", out var language)
-            && (language.Type != JTokenType.String || !LanguageTag.IsWellFormed((string)language!)))
+            && (language.Type != JTokenType.String || !IsWellFormedLanguageTag((string)language!)))
         {
             return MalformedLanguageTag;
         }
@@ -222,16 +229,35 @@ internal static class JsonLdLossAudit
             : MalformedIri;
     }
 
-    // Whether the input holds a non-null @base member at any depth: a cheap trigger for the check
-    // below, which tells a context's @base from a "@base" key that is only data.
-    private static bool HasBase(JToken token) => token switch
+    private static JToken ReadJson(string json)
+    {
+        using var reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None };
+        return JToken.ReadFrom(reader);
+    }
+
+    // dotNetRDF's pattern ends in $, which also matches before a final newline, so "en\n" passed and
+    // put a raw line break into the quad (adversarial review, F3). BCP 47 tags are ASCII
+    // letters, digits and hyphens.
+    private static bool IsWellFormedLanguageTag(string tag)
+        => tag.All(c => char.IsAsciiLetterOrDigit(c) || c == '-') && LanguageTag.IsWellFormed(tag);
+
+    private static bool HasNonFiniteNumber(JToken token) => token switch
+    {
+        JValue { Type: JTokenType.Float, Value: double number } => !double.IsFinite(number),
+        JContainer container => container.Children().Any(HasNonFiniteNumber),
+        _ => false,
+    };
+
+    // Whether a JSON-LD document or context holds a non-null @base member at any depth: a cheap
+    // trigger for the check below, which tells a context's @base from a "@base" key that is only data.
+    public static bool HasBase(JToken token) => token switch
     {
         JObject obj => obj.Properties().Any(p => (p.Name == "@base" && p.Value.Type != JTokenType.Null) || HasBase(p.Value)),
         JArray array => array.Any(HasBase),
         _ => false,
     };
 
-    private static JToken WithoutBase(JToken input)
+    public static JToken WithoutBase(JToken input)
     {
         // HasBase found a member, so the input is an object or array.
         var copy = (JContainer)input.DeepClone();
@@ -243,14 +269,21 @@ internal static class JsonLdLossAudit
         return copy;
     }
 
-    // Whether a @base changed the expansion. Expanding without it fails when something needed it,
-    // such as a relative context URL; otherwise the two expansions match unless an IRI was resolved.
-    private static bool ResolvesAgainstBase(JArray expanded, JToken withoutBase, JsonLdProcessorOptions options)
+    // Whether a @base changed the expansion. Expanding without it (in the input and in every loaded
+    // context) fails when something needed it, such as a relative context URL; otherwise the two
+    // expansions match unless an IRI was resolved.
+    private static bool ResolvesAgainstBase(JArray expanded, string json, JsonLdContextCache contexts)
     {
+        var input = ReadJson(json);
+        if (HasBase(input))
+        {
+            input = WithoutBase(input);
+        }
+
         JArray unresolved;
         try
         {
-            unresolved = JsonLdProcessor.Expand(withoutBase, options, new List<JsonLdProcessorWarning>());
+            unresolved = JsonLdProcessor.Expand(input, contexts.Options(withoutBase: true), new List<JsonLdProcessorWarning>());
         }
         catch (Exception)
         {
