@@ -353,3 +353,21 @@ let a claim in the docs stand on reasoning I had not re-tested after changing th
   previously reasoned about against the *new* design before claiming coverage.
 - For each "X is refused" sentence in a CHANGELOG or PR body, cite the test that proves it at every
   boundary, or narrow the sentence.
+
+## 2026-10-28 — A detection probe must not change what it does not suspect (PR #37)
+
+**Mistake:** To catch a set object's dropped `@index`, I re-expanded the whole document with
+*every* `@set` read as `@list`, and treated any failure of that expansion as "indexed set". The
+rewrite reached into JSON literal payloads (a key collision threw), and it made valid sets invalid
+where a list may not stand (`@reverse`), so lossless documents and earlier proofs were refused. The
+owner's re-review caught both.
+
+**The rule for myself:**
+- A probe that rewrites input to make hidden loss visible must touch **only the constructs it
+  suspects**, here objects holding both a set key and an index key. It must use a surrogate that
+  is valid everywhere the original is (`@graph`, not `@list`).
+- Never let "the probe failed" be the finding. The finding must be a positive observation (an
+  `@index` that survived). A probe failure is only a fail-closed fallback, and should be unreachable.
+- Before shipping a rewrite-based check, test it against lossless inputs that contain the rewritten
+  keywords in every position they are legal: literals (both forms, both key orders), `@reverse`,
+  lists, `@included`, root, `@graph`, and aliases. These are the false-positive controls.
