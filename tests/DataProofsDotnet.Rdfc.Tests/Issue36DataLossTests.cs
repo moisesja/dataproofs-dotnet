@@ -146,6 +146,37 @@ public sealed class Issue36DataLossTests
         Canonicalizer.CanonicalizeNQuads(exact).Should().Be(exact);
     }
 
+    [Fact]
+    public void CanonicalizeJsonLd_LoaderThatChangesItsAnswer_IsReadOncePerCanonicalization()
+    {
+        // The audit and the parse expand separately. If each loaded the context itself, the second
+        // answer here (a term mapped to an IRI dotNetRDF drops without a warning) would reach only
+        // the parse, and the property would vanish from the signed bytes unnoticed.
+        var loader = new ChangingLoader(
+            "{\"@context\":{\"clearance\":\"https://e.example/vocab#clearance\"}}",
+            "{\"@context\":{\"clearance\":\"https://e.example/vocab#clearance#dropped\"}}");
+        var canonicalizer = new RdfcDocumentCanonicalizer(loader);
+        var document = Parse("{\"@context\":\"" + ChangingLoader.Url + "\",\"@id\":\"did:example:alice\",\"clearance\":\"admin\"}");
+
+        var nquads = Encoding.UTF8.GetString(canonicalizer.CanonicalizeJsonLd(document));
+
+        nquads.Should().Be("<did:example:alice> <https://e.example/vocab#clearance> \"admin\" .\n");
+        loader.Loads.Should().Be(1);
+    }
+
+    private sealed class ChangingLoader(string first, string later) : IDocumentLoader
+    {
+        public const string Url = "https://e.example/contexts/changing";
+
+        public int Loads { get; private set; }
+
+        public LoadedContextDocument Load(Uri url)
+        {
+            Loads++;
+            return new LoadedContextDocument(url, Loads == 1 ? first : later);
+        }
+    }
+
     // ------------------------------------------------------------------ the RDFC suites
 
     public static TheoryData<string> Suites() => new() { EddsaRdfc2022Cryptosuite.CryptosuiteName, EcdsaRdfc2019Cryptosuite.CryptosuiteName };

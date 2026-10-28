@@ -97,9 +97,13 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 
     private TripleStore ParseJsonLd(string json)
     {
+        // The audit and the parse expand the input separately, so they must see the same contexts:
+        // a loader that answered differently the second time could otherwise get past the audit
+        // input the parse then drops. Each context is loaded once per canonicalization.
+        var contexts = new Dictionary<string, LoadedContextDocument>(StringComparer.Ordinal);
         var options = new JsonLdProcessorOptions
         {
-            DocumentLoader = LoadRemoteDocument,
+            DocumentLoader = (uri, _) => LoadRemoteDocument(uri, contexts),
             // Reports what expansion drops (undefined terms, malformed language tags) as warnings
             // instead of discarding it silently (issue #36).
             SafeMode = true,
@@ -194,9 +198,15 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 
     // Bridges the public IDocumentLoader to dotNetRDF's JSON-LD document-loader callback.
     // Newtonsoft's JToken lives only on this side of the boundary.
-    private RemoteDocument LoadRemoteDocument(Uri uri, JsonLdLoaderOptions options)
+    private RemoteDocument LoadRemoteDocument(Uri uri, Dictionary<string, LoadedContextDocument> contexts)
     {
-        var loaded = _documentLoader.Load(uri);
+        if (!contexts.TryGetValue(uri.AbsoluteUri, out var loaded))
+        {
+            loaded = _documentLoader.Load(uri);
+            contexts.Add(uri.AbsoluteUri, loaded);
+        }
+
+        // A fresh token per load: the processor must not see one expansion's state in the other.
         JToken token;
         try
         {
