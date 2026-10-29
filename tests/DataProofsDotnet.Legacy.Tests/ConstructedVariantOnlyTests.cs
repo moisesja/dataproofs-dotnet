@@ -150,4 +150,18 @@ public class ConstructedVariantOnlyTests
         suite.GetConstructor(new[] { typeof(LegacyCanonicalization), typeof(IRdfCanonicalizer) })
             .Should().NotBeNull();
     }
+
+    [Theory]
+    [InlineData(typeof(Ed25519Signature2020Cryptosuite))]
+    [InlineData(typeof(EcdsaSecp256r1Signature2019Cryptosuite))]
+    public void UndefinedVerificationValue_IsRefused(Type suite)
+    {
+        // Enum.TryParse and configuration binding accept "2"; it must not act as Both.
+        Enum.TryParse<LegacyVariantVerification>("2", out var undefined).Should().BeTrue();
+
+        var act = () => Activator.CreateInstance(suite, LegacyCanonicalization.Rdfc, null, undefined);
+
+        act.Should().Throw<System.Reflection.TargetInvocationException>()
+            .WithInnerException<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("verification");
+    }
 }

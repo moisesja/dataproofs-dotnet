@@ -17,9 +17,15 @@ after a release, and zcap PR #160 does not wait for it.
 - **New public enum `LegacyVariantVerification`:**
   - `Both = 0`: the current behavior and the default;
   - `ConstructedVariantOnly = 1`.
-- **A new three-argument constructor overload on both legacy suites.** The existing
-  two-parameter constructors keep their signatures, so code compiled against 1.5.0 still binds
-  (binary compatible). Calls with zero to two arguments still bind to the old constructor.
+- **A new three-argument constructor overload on both legacy suites**, with all parameters
+  optional.
+  - The existing two-parameter constructors keep their signatures, so code compiled against 1.5.0
+    still binds (binary compatible). They lose their default values in source (RS0027).
+  - Two-argument calls bind to the old constructor. Calls with zero or one argument bind to the new
+    overload, with the same result.
+  - The cost of having two constructors: `ActivatorUtilities.CreateFactory` and
+    `ActivatorUtilities.CreateInstance` without `IServiceProviderIsService` become ambiguous. This
+    is documented in the CHANGELOG. A single constructor would break 1.5.0 binaries instead.
 - **In `ConstructedVariantOnly`, `VerifyProof` tries only the variant passed at construction.** An
   RDFC data-loss failure is then reported as `DATA_LOSS_DETECTION_ERROR`, as in the RDFC suites.
   This removes the dual-variant code ambiguity listed under 1.5.0's Known limitations. `Both`
@@ -29,18 +35,37 @@ after a release, and zcap PR #160 does not wait for it.
 
 ## Steps
 
-- [ ] Enum and constructor overloads; `LegacyCryptosuiteBase` takes the mode
-- [ ] `PublicAPI.Unshipped.txt`; XML docs (suite remarks, `LegacyCanonicalization` remarks)
-- [ ] Tests in `VariantIsolationTests`:
+- [x] Enum and constructor overloads; `LegacyCryptosuiteBase` takes the mode and rejects undefined values
+- [x] `PublicAPI.Unshipped.txt`; XML docs (suite remarks, `LegacyCanonicalization` remarks)
+- [x] Tests in the new `ConstructedVariantOnlyTests`:
   - strict suites reject the other variant and accept their own;
   - strict RDFC reports data loss;
   - the default is unchanged;
-  - binary compatibility of the old constructors.
-- [ ] Sample (FR-21: every public member appears), PRD FR-4, CHANGELOG [Unreleased]
-- [ ] Build (warnings as errors), full tests
-- [ ] Adversarial review
-- [ ] Commit, push, open a PR
+  - binary compatibility of the old constructors;
+  - undefined enum values.
+- [x] Sample (FR-21: every public member appears), PRD FR-4, CHANGELOG [Unreleased]
+- [x] Build (warnings as errors), full tests
+- [x] Adversarial review
+- [x] Commit, push, open a PR
 
 ## Results
 
-(filled in as work completes)
+- **Tests:** the full solution passes. Legacy has 262 tests, 18 of them new.
+- **Ablation:** with strict mode disabled, all 6 strict-mode tests fail.
+- **Sample:** the legacy sample runs. The RDFC-only verifier rejects a JCS proof of the same
+  credential, which the `Both` verifier accepts.
+- **Adversarial review of b42d291:** no bypass.
+  - A strict suite never accepted the other variant across 28 signed cases.
+  - `Both` matched 1.5.0 on 1,580 differential results.
+  - A consumer compiled against 1.5.0 runs unchanged, and 15 C# call shapes, VB and F# compile.
+  - Minor is the right release type.
+- **Review findings fixed:**
+  1. An undefined `LegacyVariantVerification` value acted as `Both`. It is now rejected, following
+     the `JwsSigner` precedent.
+  2. The `ActivatorUtilities` ambiguity is documented.
+  3. The old constructors carried a duplicate `<summary>`; it is removed.
+  4. This plan was inaccurate; it is corrected here.
+- **Not addressed (pre-existing, reported out of scope):**
+  - A document with a duplicate key makes `JsonObject.Create` in `BuildJcsSigningInput` throw
+    `ArgumentException`. A JCS-first suite then returns "Verification failed unexpectedly" without
+    trying RDFC. It fails closed.

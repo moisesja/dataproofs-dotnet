@@ -80,6 +80,11 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         IRdfCanonicalizer? rdfCanonicalizer,
         LegacyVariantVerification verification)
     {
+        // An undefined value (a numeric string parsed from configuration) would otherwise act as
+        // Both and accept the variant the caller meant to refuse.
+        if (!Enum.IsDefined(verification))
+            throw new ArgumentOutOfRangeException(nameof(verification), verification, "Undefined legacy variant verification.");
+
         _canonicalization = canonicalization;
         _verification = verification;
         // Always keep a canonicalizer available: by default verify falls back from JCS to RDFC

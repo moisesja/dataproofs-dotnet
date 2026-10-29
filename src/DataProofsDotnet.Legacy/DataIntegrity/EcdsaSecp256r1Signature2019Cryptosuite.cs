@@ -46,12 +46,6 @@ public sealed class EcdsaSecp256r1Signature2019Cryptosuite : ICryptosuite
     private readonly Engine _engine;
 
     /// <summary>
-    /// Creates the suite. <paramref name="canonicalization"/> selects the create-path
-    /// mechanic (<see cref="LegacyCanonicalization.Jcs"/> is the back-compat default);
-    /// <paramref name="rdfCanonicalizer"/> overrides the offline-default RDFC canonicalizer
-    /// (used by the RDFC variant and the RDFC verify fallback).
-    /// </summary>
-    /// <summary>
     /// Creates the suite with <see cref="LegacyVariantVerification.Both"/>. Kept so code compiled
     /// against 1.5.0 and earlier still binds; new code calls the overload below.
     /// </summary>
@@ -71,6 +65,7 @@ public sealed class EcdsaSecp256r1Signature2019Cryptosuite : ICryptosuite
     /// <see cref="LegacyVariantVerification.ConstructedVariantOnly"/> it accepts only proofs made
     /// with <paramref name="canonicalization"/>.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="verification"/> is not a defined value.</exception>
     public EcdsaSecp256r1Signature2019Cryptosuite(
         LegacyCanonicalization canonicalization = LegacyCanonicalization.Jcs,
         IRdfCanonicalizer? rdfCanonicalizer = null,

@@ -28,7 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emitted bytes are unchanged. The existing two-parameter constructors keep their signatures, so
   code compiled against 1.5.0 still binds. Their parameters are no longer optional in source,
   because the new overload's are (RS0027). `new Ed25519Signature2020Cryptosuite()` and
-  `new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc)` compile as before.
+  `new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc)` compile as before; they now bind
+  to the new overload, with the same result. An undefined `LegacyVariantVerification` value throws
+  `ArgumentOutOfRangeException` rather than acting as `Both`.
+- **Reflection-based activation:** with two public constructors,
+  `ActivatorUtilities.CreateFactory` and `ActivatorUtilities.CreateInstance` without an
+  `IServiceProviderIsService` provider throw "Multiple constructors accepting all given argument
+  types" for these suites. Registering a suite with Microsoft DI (`AddSingleton<T>()`) and
+  `Activator.CreateInstance` are unaffected. To activate a suite by reflection, construct it with
+  `new` in a factory instead. A single constructor would have avoided this, but code compiled
+  against 1.5.0 would then fail with `MissingMethodException`.
 
 ## [1.5.0] - 2026-10-28
 
