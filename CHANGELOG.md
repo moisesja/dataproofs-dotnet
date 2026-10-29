@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Legacy suites can verify the constructed variant only.** A legacy proof does not say whether
+  it was signed over JCS or RDFC, so `Ed25519Signature2020Cryptosuite` and
+  `EcdsaSecp256r1Signature2019Cryptosuite` verify under the variant they were constructed with and
+  then fall back to the other. A verifier whose profile allows one variant also accepted proofs
+  made with the other: zcap-dotnet, which signs only over RDFC, accepted JCS-variant proofs. That
+  is not a forgery, because JCS signs the bytes verbatim, but it accepts input outside the profile.
+
+  The new enum `LegacyVariantVerification` and a constructor overload on both suites,
+  `(canonicalization, rdfCanonicalizer, verification)`, let a verifier pass `ConstructedVariantOnly`
+  to turn the fallback off. In that mode, an RDFC data-loss failure is reported as
+  `DATA_LOSS_DETECTION_ERROR`, as in the RDFC Data Integrity suites. This lifts the dual-variant
+  limitation listed under 1.5.0 for verifiers that opt in.
+
+### Changed
+
+- The default, `LegacyVariantVerification.Both`, keeps the fallback and its result codes, and
+  emitted bytes are unchanged. The existing two-parameter constructors keep their signatures, so
+  code compiled against 1.5.0 still binds. Their parameters are no longer optional in source,
+  because the new overload's are (RS0027). `new Ed25519Signature2020Cryptosuite()` and
+  `new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc)` compile as before.
+
 ## [1.5.0] - 2026-10-28
 
 ### Security

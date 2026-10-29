@@ -14,7 +14,8 @@ namespace DataProofsDotnet.Legacy.DataIntegrity;
 /// <remarks>
 /// Ed25519 signing is deterministic, so JCS proof creation is byte-reproducible. A verifier
 /// cannot distinguish the JCS and RDFC variants from the proof alone, so this suite verifies
-/// under the construction-time variant first and falls back to the other.
+/// under the construction-time variant first and, unless constructed with
+/// <see cref="LegacyVariantVerification.ConstructedVariantOnly"/>, falls back to the other.
 /// </remarks>
 public sealed class Ed25519Signature2020Cryptosuite : ICryptosuite
 {
@@ -29,11 +30,32 @@ public sealed class Ed25519Signature2020Cryptosuite : ICryptosuite
     /// <paramref name="rdfCanonicalizer"/> overrides the offline-default RDFC canonicalizer
     /// (used by the RDFC variant and the RDFC verify fallback).
     /// </summary>
+    /// <summary>
+    /// Creates the suite with <see cref="LegacyVariantVerification.Both"/>. Kept so code compiled
+    /// against 1.5.0 and earlier still binds; new code calls the overload below.
+    /// </summary>
+    public Ed25519Signature2020Cryptosuite(
+        LegacyCanonicalization canonicalization,
+        IRdfCanonicalizer? rdfCanonicalizer)
+        : this(canonicalization, rdfCanonicalizer, LegacyVariantVerification.Both)
+    {
+    }
+
+    /// <summary>
+    /// Creates the suite. <paramref name="canonicalization"/> selects the create-path
+    /// mechanic (<see cref="LegacyCanonicalization.Jcs"/> is the back-compat default);
+    /// <paramref name="rdfCanonicalizer"/> overrides the offline-default RDFC canonicalizer
+    /// (used by the RDFC variant and the RDFC verify fallback). <paramref name="verification"/>
+    /// decides whether <see cref="VerifyProof"/> also accepts the other variant; with
+    /// <see cref="LegacyVariantVerification.ConstructedVariantOnly"/> it accepts only proofs made
+    /// with <paramref name="canonicalization"/>.
+    /// </summary>
     public Ed25519Signature2020Cryptosuite(
         LegacyCanonicalization canonicalization = LegacyCanonicalization.Jcs,
-        IRdfCanonicalizer? rdfCanonicalizer = null)
+        IRdfCanonicalizer? rdfCanonicalizer = null,
+        LegacyVariantVerification verification = LegacyVariantVerification.Both)
     {
-        _engine = new Engine(canonicalization, rdfCanonicalizer);
+        _engine = new Engine(canonicalization, rdfCanonicalizer, verification);
     }
 
     /// <inheritdoc />
@@ -57,8 +79,9 @@ public sealed class Ed25519Signature2020Cryptosuite : ICryptosuite
         PublicKeyMaterial publicKey)
         => _engine.VerifyProof(unsecuredDocument, proof, publicKey);
 
-    private sealed class Engine(LegacyCanonicalization canonicalization, IRdfCanonicalizer? rdfCanonicalizer)
-        : LegacyCryptosuiteBase(canonicalization, rdfCanonicalizer)
+    private sealed class Engine(
+        LegacyCanonicalization canonicalization, IRdfCanonicalizer? rdfCanonicalizer, LegacyVariantVerification verification)
+        : LegacyCryptosuiteBase(canonicalization, rdfCanonicalizer, verification)
     {
         protected override string LegacyProofType => ProofType;
 

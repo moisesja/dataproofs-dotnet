@@ -37,7 +37,9 @@ RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023`, and the Legacy RD
 such input instead of signing less than the document says (VC Data Integrity 1.0 §2.4.3):
 
 - Creating a proof throws `ProofGenerationException` with an inner `JsonLdDataLossException`.
-- Verification fails with `DATA_LOSS_DETECTION_ERROR`.
+- Verification fails with `DATA_LOSS_DETECTION_ERROR`. A Legacy suite reports that code only when
+  constructed with `LegacyVariantVerification.ConstructedVariantOnly`. By default it also tries the
+  JCS variant, and it reports `PROOF_VERIFICATION_ERROR` or `PROOF_TRANSFORMATION_ERROR`.
 
 Typical causes:
 

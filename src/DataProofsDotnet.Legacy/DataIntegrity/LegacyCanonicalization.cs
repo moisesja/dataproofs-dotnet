@@ -8,9 +8,10 @@ namespace DataProofsDotnet.Legacy.DataIntegrity;
 /// <remarks>
 /// A verifier cannot distinguish the two variants from the proof alone (both carry
 /// <c>type:"Ed25519Signature2020"</c>/<c>"EcdsaSecp256r1Signature2019"</c> and no
-/// <c>cryptosuite</c>), so a single suite instance verifies under <see cref="Jcs"/> first
-/// and falls back to <see cref="Rdfc"/>. The create path is fixed to the variant chosen at
-/// construction, with <see cref="Jcs"/> the back-compat default.
+/// <c>cryptosuite</c>), so by default a suite instance verifies under the variant chosen at
+/// construction first and falls back to the other. <see cref="LegacyVariantVerification.ConstructedVariantOnly"/>
+/// turns the fallback off. The create path is fixed to the variant chosen at construction, with
+/// <see cref="Jcs"/> the back-compat default.
 /// </remarks>
 public enum LegacyCanonicalization
 {

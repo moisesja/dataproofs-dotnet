@@ -33,7 +33,8 @@ namespace DataProofsDotnet.Legacy.DataIntegrity;
 /// The legacy family carries NO <c>cryptosuite</c> member on the wire and dispatches by
 /// proof <c>type</c>. Two variants of the same algorithm share that <c>type</c>, so this
 /// suite verifies under both conventions (the construction-time variant first), making the
-/// JCS/RDFC distinction transparent to the verifier. The bridge to the DataProofs pipeline
+/// JCS/RDFC distinction transparent to the verifier, unless it was constructed with
+/// <see cref="LegacyVariantVerification.ConstructedVariantOnly"/>. The bridge to the DataProofs pipeline
 /// (which strips the proof before calling) is re-nesting the proof at sign/verify time.
 /// Immutable and thread-safe after construction (NFR-4).
 /// </para>
@@ -65,6 +66,7 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
     private protected static readonly DefaultCryptoProvider Crypto = new();
 
     private readonly LegacyCanonicalization _canonicalization;
+    private readonly LegacyVariantVerification _verification;
     private readonly IRdfCanonicalizer? _rdfCanonicalizer;
 
     /// <param name="canonicalization">The canonicalization mechanic the create path uses
@@ -72,12 +74,15 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
     /// <param name="rdfCanonicalizer">The RDFC canonicalizer; defaults to the offline-default
     /// <see cref="RdfcDocumentCanonicalizer"/> when <see cref="LegacyCanonicalization.Rdfc"/>
     /// is selected. A canonicalizer is always retained so verify can fall back to RDFC.</param>
+    /// <param name="verification">Whether verify falls back to the other variant.</param>
     protected LegacyCryptosuiteBase(
         LegacyCanonicalization canonicalization,
-        IRdfCanonicalizer? rdfCanonicalizer)
+        IRdfCanonicalizer? rdfCanonicalizer,
+        LegacyVariantVerification verification)
     {
         _canonicalization = canonicalization;
-        // Always keep a canonicalizer available: verify tries JCS then falls back to RDFC
+        _verification = verification;
+        // Always keep a canonicalizer available: by default verify falls back from JCS to RDFC
         // (and vice-versa) regardless of the create-path variant. Construct the offline
         // default lazily-but-eagerly here so the suite stays immutable and thread-safe.
         _rdfCanonicalizer = rdfCanonicalizer ?? new RdfcDocumentCanonicalizer();
@@ -292,17 +297,40 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             var proofConfig = proof with { Cryptosuite = null, ProofValue = null };
 
             // A verifier cannot tell JCS from RDFC by the proof alone (same type, no
-            // cryptosuite). Try the construction-time variant first, then the other. NOTE: when the
-            // first variant does not verify, the second attempt re-canonicalizes the same document —
-            // a second canonicalization pass on the hot verify path. Construct the suite with the
-            // canonicalization its corpus actually uses so the common case verifies on the first try.
+            // cryptosuite). Try the construction-time variant first, then (unless the suite accepts
+            // only that variant) the other. NOTE: when the first variant does not verify, the second
+            // attempt re-canonicalizes the same document — a second canonicalization pass on the hot
+            // verify path. Construct the suite with the canonicalization its corpus actually uses so
+            // the common case verifies on the first try.
             var first = _canonicalization;
             var second = first == LegacyCanonicalization.Jcs
                 ? LegacyCanonicalization.Rdfc
                 : LegacyCanonicalization.Jcs;
 
-            if (TryVerifyVariant(unsecuredDocument, proofConfig, publicKey, signature, first, out var firstTransformError)
-                || TryVerifyVariant(unsecuredDocument, proofConfig, publicKey, signature, second, out var secondTransformError))
+            if (TryVerifyVariant(unsecuredDocument, proofConfig, publicKey, signature, first, out var firstTransformError, out var firstDataLoss))
+            {
+                return ProofVerificationResult.Success(proof);
+            }
+
+            if (_verification == LegacyVariantVerification.ConstructedVariantOnly)
+            {
+                // One variant, so a data-loss failure is unambiguous: report it as the RDFC suites do.
+                if (firstDataLoss)
+                {
+                    return ProofVerificationResult.Failure(
+                        ProofProblemCodes.DataLossDetectionError,
+                        "The document or proof configuration cannot be RDFC-canonicalized without losing data.", proof);
+                }
+
+                return firstTransformError
+                    ? ProofVerificationResult.Failure(
+                        ProofProblemCodes.ProofTransformationError,
+                        "The document or proof configuration could not be canonicalized.", proof)
+                    : ProofVerificationResult.Failure(
+                        ProofProblemCodes.ProofVerificationError, "The signature did not verify.", proof);
+            }
+
+            if (TryVerifyVariant(unsecuredDocument, proofConfig, publicKey, signature, second, out var secondTransformError, out _))
             {
                 return ProofVerificationResult.Success(proof);
             }
@@ -329,7 +357,8 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
     /// Attempts verification under a single canonicalization variant. Returns <c>true</c>
     /// when the signature verifies; sets <paramref name="transformationFailed"/> when the
     /// failure was a canonicalization error (so the caller can distinguish a bad signature
-    /// from an untransformable document).
+    /// from an untransformable document), and <paramref name="dataLoss"/> when that error was
+    /// RDFC refusing to drop or respell data.
     /// </summary>
     private bool TryVerifyVariant(
         JsonElement unsecuredDocument,
@@ -337,9 +366,11 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         PublicKeyMaterial publicKey,
         byte[] signature,
         LegacyCanonicalization variant,
-        out bool transformationFailed)
+        out bool transformationFailed,
+        out bool dataLoss)
     {
         transformationFailed = false;
+        dataLoss = false;
 
         // JCS cannot bind a document that still carries a "proof" member (a W3C proof chain the
         // pipeline injected): the convention nests only the current proof. Treat the JCS variant
@@ -363,6 +394,7 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         catch (Exception ex) when (ex is JcsFormatException or RdfCanonicalizationException)
         {
             transformationFailed = true;
+            dataLoss = ex is JsonLdDataLossException;
             return false;
         }
 

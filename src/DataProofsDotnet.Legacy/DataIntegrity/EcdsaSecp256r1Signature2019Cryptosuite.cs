@@ -21,7 +21,8 @@ namespace DataProofsDotnet.Legacy.DataIntegrity;
 /// proofValue is NOT byte-reproducible across runs — only round-trip (create→verify) and
 /// verify-of-fixed-vector are meaningful. A verifier cannot distinguish the JCS and RDFC
 /// variants from the proof alone, so this suite verifies under the construction-time variant
-/// first and falls back to the other.
+/// first and, unless constructed with <see cref="LegacyVariantVerification.ConstructedVariantOnly"/>,
+/// falls back to the other.
 /// </para>
 /// <para>
 /// <b>Signature malleability.</b> ECDSA signatures are inherently malleable: given a valid
@@ -50,11 +51,32 @@ public sealed class EcdsaSecp256r1Signature2019Cryptosuite : ICryptosuite
     /// <paramref name="rdfCanonicalizer"/> overrides the offline-default RDFC canonicalizer
     /// (used by the RDFC variant and the RDFC verify fallback).
     /// </summary>
+    /// <summary>
+    /// Creates the suite with <see cref="LegacyVariantVerification.Both"/>. Kept so code compiled
+    /// against 1.5.0 and earlier still binds; new code calls the overload below.
+    /// </summary>
+    public EcdsaSecp256r1Signature2019Cryptosuite(
+        LegacyCanonicalization canonicalization,
+        IRdfCanonicalizer? rdfCanonicalizer)
+        : this(canonicalization, rdfCanonicalizer, LegacyVariantVerification.Both)
+    {
+    }
+
+    /// <summary>
+    /// Creates the suite. <paramref name="canonicalization"/> selects the create-path
+    /// mechanic (<see cref="LegacyCanonicalization.Jcs"/> is the back-compat default);
+    /// <paramref name="rdfCanonicalizer"/> overrides the offline-default RDFC canonicalizer
+    /// (used by the RDFC variant and the RDFC verify fallback). <paramref name="verification"/>
+    /// decides whether <see cref="VerifyProof"/> also accepts the other variant; with
+    /// <see cref="LegacyVariantVerification.ConstructedVariantOnly"/> it accepts only proofs made
+    /// with <paramref name="canonicalization"/>.
+    /// </summary>
     public EcdsaSecp256r1Signature2019Cryptosuite(
         LegacyCanonicalization canonicalization = LegacyCanonicalization.Jcs,
-        IRdfCanonicalizer? rdfCanonicalizer = null)
+        IRdfCanonicalizer? rdfCanonicalizer = null,
+        LegacyVariantVerification verification = LegacyVariantVerification.Both)
     {
-        _engine = new Engine(canonicalization, rdfCanonicalizer);
+        _engine = new Engine(canonicalization, rdfCanonicalizer, verification);
     }
 
     /// <inheritdoc />
@@ -78,8 +100,9 @@ public sealed class EcdsaSecp256r1Signature2019Cryptosuite : ICryptosuite
         PublicKeyMaterial publicKey)
         => _engine.VerifyProof(unsecuredDocument, proof, publicKey);
 
-    private sealed class Engine(LegacyCanonicalization canonicalization, IRdfCanonicalizer? rdfCanonicalizer)
-        : LegacyCryptosuiteBase(canonicalization, rdfCanonicalizer)
+    private sealed class Engine(
+        LegacyCanonicalization canonicalization, IRdfCanonicalizer? rdfCanonicalizer, LegacyVariantVerification verification)
+        : LegacyCryptosuiteBase(canonicalization, rdfCanonicalizer, verification)
     {
         protected override string LegacyProofType => ProofType;
 
