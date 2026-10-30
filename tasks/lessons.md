@@ -395,3 +395,35 @@ owner's re-review caught both.
 - For anything alias-based, include these controls: chains (string and `{"@id":...}` forms, inline
   and across a remote context), a property-scoped alias, an alias defined but unused, and an alias
   defined only in a scope never activated, over a property with a coercion.
+
+## 2026-10-29 — "Documented" is not "compatible"; enumerate the design space before accepting a regression (PR #39)
+
+**What happened:** To add `LegacyVariantVerification` without breaking assemblies compiled against
+1.5.0, the legacy suites kept their two-parameter constructor and gained a three-parameter overload.
+The adversarial pass found that two public constructors make `ActivatorUtilities.CreateFactory` and
+`CreateInstance` throw "Multiple constructors accepting all given argument types", and the response
+was a CHANGELOG paragraph. The owner's review refused it: a documented activation failure is still a
+regression for every consumer that activates the suite by reflection, and the stated choice ("two
+constructors, or break old binaries") left out designs that avoid both (a static factory over a private
+constructor; `[ActivatorUtilitiesConstructor]`). The compatibility test,
+`TwoParameterConstructor_KeepsItsSignature`, proved a constructor existed and nothing about how a
+consumer reaches it. The fix was the simplest shape: one public constructor with a third optional
+parameter, which `RELEASING.md` explicitly accepts and 1.3.0 already shipped for `JwsSigner`.
+
+**Why it happened:** I optimized for binary compatibility, which this repository puts out of scope
+(the 2026-08-05 lesson, repeated), and when the adversarial pass priced that choice I reached for
+"document it" instead of "redesign it".
+
+**The rule for myself:**
+- A regression on a path consumers use (DI activation, serialization, reflection) is a defect, and a
+  CHANGELOG line is not a fix. Before writing "documented" beside a finding, ask what shape makes the
+  finding disappear. The public constructor *set* of a type is public API: `ActivatorUtilities`,
+  `IServiceCollection` and `Activator` all choose a constructor by enumerating it.
+- When a compatibility constraint is pushing the API into an awkward shape, re-read the project's
+  stated policy before paying for it. Here the policy accepts the simple shape and shows the wording.
+- A compatibility test must exercise the consumer's path, not the member's existence: compile a
+  consumer against the published package and run it against the new assembly; run
+  `ActivatorUtilities` and `ServiceCollection` the way a host does. `GetConstructor(...) != null`
+  catches nothing.
+- An "A or B" in a plan or PR body needs the alternatives considered and why they lost. A binary
+  choice stated without alternatives is usually incomplete.

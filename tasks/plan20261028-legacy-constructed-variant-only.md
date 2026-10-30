@@ -26,6 +26,16 @@ after a release, and zcap PR #160 does not wait for it.
   - The cost of having two constructors: `ActivatorUtilities.CreateFactory` and
     `ActivatorUtilities.CreateInstance` without `IServiceProviderIsService` become ambiguous. This
     is documented in the CHANGELOG. A single constructor would break 1.5.0 binaries instead.
+  - **Correction (2026-10-29, PR #39 review 5707343258):** documenting the ambiguity did not fix it.
+    Every consumer that activates a suite through `ActivatorUtilities` failed at startup with
+    "Multiple constructors accepting all given argument types" (10 of 15 cases in the new
+    `ActivationCompatibilityTests` fail against c9e0a16, 8 of them with that message; the other 2 pin
+    the migration note below). The two-parameter constructor is
+    removed; each suite has one public constructor with three optional parameters. Binary
+    compatibility is out of scope under `RELEASING.md`, so the CHANGELOG carries a rebuild note, as
+    1.3.0 did for `JwsSigner`. The review's alternative, a static factory with a private constructor,
+    would keep binary compatibility too; see `tasks/plan20261029-pr39-response.md` for why it was
+    not taken.
 - **In `ConstructedVariantOnly`, `VerifyProof` tries only the variant passed at construction.** An
   RDFC data-loss failure is then reported as `DATA_LOSS_DETECTION_ERROR`, as in the RDFC suites.
   This removes the dual-variant code ambiguity listed under 1.5.0's Known limitations. `Both`
@@ -58,11 +68,14 @@ after a release, and zcap PR #160 does not wait for it.
   - A strict suite never accepted the other variant across 28 signed cases.
   - `Both` matched 1.5.0 on 1,580 differential results.
   - A consumer compiled against 1.5.0 runs unchanged, and 15 C# call shapes, VB and F# compile.
+    (Superseded 2026-10-29: with one constructor, a consumer compiled against 1.5.0 must be
+    rebuilt; see the correction under Decisions. The call shapes still compile and bind.)
   - Minor is the right release type.
 - **Review findings fixed:**
   1. An undefined `LegacyVariantVerification` value acted as `Both`. It is now rejected, following
      the `JwsSigner` precedent.
-  2. The `ActivatorUtilities` ambiguity is documented.
+  2. The `ActivatorUtilities` ambiguity is documented. (Superseded 2026-10-29: it is removed; see
+     the correction under Decisions.)
   3. The old constructors carried a duplicate `<summary>`; it is removed.
   4. This plan was inaccurate; it is corrected here.
 - **Not addressed (pre-existing, reported out of scope):**
