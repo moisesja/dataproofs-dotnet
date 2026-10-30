@@ -187,3 +187,49 @@ chose to fix that here too ("Fix it in this PR"). Lesson recorded in `tasks/less
     Wording fixed in source, tests, PRD, README and CHANGELOG.
 - Final state: 3,004 tests green (Rdfc 729, Core 516), four samples run, both gates clean (548
   members); three windDoc reveals from the final code verify on the reference verifier.
+
+# Round 3 — patch dotNetRDF's RDFC-1.0 locally (approved 2026-10-30)
+
+## Owner intent
+
+Upstream's timing is unknown, so patch it here. This replaces "report upstream and document", which the
+owner chose on a scope and cost I had wrong (see the lessons file). Also corrected: the round 2 note above
+that "datasets without that shape are unaffected" was false.
+
+## What the evidence showed
+
+- A from-spec Python RDFC-1.0 and `rdf-canonize` 5.0.0 agree on 26,000 datasets; dotNetRDF 3.5.1 differs on
+  56% of a 120-credential sample built around one shared nested value.
+- Cause, proved by emulation (12,000 of 12,000 tree datasets) and by patching: `Remove(entry.Value[0])`
+  uses the wrong key and the step 5 check tests the label, so labelled nodes are walked again. Either fix
+  alone stops it; both match the specification. A self-reference was also counted twice.
+
+## Decisions
+
+- `Internal/Rdfc10Canonicalizer.cs`, a marked copy of the upstream file; `#nullable disable`; NetCrypto
+  hashing for AC-6; `Assert` for the inaccessible `Triples.Add`.
+- Added during implementation, not in the approved plan, because the fix required them:
+  - The work budget (1,000 walks) only fit because of the defect: depth-64 chains failed ten existing tests.
+    It is now 20,000 plus 4 per blank node.
+  - The old budget also bounded recursion depth, so depth has its own limit plus a stack check.
+  - `DirectLabelNQuadsFormatter`, because documents over 1,000 blank nodes now run the whole path, which
+    made dotNetRDF's quadratic blank-node formatter a 69-second cost at 2.7 MB.
+- From the adversarial review: permutations and large copies spend budget; a list whose permutations
+  cannot fit is refused before any is tried, which also removes the `Permute` stack overflow; a repeated
+  node is one permutation; predicates are hashed as written.
+- Sort order stays UTF-16 code units, matching `rdf-canonize`, against the specification's code points.
+- Not fixed: JSON-LD expansion cost, which is inside dotNetRDF. A cap is the owner's decision.
+
+## Results
+
+- Comparison with `rdf-canonize` on the real library: 0 of 26,000 differ; 0 unstable under reshuffling.
+- Real signatures across implementations, 120 credentials: 1.5.0 verified 53 of the reference's proofs and
+  the reference 53 of 1.5.0's; this branch 120 of 120 both ways. bbs-2023 on the tied shape: 4 of 4 both ways.
+- Ablations: fixes 1 and 2 each alone change nothing, both together fail 4 tests; `Distinct` fails 2;
+  predicate fails 3; removing the stack guard or the permutation check crashes the test host; the budget at
+  1,000 fails 4; collapsing repeated nodes is pinned by `BlankNodeRepeatedAcrossManyGraphs_TakesOneWalk`.
+  The copy and hash charges are performance-only, so no test pins them.
+- Hostile inputs, this branch against 1.5.0: 500-byte N-Quads about 50 ms against over 30 s; the 2.9 MB JSON-LD
+  crash is a 3.5 s refusal; the 4.2 MB padded input 2.1 s against 11 s.
+- Adversarial review found no wrong accept.
+

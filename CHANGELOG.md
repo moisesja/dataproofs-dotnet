@@ -58,9 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `@vocab` but not `@direction` (dotNetRDF follows JSON-LD 1.1 API §5.3.2 and signs it), and it
   signs a number's direction away silently, where this library refuses.
 
-  Accepted input is unchanged: direction-free documents canonicalize to the same bytes as in 1.5.0,
+  This change alters no accepted input: direction-free documents are unaffected by it,
   direction-bearing ones were all refused, and proofs made before 1.5.0 over such documents verify in
-  neither version. Still refused, with `JsonLdDataLossException` (`DATA_LOSS_DETECTION_ERROR` on
+  neither version. (The RDFC-1.0 fix under Fixed does change bytes for some documents.) Still refused, with `JsonLdDataLossException` (`DATA_LOSS_DETECTION_ERROR` on
   verify): a boolean or a number with a `@direction`, whose direction dotNetRDF (like jsonld.js) drops
   when it types the value as an XSD literal; JSON-LD 1.1 API §8.2.2 would apply the i18n datatype to
   the lexical form instead, so the refusal follows the processor, not the text.
@@ -117,6 +117,53 @@ source-additive, so this is a minor release.
 
 ### Fixed
 
+- **RDFC-1.0 canonical forms now match the specification, so RDFC proofs interoperate.** This changes
+  the signed bytes of some documents; see below. dotNetRDF 3.5.1's `RdfCanonicalizer` labels tied blank
+  nodes in the wrong order ([dotnetrdf/dotnetrdf#917](https://github.com/dotnetrdf/dotnetrdf/issues/917)).
+  It never removes uniquely-hashed nodes from its work list, and its check for nodes that already have a
+  canonical identifier tests the input label, which can never match. So it walks those nodes again, and
+  each walk labels their neighbours in traversal order. A self-referencing blank node is also counted
+  twice. Ordinary credentials are affected: two licences that each hold an unnamed `{"code": "US"}`,
+  or same-looking items with different children. The W3C `rdf-canon` suite has no such case and every
+  W3C vector was unaffected, which is how this went unnoticed.
+
+  Over 120 such credentials, 1.5.0 verified 53 of the reference `eddsa-rdfc-2022` implementation's
+  proofs and refused 67 as invalid signatures, and the reverse direction failed alike. This version
+  verifies all 120, and the reference verifies all 120 of ours; bbs-2023 cross-verifies on the same
+  shape in both directions. It affects `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023` and the Legacy
+  RDFC variant. JCS, JOSE, COSE and SD-JWT never used it. A mismatch always failed closed: canonical
+  output is a relabeling of the input, so two different datasets never signed the same bytes.
+
+  `RdfcDocumentCanonicalizer` now runs on `Rdfc10Canonicalizer`, an internal copy of dotNetRDF's class
+  with the defects fixed, until an upstream release does. `tests/fixtures/generated/rdfc-differential.json`
+  pins 1,530 datasets byte for byte against `rdf-canonize` 5.0.0, and `RdfCanonicalizationDeviationTests`
+  reports when dotNetRDF is fixed and the copy can go. No public API changes.
+
+  **Wire change.** A document with blank nodes that tie at the first degree can now canonicalize to
+  different bytes, so an RDFC proof made by 1.5.0 or earlier over such a document no longer verifies
+  here. Those proofs did not verify on the reference implementation either, and conforming issuers'
+  proofs of those documents now verify here. Documents with no such tie are unchanged. zcap-dotnet and credentials-dotnet should re-sign any
+  stored RDFC proof whose verification now fails.
+
+  The same work fixed five more defects in that class, found by adversarial review. Each was in 1.5.0
+  except the last, which was introduced and fixed here:
+  - **A hostile document could end the process.** A blank node with thousands of related nodes overflowed
+    the stack, which cannot be caught: a 2.9 MB JSON-LD document killed a 1.5.0 verifier outright. Such a
+    list is now refused before any permutation is tried, and recursion stops at 1,000 levels or when the
+    stack runs low, so a long chain of blank nodes is a refusal too.
+  - **A few hundred bytes could take minutes.** A permutation that recursed into nothing cost nothing,
+    so a 500-byte N-Quads document ran past 30 seconds and 400 bytes of JSON-LD took 6.7 seconds. These now
+    finish or are refused in about 50 ms. A node repeated across named graphs counts as one permutation.
+  - **A predicate outside ASCII was hashed percent-encoded**, so tied blank nodes around it could be
+    labelled differently from the specification. Such a predicate is now hashed as written.
+  - **A document with more than 1,000 blank nodes could not be canonicalized at all**, because every node
+    spent a budget of 1,000 walks. Only tied nodes are walked now. Formatting was also quadratic in blank
+    nodes; 100,000 of them now take about two seconds, down from over a minute.
+  - **The work budget.** Doing the walk correctly costs more on deep chains of like objects, so the budget
+    is now 20,000 plus 4 per blank node, spent per walk, per related node and per permutation, with large
+    issuer copies and long hashed strings charged too. A 2.3 MB hostile clique is refused in about half the
+    time it took 1.5.0. At its default settings `rdf-canonize` refuses a 64-node chain that this accepts.
+
 - **bbs-2023 proofs now interoperate with the reference implementation** (issue
   [#43](https://github.com/moisesja/dataproofs-dotnet/issues/43), found while reviewing #40). Through
   1.5.0 the suite's proofs verified only here: the W3C `derivedRevealDocument.json` vector did not
@@ -153,16 +200,14 @@ source-additive, so this is a minor release.
 
 ### Known limitations
 
-- **RDFC-1.0 in dotNetRDF 3.5.1 deviates from the specification when tied blank nodes own further
-  blank nodes** ([dotnetrdf/dotnetrdf#917](https://github.com/dotnetrdf/dotnetrdf/issues/917), found
-  by the adversarial review of this change). When two blank nodes have identical first-degree hashes
-  and each owns another blank node (two unnamed nested objects each with a nested object of their
-  own), dotNetRDF issues the canonical identifiers breadth-first where the Hash N-Degree Quads
-  algorithm, and `rdf-canonize`, issue them depth-first. The canonical N-Quads differ, so an
-  `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023` or Legacy RDFC proof over such a dataset does not
-  verify across implementations in either direction. Datasets without that shape, including every
-  W3C vector and the 86-entry rdf-canon suite, are unaffected. `RdfCanonicalizationDeviationTests`
-  pins the six-quad case so an upgrade that fixes it is noticed.
+- **JSON-LD expansion in dotNetRDF is slow on long arrays.** One expansion of a document holding an
+  8,000-item array takes about 13 seconds, and canonicalizing expands at least twice, so a 46 KB document
+  can keep a verifier busy for 27 seconds. This happens before the canonicalizer's work budget applies.
+  Nothing caps it yet; a service that verifies untrusted documents should limit their size.
+- **RDFC-1.0 sort order follows the reference implementation.** The specification sorts N-Quads by code
+  point; `rdf-canonize` and this library sort by UTF-16 code unit, which differs only between characters
+  above U+FFFF and those from U+E000 to U+FFFF. This library matches `rdf-canonize`, because that is what
+  proofs in the field are signed with.
 - **bbs-2023 cannot disclose mandatory statements alone, nor secure a document whose every statement
   is mandatory.** The spec allows both (zero disclosed BBS messages, zero signed messages); NetCrypto
   1.7.1's BBS provider needs at least one revealed index and at least one message. Both are refused

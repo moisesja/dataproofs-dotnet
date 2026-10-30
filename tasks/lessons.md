@@ -450,3 +450,32 @@ creep without pricing "defer" at all. A limitation paragraph felt like diligence
   deviation from the spec.
 - An interop claim ("wire form matches the reference") needs a cross-implementation check, not a
   structural one. Run the reference against our output and ours against theirs before claiming it.
+
+## 2026-10-30 — A decision handed to the owner needs a verified scope and cost (PR #42)
+
+**Mistake:** The adversarial review reported an RDFC-1.0 interop failure. I confirmed one six-quad
+dataset, then gave the owner a choice: implement RDFC-1.0 ourselves ("about a day, a few hundred
+lines") or report upstream. I described the trigger as "two identical blank nodes that each own
+further blank nodes", wrote that into the CHANGELOG and PRD, said datasets without that shape were
+unaffected, and filed an upstream issue with a mechanism I had inferred from one output. The owner
+chose "report upstream and document" on that basis. All of it was wrong. A 16,000-dataset comparison
+showed the trigger was far wider (56% of a sample of ordinary credentials with a shared nested value),
+the real cause was in two lines I had never read, and the fix was three lines. The subagent's own
+example had not even reproduced when I ran it, and I moved on instead of asking why.
+
+**Why it happened:** I generalized from one failing dataset to a rule, and sized the fix without
+reading the dependency's source, which was one `gh api` call away. A subagent's "hand-computed"
+claim became my "hand walkthrough" in a public issue.
+
+**The rule for myself:**
+- One failing case is a symptom, not a scope. Before stating when a bug fires, measure: run a
+  differential over generated inputs and test the stated condition against the result. "Unaffected"
+  is a claim that needs its own evidence.
+- Read the dependency's code before describing its bug or estimating the fix. If a tool's source
+  is public, a mechanism inferred from output is a hypothesis, and must be labelled one.
+- A prediction about the cause gets tested: emulate the suspected defect and require its output to
+  match the real one, or patch it and watch the failures stop.
+- A decision offered to the owner carries the evidence for its scope and cost. If either is an
+  estimate, say so in the question. A wrong number there makes the owner's answer worthless.
+- Only write what was done. "Hand run", "confirmed" and "reproduced" describe actions; a subagent's
+  report is not my verification, and a fix that changes a limit changes what that limit protected.

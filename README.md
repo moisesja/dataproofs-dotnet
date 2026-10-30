@@ -64,7 +64,10 @@ proof. A verifier whose JSON-LD processor drops direction, the JSON-LD default, 
 proofs, as it does not verify theirs. The canonical form is byte-identical with jsonld.js for the VCDM
 2.0 value-object shapes; the CHANGELOG lists the two differences on its side.
 
-Accepted input canonicalizes to the same bytes as before. See FR-9 in the PRD for the full rule.
+RDFC output matches the specification and `rdf-canonize` byte for byte, which dotNetRDF's own canonicalizer
+does not for documents with tied blank nodes (dotnetrdf/dotnetrdf#917). So this library runs a local fixed
+copy of it. Proofs over those documents made by 1.5.0 or earlier stop verifying; the CHANGELOG explains
+which. See FR-9 in the PRD for the full rule.
 
 ## Native AOT and trimming
 
