@@ -59,8 +59,9 @@ namespace DataProofsDotnet.Rdfc;
 /// with the direction dropped, so no accepted input changes bytes. A value object with an explicit
 /// <c>https://www.w3.org/ns/i18n#…</c> datatype is the same RDF literal as the directional string it
 /// spells out, as <c>1</c> is <c>1.0</c>.
-/// A boolean or a number with a <c>@direction</c> is refused: it becomes an XSD literal and the
-/// direction would be lost. A context's or term's default direction reaches plain strings only, as
+/// A boolean or a number with a <c>@direction</c> is refused: dotNetRDF (like jsonld.js) types it as
+/// an XSD literal and drops the direction, where JSON-LD 1.1 API §8.2.2 would apply the i18n datatype
+/// to its lexical form. A context's or term's default direction reaches plain strings only, as
 /// JSON-LD 1.1 expansion defines (API §5.3.2): a typed value, a number or a boolean takes none, so
 /// there is nothing to carry or refuse.
 /// </para>
@@ -69,17 +70,18 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 {
     private readonly IDocumentLoader _documentLoader;
 
-    /// <summary>Creates a canonicalizer over the offline-default document loader (FR-10).</summary>
-    public RdfcDocumentCanonicalizer()
-        : this(OfflineDocumentLoader.Instance)
+    /// <summary>
+    /// Creates a canonicalizer over <paramref name="documentLoader"/>, or over the offline-default
+    /// loader (FR-10) when it is omitted or <see langword="null"/>.
+    /// </summary>
+    /// <remarks>
+    /// One public constructor with a defaulted parameter, so <c>ActivatorUtilities</c> and
+    /// Microsoft DI have a single candidate (PR #39 found that two public constructors make
+    /// <c>CreateFactory</c> and <c>CreateInstance</c> throw "Multiple constructors…").
+    /// </remarks>
+    public RdfcDocumentCanonicalizer(IDocumentLoader? documentLoader = null)
     {
-    }
-
-    /// <summary>Creates a canonicalizer over the given document loader.</summary>
-    public RdfcDocumentCanonicalizer(IDocumentLoader documentLoader)
-    {
-        ArgumentNullException.ThrowIfNull(documentLoader);
-        _documentLoader = documentLoader;
+        _documentLoader = documentLoader ?? OfflineDocumentLoader.Instance;
     }
 
     /// <inheritdoc />
