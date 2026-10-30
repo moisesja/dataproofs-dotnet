@@ -25,17 +25,6 @@ public sealed class Ed25519Signature2020Cryptosuite : ICryptosuite
     private readonly Engine _engine;
 
     /// <summary>
-    /// Creates the suite with <see cref="LegacyVariantVerification.Both"/>. Kept so code compiled
-    /// against 1.5.0 and earlier still binds; new code calls the overload below.
-    /// </summary>
-    public Ed25519Signature2020Cryptosuite(
-        LegacyCanonicalization canonicalization,
-        IRdfCanonicalizer? rdfCanonicalizer)
-        : this(canonicalization, rdfCanonicalizer, LegacyVariantVerification.Both)
-    {
-    }
-
-    /// <summary>
     /// Creates the suite. <paramref name="canonicalization"/> selects the create-path
     /// mechanic (<see cref="LegacyCanonicalization.Jcs"/> is the back-compat default);
     /// <paramref name="rdfCanonicalizer"/> overrides the offline-default RDFC canonicalizer
@@ -44,12 +33,22 @@ public sealed class Ed25519Signature2020Cryptosuite : ICryptosuite
     /// <see cref="LegacyVariantVerification.ConstructedVariantOnly"/> it accepts only proofs made
     /// with <paramref name="canonicalization"/>.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="verification"/> is not a defined value.</exception>
+    /// <remarks>
+    /// This is the only public constructor and every parameter has a default, so reflection-based
+    /// activation (<c>ActivatorUtilities</c>, Microsoft DI registration by type) has one candidate,
+    /// as in 1.5.0.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="canonicalization"/> or
+    /// <paramref name="verification"/> is not a defined value.</exception>
     public Ed25519Signature2020Cryptosuite(
         LegacyCanonicalization canonicalization = LegacyCanonicalization.Jcs,
         IRdfCanonicalizer? rdfCanonicalizer = null,
         LegacyVariantVerification verification = LegacyVariantVerification.Both)
     {
+        // Keep this the only public constructor. ActivatorUtilities.CreateFactory, and CreateInstance
+        // without an IServiceProviderIsService provider, enumerate the public constructors and throw when
+        // more than one accepts the given arguments (PR #39 review); a new option is another optional
+        // parameter here, not an overload.
         _engine = new Engine(canonicalization, rdfCanonicalizer, verification);
     }
 

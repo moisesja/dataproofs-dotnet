@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **550**
-- Covered by at least one sample: **548**
+- Public members across 6 packages: **551**
+- Covered by at least one sample: **549**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -476,20 +476,21 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.VcJose.MediaType`
 - `DataProofsDotnet.Jose.VcJose.VerifyCredential`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite (type)`
-- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer)`
+- `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer,LegacyVariantVerification)`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.CreateProofAsync`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.Name`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.ProofType`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.SupportedProofTypes`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.VerifyProof`
 - `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite (type)`
-- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer)`
+- `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer,LegacyVariantVerification)`
 - `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.CreateProofAsync`
 - `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.Name`
 - `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.ProofType`
 - `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.SupportedProofTypes`
 - `DataProofsDotnet.Legacy.DataIntegrity.Ed25519Signature2020Cryptosuite.VerifyProof`
 - `DataProofsDotnet.Legacy.DataIntegrity.LegacyCanonicalization (type)`
+- `DataProofsDotnet.Legacy.DataIntegrity.LegacyVariantVerification (type)`
 - `DataProofsDotnet.ProofGenerationException (type)`
 - `DataProofsDotnet.ProofGenerationException..ctor()`
 - `DataProofsDotnet.ProofGenerationException..ctor(String)`

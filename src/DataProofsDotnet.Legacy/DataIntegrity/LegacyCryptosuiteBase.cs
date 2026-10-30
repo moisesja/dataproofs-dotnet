@@ -81,7 +81,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         LegacyVariantVerification verification)
     {
         // An undefined value (a numeric string parsed from configuration) would otherwise act as
-        // Both and accept the variant the caller meant to refuse.
+        // JCS or as Both and accept the variant the caller meant to refuse: every comparison below
+        // reads "== Rdfc" or "== ConstructedVariantOnly", so any other value takes the default branch.
+        if (!Enum.IsDefined(canonicalization))
+            throw new ArgumentOutOfRangeException(nameof(canonicalization), canonicalization, "Undefined legacy canonicalization.");
         if (!Enum.IsDefined(verification))
             throw new ArgumentOutOfRangeException(nameof(verification), verification, "Undefined legacy variant verification.");
 

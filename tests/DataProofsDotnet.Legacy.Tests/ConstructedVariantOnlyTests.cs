@@ -2,7 +2,6 @@ using System.Text.Json;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Legacy.DataIntegrity;
 using DataProofsDotnet.Legacy.Tests.TestSupport;
-using DataProofsDotnet.Rdfc;
 using FluentAssertions;
 using NetCrypto;
 using Xunit;
@@ -38,8 +37,8 @@ public class ConstructedVariantOnlyTests
     private static ICryptosuite Suite(
         string legacyType, LegacyCanonicalization variant, LegacyVariantVerification verification)
         => legacyType == Ed25519Signature2020Cryptosuite.ProofType
-            ? new Ed25519Signature2020Cryptosuite(variant, null, verification)
-            : new EcdsaSecp256r1Signature2019Cryptosuite(variant, null, verification);
+            ? new Ed25519Signature2020Cryptosuite(variant, verification: verification)
+            : new EcdsaSecp256r1Signature2019Cryptosuite(variant, verification: verification);
 
     private static LegacyCanonicalization Other(LegacyCanonicalization variant)
         => variant == LegacyCanonicalization.Jcs ? LegacyCanonicalization.Rdfc : LegacyCanonicalization.Jcs;
@@ -105,7 +104,7 @@ public class ConstructedVariantOnlyTests
                 ? (ICryptosuite)new Ed25519Signature2020Cryptosuite(variant)
                 : new EcdsaSecp256r1Signature2019Cryptosuite(variant))
             .VerifyProof(Document(legacyType), proof, publicKey).Verified.Should().BeTrue(
-                "the constructors without a verification argument keep the fallback");
+                "omitting the verification argument keeps the fallback");
     }
 
     [Fact]
@@ -144,16 +143,6 @@ public class ConstructedVariantOnlyTests
     [Theory]
     [InlineData(typeof(Ed25519Signature2020Cryptosuite))]
     [InlineData(typeof(EcdsaSecp256r1Signature2019Cryptosuite))]
-    public void TwoParameterConstructor_KeepsItsSignature(Type suite)
-    {
-        // Code compiled against 1.5.0 and earlier calls this exact constructor.
-        suite.GetConstructor(new[] { typeof(LegacyCanonicalization), typeof(IRdfCanonicalizer) })
-            .Should().NotBeNull();
-    }
-
-    [Theory]
-    [InlineData(typeof(Ed25519Signature2020Cryptosuite))]
-    [InlineData(typeof(EcdsaSecp256r1Signature2019Cryptosuite))]
     public void UndefinedVerificationValue_IsRefused(Type suite)
     {
         // Enum.TryParse and configuration binding accept "2"; it must not act as Both.
@@ -163,5 +152,21 @@ public class ConstructedVariantOnlyTests
 
         act.Should().Throw<System.Reflection.TargetInvocationException>()
             .WithInnerException<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("verification");
+    }
+
+    [Theory]
+    [InlineData(typeof(Ed25519Signature2020Cryptosuite))]
+    [InlineData(typeof(EcdsaSecp256r1Signature2019Cryptosuite))]
+    public void UndefinedCanonicalizationValue_IsRefused(Type suite)
+    {
+        // Every variant comparison reads "== Rdfc", so an undefined value would act as JCS: a verifier
+        // configured "RDFC only" from a bad setting would accept JCS proofs, which is what strict mode
+        // exists to refuse (PR #39 adversarial review).
+        Enum.TryParse<LegacyCanonicalization>("2", out var undefined).Should().BeTrue();
+
+        var act = () => Activator.CreateInstance(suite, undefined, null, LegacyVariantVerification.ConstructedVariantOnly);
+
+        act.Should().Throw<System.Reflection.TargetInvocationException>()
+            .WithInnerException<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("canonicalization");
     }
 }

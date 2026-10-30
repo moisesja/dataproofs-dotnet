@@ -8,6 +8,9 @@ namespace DataProofsDotnet.Legacy.DataIntegrity;
 /// proof alone does not say which one signed it. <see cref="Both"/> keeps verification transparent
 /// to that choice. A verifier whose profile allows one variant uses
 /// <see cref="ConstructedVariantOnly"/>, so a proof made with the other variant does not verify.
+/// <see cref="Both"/> is the zero value and the constructor default, so a verifier that requires
+/// <see cref="ConstructedVariantOnly"/> sets it in code or validates its bound options: a missing
+/// configuration key yields <see cref="Both"/>. An undefined value is refused.
 /// </remarks>
 public enum LegacyVariantVerification
 {

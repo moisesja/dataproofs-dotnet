@@ -181,7 +181,7 @@ Console.WriteLine();
 
 // --- Accepting one variant only (LegacyVariantVerification). The proof does not say which variant ---
 //     signed it, so by default (Both) a suite also accepts the other one. A verifier whose profile
-//     allows a single variant constructs the suite with ConstructedVariantOnly.
+//     allows a single variant passes ConstructedVariantOnly to the constructor.
 Console.WriteLine("--- Ed25519Signature2020, RDFC variant only (LegacyVariantVerification) ---");
 var jcsRegistry = CryptosuiteRegistry.CreateDefault();
 jcsRegistry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Jcs));
@@ -191,7 +191,7 @@ JsonElement jcsSecured = await new DataIntegrityProofPipeline(jcsRegistry).AddPr
 DataIntegrityProofPipeline RdfcVerifier(LegacyVariantVerification verification)
 {
     var verifierRegistry = CryptosuiteRegistry.CreateDefault();
-    verifierRegistry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc, null, verification));
+    verifierRegistry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc, verification: verification));
     return new DataIntegrityProofPipeline(verifierRegistry);
 }
 
