@@ -1,17 +1,17 @@
 using FluentAssertions;
+using VDS.RDF;
+using VDS.RDF.Parsing;
 using Xunit;
 
 namespace DataProofsDotnet.Rdfc.Tests;
 
 /// <summary>
-/// A canary for a known deviation of dotNetRDF's RDFC-1.0 implementation from the specification
-/// (dotnetrdf/dotnetrdf#917, found by the adversarial review of PR #42). When two blank nodes tie at
-/// the first degree and each owns further blank nodes, the Hash N-Degree Quads algorithm issues the
-/// identifiers depth-first (a, then a's x, then b, then b's y); dotNetRDF issues them breadth-first
-/// (a, b, x, y), so its canonical form differs from <c>rdf-canonize</c>'s, and a signature over such
-/// a dataset does not verify across implementations. The W3C rdf-canon suite has no case with this
-/// shape. This test pins the deviation: when a dotNetRDF upgrade makes it fail, the limitation is
-/// gone, so remove the CHANGELOG and PRD notes, turn this into a positive case, and close #917.
+/// The canary for <c>Internal/Rdfc10Canonicalizer.cs</c>, a local copy of dotNetRDF's RDFC-1.0
+/// implementation with its defects fixed (dotnetrdf/dotnetrdf#917, PR #42). This calls dotNetRDF's own
+/// class and pins that it still deviates from the specification. When a dotNetRDF upgrade makes this
+/// fail, the copy has served its purpose: switch <c>RdfcDocumentCanonicalizer</c> back to the upstream
+/// class, delete the copy and this test, and check that <see cref="RdfCanonicalizationDifferentialTests"/>
+/// still passes, which also shows whether the work and depth limits survived.
 /// </summary>
 public sealed class RdfCanonicalizationDeviationTests
 {
@@ -23,7 +23,7 @@ public sealed class RdfCanonicalizationDeviationTests
         + "_:x <https://e.example/n> \"ball\" .\n"
         + "_:y <https://e.example/n> \"ball\" .\n";
 
-    // rdf-canonize 4.x (the specification editors' implementation) and a hand run of the algorithm.
+    // rdf-canonize 5.0.0, and an independent implementation written from the specification's text.
     private const string SpecifiedCanonicalForm =
         "_:c14n0 <https://e.example/p> _:c14n1 .\n"
         + "_:c14n0 <https://e.example/p> _:c14n3 .\n"
@@ -32,21 +32,31 @@ public sealed class RdfCanonicalizationDeviationTests
         + "_:c14n3 <https://e.example/q> _:c14n4 .\n"
         + "_:c14n4 <https://e.example/n> \"ball\" .\n";
 
-    // dotNetRDF 3.5.1.
-    private const string DotNetRdfCanonicalForm =
-        "_:c14n0 <https://e.example/p> _:c14n1 .\n"
-        + "_:c14n0 <https://e.example/p> _:c14n2 .\n"
-        + "_:c14n1 <https://e.example/q> _:c14n3 .\n"
-        + "_:c14n2 <https://e.example/q> _:c14n4 .\n"
-        + "_:c14n3 <https://e.example/n> \"ball\" .\n"
-        + "_:c14n4 <https://e.example/n> \"ball\" .\n";
+    [Fact]
+    public void ThisLibrary_ProducesTheSpecifiedForm()
+        => new RdfcDocumentCanonicalizer().CanonicalizeNQuads(TiedSubtrees).Should().Be(SpecifiedCanonicalForm);
 
     [Fact]
-    public void TiedSubtrees_StillCanonicalizeAsDotNetRdfDoes_NotAsSpecified()
+    public void SortOrder_FollowsRdfCanonize_NotTheSpecificationsCodePoints()
     {
-        var canonical = new RdfcDocumentCanonicalizer().CanonicalizeNQuads(TiedSubtrees);
+        // A deliberate deviation: the specification sorts by code point, which would put U+FF21 before
+        // U+1F600. rdf-canonize, and so the proofs in the field, sort by UTF-16 code unit.
+        var grinning = char.ConvertFromUtf32(0x1F600);
+        const string fullwidthA = "\uFF21";
+        var input = $"<urn:s> <urn:p> \"{fullwidthA}\" .\n<urn:s> <urn:p> \"{grinning}\" .\n";
 
-        canonical.Should().NotBe(SpecifiedCanonicalForm, "this canary fails once dotNetRDF fixes dotnetrdf/dotnetrdf#917; see the class remarks");
-        canonical.Should().Be(DotNetRdfCanonicalForm);
+        new RdfcDocumentCanonicalizer().CanonicalizeNQuads(input)
+            .Should().Be($"<urn:s> <urn:p> \"{grinning}\" .\n<urn:s> <urn:p> \"{fullwidthA}\" .\n");
+    }
+
+    [Fact]
+    public void DotNetRdfsOwnClass_StillDeviates()
+    {
+        var store = new TripleStore();
+        new NQuadsParser().Load(store, new StringReader(TiedSubtrees));
+
+        var upstream = new RdfCanonicalizer("SHA256").Canonicalize(store).SerializedNQuads;
+
+        upstream.Should().NotBe(SpecifiedCanonicalForm, "this fails once dotNetRDF fixes dotnetrdf/dotnetrdf#917; see the class remarks");
     }
 }

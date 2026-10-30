@@ -37,6 +37,8 @@
          Scoped to the directories this project consumes (like the sibling test projects):
          the RDFC-1.0 suite (AC-2), the RDFC/BBS cryptosuite vectors (AC-1), and the contexts. -->
     <Content Include="../fixtures/w3c/rdf-canon/**/*" LinkBase="fixtures/w3c/rdf-canon" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/generated/rdfc-differential.json" Link="fixtures/generated/rdfc-differential.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../fixtures/generated/rdfc-permutation-bomb.nq" Link="fixtures/generated/rdfc-permutation-bomb.nq" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../fixtures/w3c/vc-di-eddsa/**/*" LinkBase="fixtures/w3c/vc-di-eddsa" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../fixtures/w3c/vc-di-ecdsa/**/*" LinkBase="fixtures/w3c/vc-di-ecdsa" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../fixtures/w3c/vc-di-bbs/**/*" LinkBase="fixtures/w3c/vc-di-bbs" CopyToOutputDirectory="PreserveNewest" />

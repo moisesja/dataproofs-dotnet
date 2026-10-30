@@ -10,7 +10,8 @@ namespace DataProofsDotnet.Rdfc;
 /// <summary>
 /// The dotNetRDF-backed implementation of <see cref="IRdfCanonicalizer"/> (FR-9): JSON-LD
 /// 1.1 expansion via <see cref="JsonLdParser"/> and RDF Dataset Canonicalization via
-/// <see cref="RdfCanonicalizer"/>, with context loading delegated to a pluggable
+/// a local copy of dotNetRDF's canonicalizer with its RDFC-1.0 defects fixed (see the remarks), with
+/// context loading delegated to a pluggable
 /// <see cref="IDocumentLoader"/> (offline-only by default, FR-10).
 /// </summary>
 /// <remarks>
@@ -38,7 +39,7 @@ namespace DataProofsDotnet.Rdfc;
 /// input and in a scoped context a loaded context defines. A language tag must be ASCII letters,
 /// digits and hyphens, and a number must fit a double. JSON whose meaning RFC 8259 leaves
 /// unpredictable (an unpaired-surrogate escape, a duplicate member name, invalid UTF-8, nesting past
-/// 64) is refused with <see cref="RdfCanonicalizationException"/>, as the suites already do. Accepted input canonicalizes to exactly the bytes it did before, and every IRI in the
+/// 64) is refused with <see cref="RdfCanonicalizationException"/>, as the suites already do. Every IRI in the
 /// output is spelled as in the input. N-Quads input with an IRI that would be respelled, terms the
 /// store would merge, or an unpaired surrogate is rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
 /// top-level value or node that carries nothing but an <c>@id</c>) are not data loss here, and
@@ -56,7 +57,7 @@ namespace DataProofsDotnet.Rdfc;
 /// theirs. Checked against jsonld.js 9.0.0: byte-identical for directional value objects; jsonld.js
 /// loses a context-level default <c>@direction</c> under a scoped context, where this implementation
 /// follows JSON-LD 1.1 API §5.3.2. 1.5.0 refused such documents and earlier versions signed them
-/// with the direction dropped, so no accepted input changes bytes. A value object with an explicit
+/// with the direction dropped, so carrying it changes no accepted input's bytes. A value object with an explicit
 /// <c>https://www.w3.org/ns/i18n#…</c> datatype is the same RDF literal as the directional string it
 /// spells out, as <c>1</c> is <c>1.0</c>.
 /// A boolean or a number with a <c>@direction</c> is refused: dotNetRDF (like jsonld.js) types it as
@@ -64,6 +65,15 @@ namespace DataProofsDotnet.Rdfc;
 /// to its lexical form. A context's or term's default direction reaches plain strings only, as
 /// JSON-LD 1.1 expansion defines (API §5.3.2): a typed value, a number or a boolean takes none, so
 /// there is nothing to carry or refuse.
+/// </para>
+/// <para>
+/// <b>RDFC-1.0 runs on a local copy of dotNetRDF's canonicalizer</b>, <c>Rdfc10Canonicalizer</c>, with
+/// its defects fixed (dotnetrdf/dotnetrdf#917). dotNetRDF's own class labels tied blank nodes in the
+/// wrong order, so its canonical form differs from the specification's for ordinary documents, such as
+/// two unnamed objects sharing a nested value, and proofs over those documents did not verify across
+/// implementations in either direction. Output here is byte-identical to <c>rdf-canonize</c> on the
+/// committed differential corpus. The copy goes away when an upstream release fixes the defect;
+/// <c>RdfCanonicalizationDeviationTests</c> reports when.
 /// </para>
 /// </remarks>
 public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
@@ -144,8 +154,8 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
             loss = JsonLdLossAudit.FindLoss(json, contexts);
             if (loss is null)
             {
-                // The parse itself is unchanged, so accepted input canonicalizes to the same bytes
-                // as before; its warnings back up the audit, and the handler catches respellings.
+                // The audit only decides whether to refuse; this parse produces the dataset. Its
+                // warnings back up the audit, and the handler catches respellings.
                 var handler = new ExactIriStoreHandler(store);
                 var parser = new JsonLdParser(contexts.Options());
                 var warned = false;
@@ -204,13 +214,18 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
         return store;
     }
 
-    private static RdfCanonicalizer.CanonicalizedRdfDataset Canonicalize(
+    private static Rdfc10Canonicalizer.CanonicalizedRdfDataset Canonicalize(
         ITripleStore store, RdfCanonicalizationHashAlgorithm hashAlgorithm)
     {
+        if (hashAlgorithm is not (RdfCanonicalizationHashAlgorithm.Sha256 or RdfCanonicalizationHashAlgorithm.Sha384))
+        {
+            throw new RdfCanonicalizationException($"Unsupported RDFC-1.0 hash algorithm '{hashAlgorithm}'.");
+        }
+
         try
         {
-            var canonicalizer = new RdfCanonicalizer(ToHashName(hashAlgorithm));
-            return canonicalizer.Canonicalize(store);
+            // Not dotNetRDF's own RdfCanonicalizer, which deviates from RDFC-1.0 (dotnetrdf/dotnetrdf#917).
+            return new Rdfc10Canonicalizer(hashAlgorithm).Canonicalize(store);
         }
         catch (Exception ex)
         {
@@ -221,13 +236,6 @@ public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer
 
     private static string DataLossMessage(string loss)
         => $"The JSON-LD input cannot be canonicalized without losing data: it {loss}.";
-
-    private static string ToHashName(RdfCanonicalizationHashAlgorithm hashAlgorithm) => hashAlgorithm switch
-    {
-        RdfCanonicalizationHashAlgorithm.Sha256 => "SHA256",
-        RdfCanonicalizationHashAlgorithm.Sha384 => "SHA384",
-        _ => throw new RdfCanonicalizationException($"Unsupported RDFC-1.0 hash algorithm '{hashAlgorithm}'."),
-    };
 
     private static string StripBlankNodePrefix(string label)
         => label.StartsWith("_:", StringComparison.Ordinal) ? label[2..] : label;
