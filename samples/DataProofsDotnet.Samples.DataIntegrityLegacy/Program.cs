@@ -179,6 +179,31 @@ catch (ProofGenerationException ex) when (ex.InnerException is JsonLdDataLossExc
 }
 Console.WriteLine();
 
+// --- Accepting one variant only (LegacyVariantVerification). The proof does not say which variant ---
+//     signed it, so by default (Both) a suite also accepts the other one. A verifier whose profile
+//     allows a single variant passes ConstructedVariantOnly to the constructor.
+Console.WriteLine("--- Ed25519Signature2020, RDFC variant only (LegacyVariantVerification) ---");
+var jcsRegistry = CryptosuiteRegistry.CreateDefault();
+jcsRegistry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Jcs));
+JsonElement jcsSecured = await new DataIntegrityProofPipeline(jcsRegistry).AddProofAsync(
+    RdfcCredential(), rdfcOptions, new KeyPairSigner(rdfcKey, crypto));
+
+DataIntegrityProofPipeline RdfcVerifier(LegacyVariantVerification verification)
+{
+    var verifierRegistry = CryptosuiteRegistry.CreateDefault();
+    verifierRegistry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc, verification: verification));
+    return new DataIntegrityProofPipeline(verifierRegistry);
+}
+
+var rdfcPublicKey = PublicKeyMaterial.FromMultikey(rdfcKey.MultibasePublicKey);
+var rdfcOnly = RdfcVerifier(LegacyVariantVerification.ConstructedVariantOnly);
+Check(rdfcOnly.Verify(rdfcSecured, rdfcPublicKey).Verified, "an RDFC-only verifier accepts an RDFC proof");
+Check(!rdfcOnly.Verify(jcsSecured, rdfcPublicKey).Verified, "an RDFC-only verifier rejects a JCS proof");
+Check(RdfcVerifier(LegacyVariantVerification.Both).Verify(jcsSecured, rdfcPublicKey).Verified,
+    "the default verifier also accepts the JCS proof");
+Console.WriteLine("  RDFC-only verifier accepts the RDFC proof and rejects the JCS proof of the same credential OK");
+Console.WriteLine();
+
 Console.WriteLine("Done! All legacy LD-Signature examples completed successfully.");
 return 0;
 

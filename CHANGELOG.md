@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Legacy suites can verify the constructed variant only.** A legacy proof does not say whether
+  it was signed over JCS or RDFC, so `Ed25519Signature2020Cryptosuite` and
+  `EcdsaSecp256r1Signature2019Cryptosuite` verify under the variant they were constructed with and
+  then fall back to the other. A verifier whose profile allows one variant also accepted proofs
+  made with the other: zcap-dotnet, which signs only over RDFC, accepted JCS-variant proofs. That
+  is not a forgery, because JCS signs the bytes verbatim, but it accepts input outside the profile.
+
+  The new enum `LegacyVariantVerification` and a third optional constructor parameter on both suites,
+  `verification = LegacyVariantVerification.Both`, let a verifier pass `ConstructedVariantOnly` to
+  turn the fallback off. In that mode, an RDFC data-loss failure is reported as
+  `DATA_LOSS_DETECTION_ERROR`, as in the RDFC Data Integrity suites. This lifts the dual-variant
+  limitation listed under 1.5.0 for verifiers that opt in.
+
+### Changed
+
+- The default, `LegacyVariantVerification.Both`, keeps the fallback and its result codes, and
+  emitted bytes are unchanged. An undefined `LegacyVariantVerification` value throws
+  `ArgumentOutOfRangeException` rather than acting as `Both`, and so does an undefined
+  `LegacyCanonicalization` value, which 1.5.0 silently treated as `Jcs`. Both come out of
+  configuration binding or `Enum.TryParse` of a stray number, and a verifier built that way would
+  accept exactly the variant it was configured to refuse. `Both` is the enum's zero value and the
+  constructor default, so a verifier that requires `ConstructedVariantOnly` sets it in code or
+  validates its bound options; a missing configuration key yields `Both`.
+- Each suite still has exactly one public constructor, and every parameter has a default, so
+  `ActivatorUtilities.CreateFactory`, `ActivatorUtilities.CreateInstance` (with or without an
+  `IServiceProviderIsService` provider) and Microsoft DI registration by type activate the suites as
+  they did in 1.5.0: they fill the parameters a caller omits from the defaults.
+  `ActivationCompatibilityTests` runs each of those paths on both suites. With two public
+  constructors, `CreateFactory` (with any provider) and `CreateInstance` without
+  `IServiceProviderIsService` throw "Multiple constructors accepting all given argument types".
+
+### Migration note — recompilation required for the legacy suite constructors
+
+Source-compatible, **not binary-compatible**, as with `JwsSigner` in 1.3.0.
+`Ed25519Signature2020Cryptosuite..ctor(LegacyCanonicalization, IRdfCanonicalizer)` and
+`EcdsaSecp256r1Signature2019Cryptosuite..ctor(LegacyCanonicalization, IRdfCanonicalizer)` are replaced
+by `..ctor(LegacyCanonicalization, IRdfCanonicalizer, LegacyVariantVerification)`. An optional parameter
+does not preserve the old CLR method token, so an assembly compiled against 1.5.0 or earlier throws
+`MissingMethodException` at its first `new` of a legacy suite if this assembly is dropped in without a
+rebuild. No source change is needed: recompile, and every existing call shape (`new Suite()`,
+`new Suite(LegacyCanonicalization.Rdfc)`, `new Suite(variant, canonicalizer)`) binds to the new
+default. Reflection that names the 1.5.0 signature exactly has the same step:
+`Activator.CreateInstance(type, canonicalization, canonicalizer)` and `GetConstructor` with those two
+parameter types find no constructor until the third parameter is named; callers that pass
+`BindingFlags.OptionalParamBinding` are unaffected, as are `ActivatorUtilities` and Microsoft DI, which
+fill defaults (see Changed). This is accepted under this
+repository's policy (`RELEASING.md`: binary compatibility is not a release constraint; downstream is
+rebuilt) and recorded here because it is a real migration step. The public .NET API change is
+source-additive, so this is a minor release.
+
 ## [1.5.0] - 2026-10-28
 
 ### Security

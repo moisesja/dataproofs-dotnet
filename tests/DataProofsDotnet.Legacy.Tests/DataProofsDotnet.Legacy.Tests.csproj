@@ -14,6 +14,9 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="coverlet.collector" />
+    <!-- ActivationCompatibilityTests: the suites are activated the way a consumer's DI host does
+         (ActivatorUtilities, ServiceCollection), so the public constructor set is checked by behavior. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>
