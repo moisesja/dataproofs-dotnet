@@ -427,3 +427,26 @@ parameter, which `RELEASING.md` explicitly accepts and 1.3.0 already shipped for
   catches nothing.
 - An "A or B" in a plan or PR body needs the alternatives considered and why they lost. A binary
   choice stated without alternatives is usually incomplete.
+
+## 2026-10-30 — A finding I can fix is a task, not a note (PR #42)
+
+**Mistake:** The adversarial review of the `@direction` change found a bbs-2023 false refusal (`@list`
+reveals never verify) and a misleading refusal message, and the activation spike found the same
+two-constructor defect PR #39 had fixed for the Legacy suites, now on the canonicalizer and the RDFC
+suites. I recorded all three as "known limitations" and "follow-ups" and shipped the PR. The owner's
+answer: "I want things fixed in this PR, too much pushing work to other iterations." Digging into
+the list bug then exposed that bbs-2023 did not interoperate with the reference implementation at
+all, which the deferred note would have hidden for another release.
+
+**Why it happened:** I treated the issue's title as the scope boundary and priced "fix now" as scope
+creep without pricing "defer" at all. A limitation paragraph felt like diligence; it was deferral.
+
+**The rule for myself:**
+- A defect found while working a PR is fixed in that PR by default. Before writing "known
+  limitation" or "follow-up" beside a finding, state what fixing it costs and ask; deferral is the
+  owner's decision, not mine.
+- "Pre-existing" is not a reason to defer. It is a reason to check how deep it goes: a false refusal
+  with an unexplained cause is a symptom until the cause is known, and the cause here was a design
+  deviation from the spec.
+- An interop claim ("wire form matches the reference") needs a cross-implementation check, not a
+  structural one. Run the reference against our output and ours against theirs before claiming it.

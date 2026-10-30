@@ -44,7 +44,7 @@ internal sealed class JsonLdContextCache(IDocumentLoader documentLoader)
         // instead of discarding it silently (issue #36).
         SafeMode = true,
         // Carries a string's base direction in its datatype IRI (https://www.w3.org/ns/i18n#<language>_<direction>,
-        // JSON-LD 1.1 API §8.6), the representation the reference Data Integrity implementations sign
+        // JSON-LD 1.1 API §8.2.2), the representation the reference Data Integrity implementations sign
         // with. Without it dotNetRDF drops @direction silently, so "ltr" and "rtl" signed the same
         // bytes (issue #40). Expansion ignores it, so the audit's probes are unaffected.
         RdfDirection = JsonLdRdfDirectionMode.I18NDatatype,

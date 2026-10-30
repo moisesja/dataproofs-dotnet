@@ -54,7 +54,7 @@ Typical causes:
   Relative IRIs resolved against an `@base` are respelled too, so they are refused.
 - **Distinct IRIs dotNetRDF treats as one.** Example: `https://host` next to `https://host/`. Their
   statements would merge.
-- **A boolean or number with `@direction`.** It becomes an XSD literal, and the direction would be lost.
+- **A boolean or number with `@direction`.** dotNetRDF types it as an XSD literal and drops the direction.
 
 A string's base direction is carried, not refused. `{"@value":"x","@language":"ar","@direction":"rtl"}`
 is signed as `"x"^^<https://www.w3.org/ns/i18n#ar_rtl>`, the JSON-LD 1.1 `rdfDirection: i18n-datatype`

@@ -15,8 +15,9 @@ namespace DataProofsDotnet.Rdfc.Tests;
 /// <c>rdfDirection: i18n-datatype</c> literal (<c>"x"^^&lt;https://www.w3.org/ns/i18n#ar_rtl&gt;</c>),
 /// the representation the reference Data Integrity implementations sign with. 1.5.0 refused every
 /// <c>@direction</c>, and earlier versions dropped it, so <c>ltr</c> and <c>rtl</c> signed the same
-/// bytes. A boolean or a number with a direction is still refused: it becomes an XSD literal first
-/// (JSON-LD 1.1 API §8.6) and the direction would be lost. Direction-free input is unchanged, which the
+/// bytes. A boolean or a number with a direction is still refused: dotNetRDF (like jsonld.js) types it
+/// as an XSD literal and drops the direction, where JSON-LD 1.1 API §8.2.2 step 12 would apply the i18n
+/// datatype to its lexical form. Direction-free input is unchanged, which the
 /// W3C vector tests and <see cref="Issue36DataLossTests.CarriedDocuments"/> pin.
 /// </summary>
 public sealed class Issue40DirectionTests
@@ -47,7 +48,7 @@ public sealed class Issue40DirectionTests
     private static string Directional(string value, string? language, string direction)
         => "{\"@value\":\"" + value + "\"" + (language is null ? "" : ",\"@language\":\"" + language + "\"") + ",\"@direction\":\"" + direction + "\"}";
 
-    /// <summary>The i18n literal JSON-LD 1.1 API §8.6 produces: language lowercased, empty when absent.</summary>
+    /// <summary>The i18n literal JSON-LD 1.1 API §8.2.2 produces: language lowercased, empty when absent.</summary>
     private static string Literal(string value, string language, string direction) => "\"" + value + "\"^^<" + I18n + language + "_" + direction + ">";
 
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement.Clone();
@@ -117,7 +118,7 @@ public sealed class Issue40DirectionTests
     [Fact]
     public void CanonicalizeJsonLd_ExplicitI18nDatatype_IsTheSameLiteralAsTheDirectionalString()
     {
-        // JSON-LD 1.1 API §8.6 defines the directional string's RDF form as this datatype, so the two
+        // JSON-LD 1.1 API §8.2.2 defines the directional string's RDF form as this datatype, so the two
         // spellings are one RDF literal, as 1 and 1.0 are one xsd:integer; not a merge of distinct terms.
         var twins = Vc(Subject("\"name\":[{\"@value\":\"x\",\"@type\":\"" + I18n + "en_ltr\"}," + Directional("x", "EN", "ltr") + "]"));
 
@@ -155,8 +156,9 @@ public sealed class Issue40DirectionTests
     public static TheoryData<string, string, string, string> LossyDocuments() => new()
     {
         // case, document, the message's phrase, input text the message must not quote (FR-23)
-        // A boolean or a number becomes an XSD literal before the direction step (JSON-LD 1.1 API §8.6),
-        // so dotNetRDF drops its direction without a warning, with or without rdfDirection.
+        // dotNetRDF (like jsonld.js) types a boolean or a number as an XSD literal and drops its direction
+        // without a warning, with or without rdfDirection; JSON-LD 1.1 API §8.2.2 step 12 would apply the
+        // i18n datatype to the lexical form instead. The refusal follows the processor.
         { "@direction on a number", Vc(Subject("\"name\":{\"@value\":7,\"@direction\":\"rtl\"}")), Direction, "rtl" },
         { "@direction on a boolean", Vc(Subject("\"name\":{\"@value\":true,\"@direction\":\"rtl\"}")), Direction, "rtl" },
         { "@direction on a double", Vc(Subject("\"name\":{\"@value\":1.5,\"@direction\":\"ltr\"}")), Direction, "ltr" },

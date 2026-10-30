@@ -18,8 +18,10 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// blank-node properties, and ignores <c>@index</c>. It reports only some of those skips, even in
 /// safe mode: a named graph, a property or a list member disappears without a warning. A string's
 /// <c>@direction</c> is carried, because <see cref="JsonLdContextCache.Options"/> sets
-/// <c>rdfDirection: i18n-datatype</c> (issue #40); a boolean's or a number's is still dropped, since
-/// those become XSD literals first (JSON-LD 1.1 API §8.6), so it is refused.
+/// <c>rdfDirection: i18n-datatype</c> (issue #40); a boolean's or a number's is still dropped, because
+/// dotNetRDF (like jsonld.js) types those as XSD literals and skips the direction step, so it is
+/// refused. JSON-LD 1.1 API §8.2.2 step 12 would instead type the lexical form with the i18n datatype;
+/// the refusal follows the processor, not the text.
 /// </para>
 /// <para>
 /// So <see cref="FindLoss(string, JsonLdContextCache)"/> expands the input exactly as
@@ -174,9 +176,10 @@ internal static class JsonLdLossAudit
 
     private static string? FindInValueObject(JObject value)
     {
-        // A string's direction goes into its i18n datatype (JsonLdContextCache.Options). A boolean or
-        // a number becomes an XSD literal before that step (JSON-LD 1.1 API §8.6), and its direction
-        // is dropped without a warning (issue #40). A @type beside @direction fails expansion earlier.
+        // A string's direction goes into its i18n datatype (JsonLdContextCache.Options). dotNetRDF (like
+        // jsonld.js) types a boolean or a number as an XSD literal and drops its direction without a
+        // warning, where JSON-LD 1.1 API §8.2.2 step 12 would apply the i18n datatype (issue #40).
+        // A @type beside @direction fails expansion earlier.
         if (value.ContainsKey("@direction") && value["@value"]?.Type != JTokenType.String)
         {
             return Direction;

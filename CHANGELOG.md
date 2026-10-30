@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DATA_LOSS_DETECTION_ERROR`, as in the RDFC Data Integrity suites. This lifts the dual-variant
   limitation listed under 1.5.0 for verifiers that opt in.
 
+- **`ProofVerificationOptions.KnownContexts`: context validation per VC Data Integrity 1.0 §4.6.**
+  A proof over RDF binds the statements, not the JSON that compacted them, so a holder can present
+  a verified document under a `@context` that reads its terms differently (`boards` as `sails`); it
+  verified here and on the reference implementation alike. The specification's answer is that
+  applications MUST accept only known contexts, after the proofs are verified, and the pipeline had
+  no option for it. With `KnownContexts` set, every `@context` value of the secured document must be
+  one of the listed IRIs; an unlisted value or an inline context object fails the document with a
+  document-level `PROOF_VERIFICATION_ERROR` beside the per-proof results. Unset, nothing is checked,
+  as before. Found by the adversarial review of the bbs-2023 rework (PR #42).
+
 ### Changed
 
 - **RDFC canonicalization carries a string's base direction instead of refusing it** (issue
@@ -51,9 +61,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Accepted input is unchanged: direction-free documents canonicalize to the same bytes as in 1.5.0,
   direction-bearing ones were all refused, and proofs made before 1.5.0 over such documents verify in
   neither version. Still refused, with `JsonLdDataLossException` (`DATA_LOSS_DETECTION_ERROR` on
-  verify): a boolean or a number with a `@direction`, which becomes an XSD literal and would lose it.
+  verify): a boolean or a number with a `@direction`, whose direction dotNetRDF (like jsonld.js) drops
+  when it types the value as an XSD literal; JSON-LD 1.1 API §8.2.2 would apply the i18n datatype to
+  the lexical form instead, so the refusal follows the processor, not the text.
   An explicit `https://www.w3.org/ns/i18n#…` datatype and the directional string it spells out are one
   RDF literal, as `1` and `1.0` are. No public API changes.
+- **One public constructor each for `RdfcDocumentCanonicalizer`, `EddsaRdfc2022Cryptosuite`,
+  `EcdsaRdfc2019Cryptosuite` and `Bbs2023Cryptosuite`:** `(IDocumentLoader? documentLoader = null)`
+  and `(IRdfCanonicalizer? canonicalizer = null)`, `null` meaning the offline default. Each had `()`
+  beside `(X)`, which made `ActivatorUtilities.CreateFactory(type, Type.EmptyTypes)` and
+  `ActivatorUtilities.CreateInstance` with a provider that is not `IServiceProviderIsService` throw
+  "Multiple constructors accepting all given argument types": the defect PR #39 fixed for the Legacy
+  suites, found on these four by the same activation probe. `RdfcActivationCompatibilityTests` runs
+  `CreateFactory`, `CreateInstance` with and without `IServiceProviderIsService`, `AddSingleton(type)`
+  and `Activator` on all four. Every 1.5.0 call shape (`new X()`, `new X(dependency)`) compiles and
+  binds. Migration: an assembly compiled against 1.5.0 must be rebuilt (`MissingMethodException` on
+  `new` until then, as for the Legacy suites); `new X(null)` now means the default instead of throwing
+  `ArgumentNullException`; `Activator.CreateInstance(typeof(X))` and a `where T : new()` constraint
+  no longer apply, since there is no parameterless constructor (no occurrence in this repository,
+  zcap-dotnet or credentials-dotnet).
 - The default, `LegacyVariantVerification.Both`, keeps the fallback and its result codes, and
   emitted bytes are unchanged. An undefined `LegacyVariantVerification` value throws
   `ArgumentOutOfRangeException` rather than acting as `Both`, and so does an undefined
@@ -89,16 +115,59 @@ repository's policy (`RELEASING.md`: binary compatibility is not a release const
 rebuilt) and recorded here because it is a real migration step. The public .NET API change is
 source-additive, so this is a minor release.
 
+### Fixed
+
+- **bbs-2023 proofs now interoperate with the reference implementation** (issue
+  [#43](https://github.com/moisesja/dataproofs-dotnet/issues/43), found while reviewing #40). Through
+  1.5.0 the suite's proofs verified only here: the W3C `derivedRevealDocument.json` vector did not
+  verify (the test checked the CBOR framing only), and a reveal made here failed on the reference
+  verifier. Four deviations from the specification's algorithms, all in `Bbs2023Cryptosuite`:
+  the base proof signed every N-Quad as a BBS message where the spec signs only the non-mandatory
+  ones (the mandatory ones are bound through the BBS header); the derived proof's mandatory and
+  selective indexes were absolute positions in the full list where the spec's are relative (within the
+  revealed N-Quads and within the non-mandatory messages); the reveal document was selected from the
+  skolemized document, so it exposed `"@id": "urn:bnid:_:bN"` skolem IRIs where the spec selects it
+  from the document as written and blank nodes stay blank; and the derived label map was keyed by
+  skolem labels, with every key read back as `b<int>`, where the spec keys it by the reveal's
+  canonical `c14n<int>` labels and the verifier canonicalizes the reveal as given. The last one is
+  why an untampered reveal with an `@list` value never verified (#43): its list blank nodes had no
+  skolem label and were lost in the label map.
+
+  The suite now follows the reference algorithms (`@digitalbazaar/bbs-2023-cryptosuite` over
+  `di-sd-primitives`), including the HMAC over the canonical labels. Verified: the W3C
+  `derivedRevealDocument.json` verifies directly and through the pipeline; the base proof's BBS header
+  equals `addHashData.json`; the derived proof's label map and relative indexes equal
+  `derivedDisclosureData.json`/`derivedAdjIndexes.json` and the reveal equals
+  `derivedUnsignedReveal.json`; and a reveal made here verifies on the reference verifier
+  (`Bbs2023ConformanceTests`, plus an out-of-band run of the JavaScript stack). Verification no
+  longer skolemizes the reveal, so the PR #37 vector where skolemization re-inserted a deleted `@id`
+  is gone: the deleted member now changes the signed literal and the proof fails. The CBOR framing is
+  unchanged, but **bbs-2023 proofs created by 1.5.0 do not verify with this version**, nor the other
+  way round; 1.5.0's verified nowhere else either.
+
+  Documents a `@list` value, or any other blank node the compact skolemizer cannot name, are now
+  refused at creation and derivation with `JsonLdDataLossException` ("holds a blank node that
+  bbs-2023 skolemization cannot name, such as a @list's") instead of failing at verification. The
+  reference implementation cannot sign them either. A language map is refused with the skolemization
+  message, as documented, instead of the language-tag one.
+
 ### Known limitations
 
-- **bbs-2023 cannot yet disclose a document that holds an `@list` value.** The base proof issues and
-  the derivation succeeds, but the untampered reveal fails with `PROOF_VERIFICATION_ERROR`: list blank
-  nodes are not skolemized, so the base proof's label map does not line up with the reveal's canonical
-  labels. Found by the adversarial review of #40 with a plain list of strings; it is a false refusal,
-  not a forgery path. Expanded-form skolemization (#38) is the natural fix. The same review found that
-  a language map under bbs-2023 is refused, as #38 documents, but with the language-tag message rather
-  than the skolemization one. Directional strings inside a list canonicalize correctly; they are
-  unusable under bbs-2023 until this is fixed.
+- **RDFC-1.0 in dotNetRDF 3.5.1 deviates from the specification when tied blank nodes own further
+  blank nodes** ([dotnetrdf/dotnetrdf#917](https://github.com/dotnetrdf/dotnetrdf/issues/917), found
+  by the adversarial review of this change). When two blank nodes have identical first-degree hashes
+  and each owns another blank node (two unnamed nested objects each with a nested object of their
+  own), dotNetRDF issues the canonical identifiers breadth-first where the Hash N-Degree Quads
+  algorithm, and `rdf-canonize`, issue them depth-first. The canonical N-Quads differ, so an
+  `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023` or Legacy RDFC proof over such a dataset does not
+  verify across implementations in either direction. Datasets without that shape, including every
+  W3C vector and the 86-entry rdf-canon suite, are unaffected. `RdfCanonicalizationDeviationTests`
+  pins the six-quad case so an upgrade that fixes it is noticed.
+- **bbs-2023 cannot disclose mandatory statements alone, nor secure a document whose every statement
+  is mandatory.** The spec allows both (zero disclosed BBS messages, zero signed messages); NetCrypto
+  1.7.1's BBS provider needs at least one revealed index and at least one message. Both are refused
+  with `ProofGenerationException` naming the remedy: select at least one non-mandatory statement, or
+  leave one. Lifting this needs a NetCrypto change.
 
 ## [1.5.0] - 2026-10-28
 
