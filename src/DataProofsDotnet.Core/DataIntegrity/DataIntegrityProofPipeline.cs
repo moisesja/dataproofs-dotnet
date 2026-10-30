@@ -335,11 +335,60 @@ public sealed class DataIntegrityProofPipeline
                 securedDocument, proofElements, proofElement, keyProvider, options, cancellationToken).ConfigureAwait(false));
         }
 
+        // VC Data Integrity 1.0 §4.6: with known contexts supplied, the document is accepted only
+        // when every @context value is one of them, and the check runs after the proofs, as the
+        // specification requires. The proof results stay in the result for diagnostics.
+        if (options.KnownContexts is { } knownContexts && ContextProblem(securedDocument, knownContexts) is { } contextProblem)
+        {
+            return new DocumentVerificationResult
+            {
+                Verified = false,
+                ProofResults = results,
+                Problems = [contextProblem],
+            };
+        }
+
         return new DocumentVerificationResult
         {
             Verified = results.Count > 0 && results.All(r => r.Verified),
             ProofResults = results,
         };
+    }
+
+    // Context Validation (VC Data Integrity 1.0 §4.6) over context IRIs: every value of the
+    // document's @context must be a listed IRI. An inline context object cannot be a listed value,
+    // so it fails; a document without @context has nothing to validate. Messages do not quote the
+    // value (FR-23).
+    private static ProofProblem? ContextProblem(JsonElement securedDocument, IReadOnlyCollection<string> knownContexts)
+    {
+        if (!securedDocument.TryGetProperty("@context", out var context))
+        {
+            return null;
+        }
+
+        var values = context.ValueKind == JsonValueKind.Array ? context.EnumerateArray().ToList() : [context];
+        foreach (var value in values)
+        {
+            if (value.ValueKind != JsonValueKind.String)
+            {
+                return new ProofProblem
+                {
+                    Code = ProofProblemCodes.ProofVerificationError,
+                    Message = "The secured document's @context holds a value that is not a context IRI, so it cannot be a known context.",
+                };
+            }
+
+            if (!knownContexts.Contains(value.GetString()!, StringComparer.Ordinal))
+            {
+                return new ProofProblem
+                {
+                    Code = ProofProblemCodes.ProofVerificationError,
+                    Message = "The secured document's @context holds a value that is not a known context.",
+                };
+            }
+        }
+
+        return null;
     }
 
     private async Task<ProofVerificationResult> VerifySingleProofAsync(

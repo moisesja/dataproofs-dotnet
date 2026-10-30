@@ -100,6 +100,8 @@ DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedDomain.get -> st
 DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedDomain.init -> void
 DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedProofPurpose.get -> string?
 DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedProofPurpose.init -> void
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.KnownContexts.get -> System.Collections.Generic.IReadOnlyCollection<string!>?
+DataProofsDotnet.DataIntegrity.ProofVerificationOptions.KnownContexts.init -> void
 DataProofsDotnet.DataIntegrity.ProofVerificationOptions.VerificationTime.get -> System.DateTimeOffset?
 DataProofsDotnet.DataIntegrity.ProofVerificationOptions.VerificationTime.init -> void
 DataProofsDotnet.DataIntegrity.ProofVerificationResult
