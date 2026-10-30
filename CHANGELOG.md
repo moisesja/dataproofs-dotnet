@@ -24,6 +24,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **RDFC canonicalization carries a string's base direction instead of refusing it** (issue
+  [#40](https://github.com/moisesja/dataproofs-dotnet/issues/40)). 1.5.0 refused any document that
+  uses `@direction`, because dotNetRDF's default JSON-LD→RDF conversion drops it, so earlier versions
+  signed `ltr` and `rtl` as the same bytes. The processor now runs with JSON-LD 1.1
+  `rdfDirection: i18n-datatype`: `{"@value":"x","@language":"ar","@direction":"rtl"}` is signed as
+  `"x"^^<https://www.w3.org/ns/i18n#ar_rtl>` (the language lowercased, as that algorithm requires;
+  `#_rtl` without a language), and flipping the direction breaks the proof. Affects `eddsa-rdfc-2022`,
+  `ecdsa-rdfc-2019`, `bbs-2023` and the Legacy RDFC variant. The VCDM 2.0 test suite's
+  "name/description with language and direction" credentials now issue and verify.
+
+  This is the representation the reference Data Integrity implementations sign with: jsonld-signatures
+  and the `eddsa-rdfc-2022`, `ecdsa-rdfc-2019` and selective-disclosure (`di-sd-primitives`)
+  cryptosuites built on it all canonize with `rdfDirection: 'i18n-datatype'`. The Data Integrity
+  specifications name no representation, so it is an unstated profile parameter. The issue proposed an
+  opt-in with the refusal kept as the default, on the premise that a lossless implementation goes beyond
+  what others verify; the premise was inverted, since a refusing verifier could not process what those
+  issuers sign. A verifier whose JSON-LD processor drops direction, the JSON-LD default, does not
+  verify these proofs, as it does not verify theirs. Checked against jsonld.js 9.0.0 with
+  `rdfDirection: 'i18n-datatype'`: the canonical N-Quads are byte-identical for directional value
+  objects, the VCDM 2.0 §11.1 shapes. Two differences are on its side: it drops a context-level default
+  `@direction` whenever a scoped context applies, because its active-context clone keeps `@language`
+  and `@vocab` but not `@direction` (dotNetRDF follows JSON-LD 1.1 API §5.3.2 and signs it), and it
+  signs a number's direction away silently, where this library refuses.
+
+  Accepted input is unchanged: direction-free documents canonicalize to the same bytes as in 1.5.0,
+  direction-bearing ones were all refused, and proofs made before 1.5.0 over such documents verify in
+  neither version. Still refused, with `JsonLdDataLossException` (`DATA_LOSS_DETECTION_ERROR` on
+  verify): a boolean or a number with a `@direction`, which becomes an XSD literal and would lose it.
+  An explicit `https://www.w3.org/ns/i18n#…` datatype and the directional string it spells out are one
+  RDF literal, as `1` and `1.0` are. No public API changes.
 - The default, `LegacyVariantVerification.Both`, keeps the fallback and its result codes, and
   emitted bytes are unchanged. An undefined `LegacyVariantVerification` value throws
   `ArgumentOutOfRangeException` rather than acting as `Both`, and so does an undefined
@@ -58,6 +88,17 @@ fill defaults (see Changed). This is accepted under this
 repository's policy (`RELEASING.md`: binary compatibility is not a release constraint; downstream is
 rebuilt) and recorded here because it is a real migration step. The public .NET API change is
 source-additive, so this is a minor release.
+
+### Known limitations
+
+- **bbs-2023 cannot yet disclose a document that holds an `@list` value.** The base proof issues and
+  the derivation succeeds, but the untampered reveal fails with `PROOF_VERIFICATION_ERROR`: list blank
+  nodes are not skolemized, so the base proof's label map does not line up with the reveal's canonical
+  labels. Found by the adversarial review of #40 with a plain list of strings; it is a false refusal,
+  not a forgery path. Expanded-form skolemization (#38) is the natural fix. The same review found that
+  a language map under bbs-2023 is refused, as #38 documents, but with the language-tag message rather
+  than the skolemization one. Directional strings inside a list canonicalize correctly; they are
+  unusable under bbs-2023 until this is fixed.
 
 ## [1.5.0] - 2026-10-28
 

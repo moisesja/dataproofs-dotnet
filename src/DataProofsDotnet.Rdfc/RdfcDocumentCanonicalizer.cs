@@ -27,8 +27,9 @@ namespace DataProofsDotnet.Rdfc;
 /// So a JSON-LD input is rejected with <see cref="JsonLdDataLossException"/> when it uses a term
 /// its <c>@context</c> does not define, has an IRI that is not a well-formed absolute IRI in any
 /// position (subject, type, property, value, named graph, list member, datatype), has a
-/// malformed language tag, uses a blank node as a property, uses <c>@direction</c> or
-/// <c>@index</c> (including one that expansion drops silently, as from a set object or a null value, through any alias in scope), or has an IRI the canonical N-Quads would spell differently (dot segments,
+/// malformed language tag, uses a blank node as a property, uses <c>@index</c> (including one that
+/// expansion drops silently, as from a set object or a null value, through any alias in scope), uses
+/// <c>@direction</c> on a value that is not a string, or has an IRI the canonical N-Quads would spell differently (dot segments,
 /// percent-encoded unreserved or non-ASCII characters, upper-case scheme or host, a default
 /// port), resolves a relative IRI against <c>@base</c> (dotNetRDF resolves with <see cref="Uri"/>,
 /// which respells it before any check could compare), or has two distinct terms the store would
@@ -42,6 +43,26 @@ namespace DataProofsDotnet.Rdfc;
 /// store would merge, or an unpaired surrogate is rejected too. JSON-LD constructs that produce no RDF by definition (a <c>null</c> value, a
 /// top-level value or node that carries nothing but an <c>@id</c>) are not data loss here, and
 /// numbers are signed in their canonical XSD form, so <c>1</c> and <c>1.0</c> sign the same.
+/// </para>
+/// <para>
+/// A string's base direction is <b>carried</b> (issue #40). The processor runs with JSON-LD 1.1
+/// <c>rdfDirection: i18n-datatype</c>, so <c>{"@value":"x","@language":"ar","@direction":"rtl"}</c>
+/// is signed as <c>"x"^^&lt;https://www.w3.org/ns/i18n#ar_rtl&gt;</c> (the language lowercased, as
+/// that algorithm requires; <c>#_rtl</c> when there is no language), and flipping the direction
+/// breaks the proof. This is the representation the reference Data Integrity implementations
+/// (jsonld-signatures and the eddsa-rdfc-2022, ecdsa-rdfc-2019 and selective-disclosure cryptosuites
+/// built on it) sign with; the Data Integrity specifications name none. A verifier whose JSON-LD
+/// processor drops direction, the JSON-LD default, does not verify these proofs, as it does not verify
+/// theirs. Checked against jsonld.js 9.0.0: byte-identical for directional value objects; jsonld.js
+/// loses a context-level default <c>@direction</c> under a scoped context, where this implementation
+/// follows JSON-LD 1.1 API §5.3.2. 1.5.0 refused such documents and earlier versions signed them
+/// with the direction dropped, so no accepted input changes bytes. A value object with an explicit
+/// <c>https://www.w3.org/ns/i18n#…</c> datatype is the same RDF literal as the directional string it
+/// spells out, as <c>1</c> is <c>1.0</c>.
+/// A boolean or a number with a <c>@direction</c> is refused: it becomes an XSD literal and the
+/// direction would be lost. A context's or term's default direction reaches plain strings only, as
+/// JSON-LD 1.1 expansion defines (API §5.3.2): a typed value, a number or a boolean takes none, so
+/// there is nothing to carry or refuse.
 /// </para>
 /// </remarks>
 public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer

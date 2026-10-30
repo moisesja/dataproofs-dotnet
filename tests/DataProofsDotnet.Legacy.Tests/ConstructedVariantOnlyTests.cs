@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Legacy.DataIntegrity;
 using DataProofsDotnet.Legacy.Tests.TestSupport;
@@ -125,6 +126,37 @@ public class ConstructedVariantOnlyTests
         both.Verified.Should().BeFalse();
         both.Problems.Should().ContainSingle().Which.Code.Should().NotBe(ProofProblemCodes.DataLossDetectionError,
             "Both keeps its dual-variant result codes");
+    }
+
+    [Fact]
+    public async Task Rdfc_SignsAStringsBaseDirection()
+    {
+        // The RDFC canonicalizer carries @direction in the i18n datatype (issue #40), so the legacy RDFC
+        // variant signs it and a flipped direction fails. The strict mode shows the RDFC result alone.
+        var legacyType = Ed25519Signature2020Cryptosuite.ProofType;
+        var document = Fx.Mutate(Document(legacyType), d => d["name"] = new JsonObject
+        {
+            ["@value"] = "x", ["@language"] = "ar", ["@direction"] = "rtl",
+        });
+        var keyPair = Fx.SeedKey(0x40);
+        var signer = Fx.Signer(keyPair);
+        var publicKey = PublicKeyMaterial.FromRaw(KeyType.Ed25519, keyPair.PublicKey);
+        var options = new DataIntegrityProof
+        {
+            Type = legacyType,
+            VerificationMethod = $"did:key:{signer.MultibasePublicKey}#{signer.MultibasePublicKey}",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+            Created = "2026-10-30T00:00:00Z",
+        };
+        var strict = Suite(legacyType, LegacyCanonicalization.Rdfc, LegacyVariantVerification.ConstructedVariantOnly);
+
+        var proof = await strict.CreateProofAsync(document, options, signer);
+        var flipped = Fx.Mutate(document, d => d["name"]!["@direction"] = "ltr");
+
+        strict.VerifyProof(document, proof, publicKey).Verified.Should().BeTrue();
+        var result = strict.VerifyProof(flipped, proof, publicKey);
+        result.Verified.Should().BeFalse();
+        result.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
     }
 
     [Fact]

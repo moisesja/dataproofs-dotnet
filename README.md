@@ -54,6 +54,15 @@ Typical causes:
   Relative IRIs resolved against an `@base` are respelled too, so they are refused.
 - **Distinct IRIs dotNetRDF treats as one.** Example: `https://host` next to `https://host/`. Their
   statements would merge.
+- **A boolean or number with `@direction`.** It becomes an XSD literal, and the direction would be lost.
+
+A string's base direction is carried, not refused. `{"@value":"x","@language":"ar","@direction":"rtl"}`
+is signed as `"x"^^<https://www.w3.org/ns/i18n#ar_rtl>`, the JSON-LD 1.1 `rdfDirection: i18n-datatype`
+representation that the reference Data Integrity implementations (jsonld-signatures and the cryptosuites
+built on it) sign with; the Data Integrity specifications name none. Flipping the direction breaks the
+proof. A verifier whose JSON-LD processor drops direction, the JSON-LD default, does not verify these
+proofs, as it does not verify theirs. The canonical form is byte-identical with jsonld.js for the VCDM
+2.0 value-object shapes; the CHANGELOG lists the two differences on its side.
 
 Accepted input canonicalizes to the same bytes as before. See FR-9 in the PRD for the full rule.
 

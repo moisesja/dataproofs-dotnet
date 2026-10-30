@@ -181,6 +181,38 @@ Check(
 Console.WriteLine("  injected malformed-IRI node: DATA_LOSS_DETECTION_ERROR");
 Console.WriteLine();
 
+// --- A string's base direction is signed, not refused (issue #40). ---
+//     The JSON-LD default conversion to RDF drops @direction, so "ltr" and "rtl" would sign the same
+//     bytes. The canonicalizer runs with JSON-LD 1.1 rdfDirection: i18n-datatype instead, the
+//     representation the reference Data Integrity implementations sign with: the direction goes into
+//     the literal's datatype IRI, and flipping it breaks the proof.
+Console.WriteLine("--- Base direction is signed ---");
+JsonElement DirectionalCredential(string direction) => JsonSerializer.Deserialize<JsonElement>(
+    $$"""
+    {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      "type": ["VerifiableCredential"],
+      "issuer": "did:example:issuer",
+      "name": { "@value": "شهادة", "@language": "ar", "@direction": "{{direction}}" },
+      "credentialSubject": { "id": "did:example:subject" }
+    }
+    """);
+
+string directionalNQuads = Encoding.UTF8.GetString(canonicalizer.CanonicalizeJsonLd(DirectionalCredential("rtl")));
+Console.WriteLine($"  canonical literal: {directionalNQuads.Split('\n').First(line => line.Contains("i18n#"))}");
+Check(directionalNQuads.Contains("^^<https://www.w3.org/ns/i18n#ar_rtl>"), "the direction is carried in the i18n datatype");
+
+JsonElement directionalSecured = await pipeline.AddProofAsync(DirectionalCredential("rtl"), lossOptions, lossSigner);
+Check(pipeline.Verify(directionalSecured, lossKeyMaterial).Verified, "a direction-bearing credential signs and verifies");
+
+var flipped = System.Text.Json.Nodes.JsonObject.Create(directionalSecured)!;
+flipped["name"]!["@direction"] = "ltr";
+DocumentVerificationResult flippedResult = pipeline.Verify(
+    JsonSerializer.SerializeToElement(flipped, DataProofsJsonOptions.Default), lossKeyMaterial);
+Console.WriteLine($"  flipped direction verified: {flippedResult.Verified} (expected False)");
+Check(!flippedResult.Verified, "flipping @direction breaks the proof");
+Console.WriteLine();
+
 // --- The canonicalizer is itself a first-class, reusable component. Show its three forms ---
 // and prove RDFC-1.0 is order-independent: two documents with re-ordered members canonicalize
 // to byte-identical N-Quads (the whole point of canonicalization).

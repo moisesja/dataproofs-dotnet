@@ -29,7 +29,7 @@ public sealed class Issue36DataLossTests
     private const string MalformedIri = "has an IRI that is not a well-formed absolute IRI";
     private const string MalformedLanguageTag = "has a language tag that is not well-formed";
     private const string BlankNodeProperty = "uses a blank node as a property, which RDF cannot carry";
-    private const string Direction = "uses @direction, which the canonical form does not carry";
+    private const string Direction = "uses @direction on a value that is not a string, which the canonical form does not carry";
     private const string Index = "uses @index, which the canonical form does not carry";
     private const string RespelledIri = "has an IRI that the canonical form would spell differently";
     private const string IgnoredContent = "has content that JSON-LD processing ignores";
@@ -83,7 +83,9 @@ public sealed class Issue36DataLossTests
         { "blank node as a property", Vc(Subject("\"_:clearance\":\"admin\"")), BlankNodeProperty, "clearance" },
         { "named graph with a malformed name", Vc(Subject("\"name\":\"n\"") + ",\"@included\":[{\"@id\":\"urn:graph[0]\",\"@graph\":[{\"@id\":\"urn:uuid:inner\",\"name\":\"n\"}]}]"), MalformedIri, "graph" },
         { "list member with brackets", Vc(Subject("\"steps\":[\"urn:step:1\",\"urn:step[2]\"]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@type\":\"@id\",\"@container\":\"@list\"}}")), MalformedIri, "step[2]" },
-        { "@direction", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"ar\",\"@direction\":\"rtl\"}")), Direction, "rtl" },
+        // A string's direction is carried in its i18n datatype (issue #40, Issue40DirectionTests); a
+        // number's is dropped without a warning, since the number becomes an XSD literal first.
+        { "@direction on a number", Vc(Subject("\"name\":{\"@value\":7,\"@direction\":\"rtl\"}")), Direction, "rtl" },
         { "malformed language tag", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"not a tag\"}")), MalformedLanguageTag, "not a tag" },
         // Expansion drops a set object's @index without a warning, so it never reached the audit (PR #37
         // re-review 5686538504); aliases of either keyword count.
