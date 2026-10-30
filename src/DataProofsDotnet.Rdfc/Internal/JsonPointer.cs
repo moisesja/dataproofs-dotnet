@@ -73,6 +73,12 @@ internal static class JsonPointer
         foreach (var pointer in pointers)
         {
             var tokens = Parse(pointer);
+            if (tokens.Count == 0)
+            {
+                // The empty pointer addresses the whole document (RFC 6901; the spec's selectJsonLd).
+                return JsonNode.Parse(document.GetRawText());
+            }
+
             selection = SelectPath(source, tokens, selection);
         }
 
@@ -131,13 +137,15 @@ internal static class JsonPointer
     {
         var sourceCursor = source;
 
-        // The path's value must exist in the source; a pointer addressing nothing is skipped.
+        // The path's value must exist in the source. A pointer addressing nothing is an error, as in
+        // the spec's selectJsonLd: silently skipping it let an issuer's mandatory pointer, or a
+        // holder's selective one, select nothing without anyone noticing (PR #42 review).
         foreach (var token in tokens)
         {
             sourceCursor = Step(sourceCursor, token);
             if (sourceCursor is null)
             {
-                return selection;
+                throw new ArgumentException("A JSON pointer does not match the document.", nameof(tokens));
             }
         }
 

@@ -103,6 +103,7 @@ try
     ProofVerificationResult verified = VerifyReveal(suite, reveal, derivedProof, issuerPublicKey);
     Console.WriteLine($"  VERIFIER derived proof verified: {verified.Verified}");
     Check(verified.Verified, "the derived proof verifies against the issuer's BBS public key");
+    Check(!reveal.GetRawText().Contains("urn:bnid", StringComparison.Ordinal), "the reveal carries blank nodes, not skolem ids: a reference verifier can read it");
 
     // Derive a SECOND presentation revealing favoriteColor instead — different disclosure, same base.
     JsonElement reveal2 = suite.DeriveProof(securedBase, ["/credentialSubject/favoriteColor"], presentationHeader);

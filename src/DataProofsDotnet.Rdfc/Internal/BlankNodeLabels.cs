@@ -28,30 +28,17 @@ namespace DataProofsDotnet.Rdfc.Internal;
 internal static class BlankNodeLabels
 {
     /// <summary>
-    /// Builds the HMAC-shuffled label map: each distinct canonical blank-node label
-    /// (without the <c>_:</c> prefix, e.g. <c>c14n0</c>) maps to a sequential <c>b*</c>
-    /// label assigned by the sorted order of the labels' HMAC digests (spec §3.2.1).
+    /// Builds the spec's shuffled HMAC label map (bbs-2023 <c>createShuffledIdLabelMapFunction</c>):
+    /// each canonical blank-node label (without the <c>_:</c> prefix, e.g. <c>c14n0</c>) maps to a
+    /// sequential <c>b*</c> label assigned by the sorted order of the labels' HMAC digests. The
+    /// digest is over the canonical label, so two implementations canonicalizing the same dataset
+    /// derive the same labels from the same key.
     /// </summary>
-    public static IReadOnlyDictionary<string, string> CreateHmacIdLabelMap(
-        IEnumerable<string> canonicalNQuads, ReadOnlySpan<byte> hmacKey)
+    public static IReadOnlyDictionary<string, string> CreateShuffledIdLabelMap(
+        IEnumerable<string> canonicalLabels, ReadOnlySpan<byte> hmacKey)
     {
         var keyBytes = hmacKey.ToArray();
-
-        // Collect distinct canonical labels in first-seen order, with their HMAC digests.
-        var labels = new List<string>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var nquad in canonicalNQuads)
-        {
-            RewriteTerms(nquad, blankNode: label =>
-            {
-                if (seen.Add(label))
-                {
-                    labels.Add(label);
-                }
-
-                return "_:" + label;
-            });
-        }
+        var labels = canonicalLabels.Distinct(StringComparer.Ordinal).ToList();
 
         var digests = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var label in labels)
@@ -89,6 +76,27 @@ internal static class BlankNodeLabels
 
         relabeled.Sort(StringComparer.Ordinal);
         return relabeled;
+    }
+
+    /// <summary>The distinct blank-node labels (without <c>_:</c>) of the given N-Quad lines, in first-seen order.</summary>
+    public static IReadOnlyList<string> LabelsOf(IEnumerable<string> nquads)
+    {
+        var labels = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var nquad in nquads)
+        {
+            RewriteTerms(nquad, blankNode: label =>
+            {
+                if (seen.Add(label))
+                {
+                    labels.Add(label);
+                }
+
+                return "_:" + label;
+            });
+        }
+
+        return labels;
     }
 
     /// <summary>Splits canonical N-Quads text into individual newline-terminated lines.</summary>

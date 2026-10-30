@@ -53,12 +53,15 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// (requires NetCrypto's BBS <c>header</c> parameter, ≥ 1.0.0).
 /// </para>
 /// <para>
-/// The blank-node relabeling keys the HMAC on document-order-stable skolem identifiers (see the
-/// partition note below) rather than canonical <c>c14n*</c> labels, which keeps the create →
-/// derive → verify partition exactly consistent across the lifecycle without depending on
-/// canonical-label alignment between sub-documents. The CBOR framing and proof-value headers match
-/// the reference wire form; the suite is pinned to a Candidate Recommendation draft (PRD §12.3).
-/// Immutable and thread-safe after construction (NFR-4).
+/// The lifecycle follows the specification's algorithms as the reference implementation runs them
+/// (<c>@digitalbazaar/bbs-2023-cryptosuite</c> over <c>di-sd-primitives</c>): the base proof signs
+/// the non-mandatory N-Quads, with the mandatory ones bound through the BBS header; the derived
+/// proof's indexes are relative (mandatory within the revealed N-Quads, selective within the
+/// non-mandatory messages); the reveal document is selected from the document as the issuer wrote
+/// it, so its blank nodes stay blank; and the derived proof's label map is keyed by the reveal's
+/// canonical (<c>c14n*</c>) labels, which the verifier recomputes by canonicalizing the reveal as
+/// given. The W3C derived-proof vector verifies here, and reveals made here verify on the reference
+/// verifier (PR #42). The suite is pinned to a Candidate Recommendation draft (PRD §12.3).
 /// </para>
 /// </remarks>
 public sealed class Bbs2023Cryptosuite : ICryptosuite
@@ -74,17 +77,14 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private readonly IRdfCanonicalizer _canonicalizer;
     private readonly IBbsCryptoProvider _bbs;
 
-    /// <summary>Creates the suite over the offline-default RDFC canonicalizer (FR-10).</summary>
-    public Bbs2023Cryptosuite()
-        : this(new RdfcDocumentCanonicalizer())
+    /// <summary>
+    /// Creates the suite over <paramref name="canonicalizer"/>, or over the offline-default RDFC
+    /// canonicalizer (FR-10) when it is omitted or <see langword="null"/>. One public constructor,
+    /// so reflection-based activation has a single candidate (PR #39).
+    /// </summary>
+    public Bbs2023Cryptosuite(IRdfCanonicalizer? canonicalizer = null)
     {
-    }
-
-    /// <summary>Creates the suite over the given RDFC canonicalizer.</summary>
-    public Bbs2023Cryptosuite(IRdfCanonicalizer canonicalizer)
-    {
-        ArgumentNullException.ThrowIfNull(canonicalizer);
-        _canonicalizer = canonicalizer;
+        _canonicalizer = canonicalizer ?? new RdfcDocumentCanonicalizer();
         _bbs = new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256);
     }
 
@@ -147,6 +147,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Before skolemization and the @context lookup, which read member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
+        RequirePointers(mandatoryPointers, "A mandatory pointer is invalid.");
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -154,19 +155,28 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         var proofConfig = BuildProofConfig(unsecuredDocument, proofOptions);
         _ = JsonInputCheck.SerializeChecked(proofConfig, RdfcJson.ProofTypeInfo, "The proof configuration");
-        var transformed = Transform(unsecuredDocument, hmacKey.Span, mandatoryPointers);
+        var transformed = Transform(unsecuredDocument, hmacKey.Span);
+        var mandatory = Group(transformed, mandatoryPointers);
 
         var proofHash = HashProofConfig(proofConfig);
-        var mandatoryHash = HashMandatory(transformed.Mandatory.Values);
+        var mandatoryHash = HashMandatory(mandatory.Matching);
         var bbsHeader = Concat(proofHash, mandatoryHash);
 
-        // BBS messages are ALL the relabeled N-Quads in canonical order. The mandatory group is
-        // bound conformantly through the BBS signature header (bbs-2023 §3.4.1):
+        // The BBS messages are the non-mandatory N-Quads (spec createBaseProofValue step 2). The
+        // mandatory group is bound through the BBS signature header instead:
         // bbsHeader = SHA-256(proofConfig) ‖ SHA-256(mandatory N-Quads). The verifier recomputes
-        // this header from the revealed mandatory messages, so a holder that drops or alters a
+        // this header from the revealed mandatory N-Quads, so a holder that drops or alters a
         // mandatory statement produces a header that no longer matches the one committed by the
         // proof, and verification fails.
-        var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        var messages = mandatory.NonMatching.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        if (messages.Count == 0)
+        {
+            // The BBS provider cannot sign an empty message list (NetCrypto 1.7.1), so a document whose
+            // every statement is mandatory cannot be secured with bbs-2023 here.
+            throw new ProofGenerationException(
+                "bbs-2023 needs at least one non-mandatory statement: the BBS provider cannot sign an empty message list.");
+        }
+
         var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, messages, bbsHeader);
 
         var proofValue = Bbs2023ProofValue.SerializeBaseProof(
@@ -220,12 +230,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         RequirePointers(components.MandatoryPointers, "The base proof carries an invalid mandatory pointer.");
         RequirePointers(selectivePointers, "A selective pointer is invalid.");
 
-        var combinedPointers = components.MandatoryPointers.Concat(selectivePointers).ToList();
         DisclosureData disclosure;
         try
         {
-            disclosure = CreateDisclosureData(
-                unsecured, components, combinedPointers, presentationHeader.Span);
+            disclosure = CreateDisclosureData(unsecured, baseProof, components, selectivePointers, presentationHeader.Span);
         }
         catch (CryptographicException ex) when (ex is not BbsUnavailableException)
         {
@@ -241,7 +249,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             disclosure.BbsProof, disclosure.LabelMap, disclosure.MandatoryIndexes,
             disclosure.SelectiveIndexes, presentationHeader.Span);
 
-        var derivedProof = baseProof with { ProofValue = derivedProofValue };
+        // The derived proof carries no @context of its own, as the reference's does not: the reveal
+        // document's applies, and the verifier borrows it.
+        var derivedProof = baseProof with { ProofValue = derivedProofValue, Context = null };
         revealDocument["proof"] = JsonSerializer.SerializeToNode(derivedProof, RdfcJson.ProofTypeInfo);
 
         return JsonSerializer.SerializeToElement(revealDocument, RdfcJson.JsonObjectTypeInfo);
@@ -295,8 +305,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             {
                 components = Bbs2023ProofValue.ParseDerivedProof(proof.ProofValue);
             }
-            catch (Exception ex) when (ex is FormatException or ArgumentException)
+            catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException
+                or OverflowException or CborContentException)
             {
+                // CborReader reports an item of the wrong kind as InvalidOperationException, a value past
+                // the integer range as OverflowException and a malformed encoding as CborContentException.
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofVerificationError,
                     "The proofValue is not a valid bbs-2023 derived proof.", proof);
@@ -309,35 +322,28 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             }
 
             var disclosed = CreateVerifyData(unsecuredDocument, components);
-
-            // Recompute the BBS signature header the issuer bound (bbs-2023 §3.4.8):
-            // bbsHeader = SHA-256(proofConfig) ‖ SHA-256(revealed mandatory N-Quads). The
-            // mandatory N-Quads are the revealed messages whose full-list index is in the derived
-            // proof's mandatory index set, in ascending-index order (disclosed.Messages[k] sits at
-            // disclosed.RevealedIndexes[k] because both lists are ascending over the sorted
-            // canonical N-Quads). A malicious holder that drops or alters a mandatory statement
-            // changes this recomputed header, so it no longer equals the header committed by the
-            // proof and BBS verification fails — this is what enforces mandatory disclosure. The
-            // header is recomputed here, NOT taken from the holder-controlled derived proofValue.
-            var proofHash = HashProofConfig(proofConfig);
-            var mandatorySet = new HashSet<int>(components.MandatoryIndexes);
-            var mandatoryMessages = new List<string>();
-            for (var k = 0; k < disclosed.RevealedIndexes.Count; k++)
+            if (disclosed.Problem is not null)
             {
-                if (mandatorySet.Contains(disclosed.RevealedIndexes[k]))
-                {
-                    mandatoryMessages.Add(disclosed.Messages[k]);
-                }
+                return ProofVerificationResult.Failure(ProofProblemCodes.ProofVerificationError, disclosed.Problem, proof);
             }
 
-            var bbsHeader = Concat(proofHash, HashMandatory(mandatoryMessages));
+            // Recompute the BBS signature header the issuer bound (spec createVerifyData):
+            // bbsHeader = SHA-256(proofConfig) ‖ SHA-256(revealed mandatory N-Quads). A holder that
+            // drops or alters a mandatory statement changes this recomputed header, so it no longer
+            // equals the header committed by the proof and BBS verification fails — this is what
+            // enforces mandatory disclosure. The header is recomputed here, NOT taken from the
+            // holder-controlled derived proofValue.
+            var proofHash = HashProofConfig(proofConfig);
+            var bbsHeader = Concat(proofHash, HashMandatory(disclosed.Mandatory));
 
-            var revealedMessages = disclosed.Messages.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+            // The revealed non-mandatory N-Quads are the disclosed BBS messages, at the selective
+            // indexes of the issuer's non-mandatory message list.
+            var revealedMessages = disclosed.NonMandatory.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
             var verified = _bbs.VerifyProof(
                 publicKey.KeyBytes.Span,
                 components.BbsProof,
                 revealedMessages,
-                disclosed.RevealedIndexes,
+                components.SelectiveIndexes,
                 components.PresentationHeader,
                 bbsHeader);
 
@@ -366,64 +372,77 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         }
     }
 
-    // ---- spec sub-algorithms (canonicalizeAndGroup family, §3.4.16 + DI-ECDSA primitives) ----
+    // ---- spec sub-algorithms (canonicalizeAndGroup family + DI-ECDSA primitives) ----
     //
     // The group partition is made label-stable by SKOLEMIZATION: blank nodes are replaced by
     // urn:bnid:_:b* URIs in document order BEFORE any selection, so a selected sub-document's
-    // RDF nodes keep the identity they had in the whole document. Canonicalizing the skolemized
-    // document then yields only named nodes (no canonical blank-node renaming), and the
-    // deskolemized N-Quads carry the stable b* identifiers. The HMAC label map (FR-12) keys on
-    // those stable identifiers and shuffles them, so every group's relabeled N-Quads are an
-    // exact string-subset of the whole document's.
+    // RDF nodes keep the identity they had in the whole document. Those ids are read back as
+    // blank nodes (_:b*, the "input labels"), the whole document is canonicalized once to map each
+    // input label to its c14n label, and the HMAC label map shuffles the c14n labels into b*
+    // labels (spec createShuffledIdLabelMapFunction). A selection's N-Quads, relabeled through the
+    // same input-label map, are an exact string-subset of the whole document's. A blank node the
+    // skolemizer cannot name (an RDF list's) would have no stable input label, so it is refused.
 
+    // The whole document's relabeled, sorted canonical N-Quads (the BBS message universe), the
+    // input-label → b-label map a selection is relabeled through, and the skolemized document the
+    // selections are taken from.
     private readonly record struct TransformResult(
-        IReadOnlyDictionary<string, string> LabelMap,
         IReadOnlyList<string> NQuads,
-        GroupResult Mandatory,
-        GroupResult NonMandatory,
+        IReadOnlyDictionary<string, string> LabelMap,
         JsonObject SkolemizedDocument);
 
-    private readonly record struct GroupResult(IReadOnlyList<int> Indexes, IReadOnlyList<string> Values);
+    // One pointer group's partition of TransformResult.NQuads: the matching statements with their
+    // absolute indexes, the rest with theirs, and the selection's deskolemized N-Quads.
+    private readonly record struct GroupResult(
+        IReadOnlyList<int> MatchingIndexes,
+        IReadOnlyList<string> Matching,
+        IReadOnlyList<int> NonMatchingIndexes,
+        IReadOnlyList<string> NonMatching,
+        IReadOnlyList<string> DeskolemizedNQuads);
 
-    // transformation (§3.4.2): skolemize, canonicalize, deskolemize, HMAC-shuffle the stable
-    // blank-node ids, relabel and sort, then partition the relabeled N-Quads into the mandatory
-    // group (matched against the skolemized mandatory selection) and the non-mandatory remainder.
-    private TransformResult Transform(
-        JsonElement document, ReadOnlySpan<byte> hmacKey, IReadOnlyList<string> mandatoryPointers)
+    // canonicalizeAndGroup, the shared part: skolemize, read the skolem ids back as blank nodes,
+    // canonicalize once to learn each input label's c14n label, HMAC-shuffle those, relabel and sort.
+    private TransformResult Transform(JsonElement document, ReadOnlySpan<byte> hmacKey)
     {
         var canonicalDocument = RequireNoSkolemIris(document);
         var skolemized = JsonLdSkolemizer.Skolemize(document);
-        var stableNQuads = SkolemizedToStableNQuads(skolemized);
-        RequireSameDataset(canonicalDocument, stableNQuads);
+        var deskolemized = DeskolemizedNQuads(skolemized, canonicalDocument);
 
-        var labelMap = BlankNodeLabels.CreateHmacIdLabelMap(stableNQuads, hmacKey);
-        var nquads = BlankNodeLabels.RelabelAndSort(stableNQuads, labelMap);
+        var canonicalIdMap = CanonicalIdMap(deskolemized);
+        var shuffled = BlankNodeLabels.CreateShuffledIdLabelMap(canonicalIdMap.Values, hmacKey);
+        var labelMap = canonicalIdMap.ToDictionary(pair => pair.Key, pair => shuffled[pair.Value], StringComparer.Ordinal);
+        var nquads = BlankNodeLabels.RelabelAndSort(deskolemized, labelMap);
 
-        var mandatoryMatches = SelectionNQuads(skolemized, mandatoryPointers, labelMap);
+        return new TransformResult(nquads, labelMap, skolemized);
+    }
 
-        var mandatoryIndexes = new List<int>();
-        var mandatoryValues = new List<string>();
-        var nonMandatoryIndexes = new List<int>();
-        var nonMandatoryValues = new List<string>();
-        for (var i = 0; i < nquads.Count; i++)
+    // The group of TransformResult.NQuads a pointer set addresses: the skolemized selection's
+    // N-Quads, relabeled through the shared label map, are an exact string-subset of the whole.
+    private GroupResult Group(TransformResult transformed, IReadOnlyList<string> pointers)
+    {
+        var deskolemizedSelection = SelectionNQuads(transformed.SkolemizedDocument, pointers);
+        var selected = new HashSet<string>(
+            BlankNodeLabels.RelabelAndSort(deskolemizedSelection, transformed.LabelMap), StringComparer.Ordinal);
+
+        var matchingIndexes = new List<int>();
+        var matching = new List<string>();
+        var nonMatchingIndexes = new List<int>();
+        var nonMatching = new List<string>();
+        for (var i = 0; i < transformed.NQuads.Count; i++)
         {
-            if (mandatoryMatches.Contains(nquads[i]))
+            if (selected.Contains(transformed.NQuads[i]))
             {
-                mandatoryIndexes.Add(i);
-                mandatoryValues.Add(nquads[i]);
+                matchingIndexes.Add(i);
+                matching.Add(transformed.NQuads[i]);
             }
             else
             {
-                nonMandatoryIndexes.Add(i);
-                nonMandatoryValues.Add(nquads[i]);
+                nonMatchingIndexes.Add(i);
+                nonMatching.Add(transformed.NQuads[i]);
             }
         }
 
-        return new TransformResult(
-            labelMap, nquads,
-            new GroupResult(mandatoryIndexes, mandatoryValues),
-            new GroupResult(nonMandatoryIndexes, nonMandatoryValues),
-            skolemized);
+        return new GroupResult(matchingIndexes, matching, nonMatchingIndexes, nonMatching, deskolemizedSelection);
     }
 
     private readonly record struct DisclosureData(
@@ -433,94 +452,155 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         IReadOnlyList<int> SelectiveIndexes,
         JsonNode RevealDocument);
 
-    // createDisclosureData (§3.4.6): recompute the partition over the base document, identify
-    // which non-mandatory messages the combined pointers disclose, BBS-derive a proof over the
-    // non-mandatory message list revealing exactly those, and select the reveal document over
-    // the combined pointers (carrying the stable skolem ids so the verifier reconstructs labels).
+    // createDisclosureData: recompute the partition over the base document for the mandatory,
+    // selective and combined pointer groups; express the mandatory indexes relative to the revealed
+    // (combined) N-Quads and the selective indexes relative to the non-mandatory messages; BBS-derive
+    // a proof over the non-mandatory messages revealing the selective ones; select the reveal
+    // document from the document as the issuer wrote it; and key the verifier's label map by the
+    // canonical labels the verifier will compute from that reveal document.
     private DisclosureData CreateDisclosureData(
         JsonElement document,
+        DataIntegrityProof baseProof,
         Bbs2023ProofValue.BaseProofComponents baseComponents,
-        IReadOnlyList<string> combinedPointers,
+        IReadOnlyList<string> selectivePointers,
         ReadOnlySpan<byte> presentationHeader)
     {
-        var transformed = Transform(document, baseComponents.HmacKey, baseComponents.MandatoryPointers);
+        var transformed = Transform(document, baseComponents.HmacKey);
+        var combinedPointers = baseComponents.MandatoryPointers.Concat(selectivePointers).ToList();
+        var mandatory = Group(transformed, baseComponents.MandatoryPointers);
+        var selective = Group(transformed, selectivePointers);
+        var combined = Group(transformed, combinedPointers);
 
-        // Selective indexes: positions in the FULL relabeled N-Quad list of the non-mandatory
-        // statements the combined pointers disclose.
-        var combinedMatches = SelectionNQuads(transformed.SkolemizedDocument, combinedPointers, transformed.LabelMap);
-        var mandatorySet = new HashSet<int>(transformed.Mandatory.Indexes);
-        var selectiveIndexes = new List<int>();
-        for (var i = 0; i < transformed.NQuads.Count; i++)
+        // Mandatory indexes, relative to the revealed N-Quads (the combined group's matches, ascending).
+        var mandatorySet = new HashSet<int>(mandatory.MatchingIndexes);
+        var mandatoryIndexes = new List<int>();
+        for (var relative = 0; relative < combined.MatchingIndexes.Count; relative++)
         {
-            if (!mandatorySet.Contains(i) && combinedMatches.Contains(transformed.NQuads[i]))
+            if (mandatorySet.Contains(combined.MatchingIndexes[relative]))
             {
-                selectiveIndexes.Add(i);
+                mandatoryIndexes.Add(relative);
             }
         }
 
-        // Reveal the mandatory group AND the selected statements (ascending full-list order).
-        var revealedIndexes = transformed.Mandatory.Indexes.Concat(selectiveIndexes).Distinct().OrderBy(x => x).ToList();
-
-        // No mandatory statements and a selection that is empty or matches nothing: the BBS
-        // provider refuses a proof revealing no message with ArgumentException, so reject it here
-        // as the documented exception (PR #35 review). An empty selection alongside mandatory
-        // statements is a valid mandatory-only disclosure and reaches the provider.
-        if (revealedIndexes.Count == 0)
+        // Selective indexes, relative to the non-mandatory messages (the BBS message list).
+        var selectiveSet = new HashSet<int>(selective.MatchingIndexes);
+        var selectiveIndexes = new List<int>();
+        for (var relative = 0; relative < mandatory.NonMatchingIndexes.Count; relative++)
         {
-            throw new ProofGenerationException("The selective disclosure reveals no statements.");
+            if (selectiveSet.Contains(mandatory.NonMatchingIndexes[relative]))
+            {
+                selectiveIndexes.Add(relative);
+            }
         }
 
-        var messages = transformed.NQuads.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        // A selection that is empty or matches nothing discloses no BBS message. Without mandatory
+        // statements that reveals nothing at all (PR #35 review). With them it is the spec's
+        // mandatory-only disclosure, which the BBS provider cannot produce: it needs at least one
+        // revealed index (NetCrypto 1.7.1). Both are reported as the documented exception.
+        if (selectiveIndexes.Count == 0)
+        {
+            throw new ProofGenerationException(mandatory.Matching.Count == 0
+                ? "The selective disclosure reveals no statements."
+                : "A mandatory-only disclosure is not supported: the BBS provider needs at least one disclosed message, so select at least one non-mandatory statement.");
+        }
+
         // The derived proof commits to the same BBS header the issuer bound at sign time
         // (bbsHeader = proofHash ‖ mandatoryHash, carried in the base proofValue); the verifier
-        // recomputes it from the revealed mandatory messages (bbs-2023 §3.4.6).
+        // recomputes it from the revealed mandatory N-Quads. BBS proof generation checks nothing, so
+        // a base document or proof configuration altered since signing would derive a proof that can
+        // never verify: recompute the header from what the holder has and check the signature over
+        // the non-mandatory messages first, and say which failed (PR #42 review).
+        var proofConfig = baseProof with { ProofValue = null };
+        if (proofConfig.Context is null && document.TryGetProperty("@context", out var documentContext))
+        {
+            proofConfig = proofConfig with { Context = documentContext.Clone() };
+        }
+
+        var expectedHeader = Concat(HashProofConfig(proofConfig), HashMandatory(mandatory.Matching));
+        if (!expectedHeader.AsSpan().SequenceEqual(baseComponents.BbsHeader))
+        {
+            throw new ProofGenerationException(
+                "The base proof's BBS header does not match the document and proof configuration: a mandatory value or the proof was altered after signing.");
+        }
+
+        var messages = mandatory.NonMatching.Select(nq => Encoding.UTF8.GetBytes(nq)).ToList();
+        if (!_bbs.Verify(baseComponents.PublicKey, baseComponents.BbsSignature, messages, baseComponents.BbsHeader))
+        {
+            throw new ProofGenerationException("The base proof's BBS signature could not be used to derive a proof.");
+        }
+
         var bbsProof = _bbs.DeriveProof(
-            baseComponents.PublicKey, baseComponents.BbsSignature, messages, revealedIndexes,
+            baseComponents.PublicKey, baseComponents.BbsSignature, messages, selectiveIndexes,
             presentationHeader, baseComponents.BbsHeader);
 
-        // Select the reveal document on the SKOLEMIZED document so it carries the stable
-        // urn:bnid ids; the verifier deskolemizes + relabels with the same labelMap.
-        var revealDocument = JsonPointer.SelectJsonLd(
-                JsonSerializer.SerializeToElement(transformed.SkolemizedDocument, RdfcJson.JsonObjectTypeInfo),
-                combinedPointers)
+        // The reveal document is selected from the document as given, so its blank nodes stay blank
+        // and a verifier sees no skolem id.
+        var revealDocument = JsonPointer.SelectJsonLd(document, combinedPointers)
             ?? throw new ProofGenerationException("The selective disclosure produced an empty reveal document.");
 
-        return new DisclosureData(
-            bbsProof, transformed.LabelMap, transformed.Mandatory.Indexes, selectiveIndexes, revealDocument);
+        // The verifier canonicalizes that reveal document and gets c14n labels; the deskolemized
+        // combined selection is the same dataset, so canonicalizing it tells which c14n label each
+        // input label becomes. Map those to the HMAC labels (spec createDisclosureData steps 9–10).
+        var verifierLabelMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (inputLabel, canonicalLabel) in CanonicalIdMap(combined.DeskolemizedNQuads))
+        {
+            verifierLabelMap[canonicalLabel] = transformed.LabelMap[inputLabel];
+        }
+
+        return new DisclosureData(bbsProof, verifierLabelMap, mandatoryIndexes, selectiveIndexes, revealDocument);
     }
 
-    private readonly record struct VerifyData(IReadOnlyList<string> Messages, IReadOnlyList<int> RevealedIndexes);
+    // The revealed N-Quads split by the derived proof's mandatory indexes, or the reason the reveal
+    // document and the derived proof do not fit together.
+    private readonly record struct VerifyData(IReadOnlyList<string> Mandatory, IReadOnlyList<string> NonMandatory, string? Problem);
 
-    // createVerifyData (§3.4.8): the reveal document carries stable skolem ids; canonicalize,
-    // deskolemize, relabel via the derived proof's labelMap and sort to recover the disclosed
-    // N-Quads — these are exactly the revealed BBS messages. Their original full-list indexes
-    // are the union of the mandatory and selective index sets, ascending.
+    // createVerifyData: canonicalize the reveal document as given (its blank nodes get c14n labels),
+    // relabel through the derived proof's label map, sort, and split by the mandatory indexes. The
+    // reveal is never skolemized: it is canonicalized exactly as a reference verifier would.
     private VerifyData CreateVerifyData(JsonElement revealDocument, Bbs2023ProofValue.DerivedProofComponents components)
     {
-        var stable = SkolemizedToStableNQuads(JsonLdSkolemizer.Skolemize(revealDocument));
+        var canonical = CanonicalNQuadLines(revealDocument);
 
-        // The holder's reveal gets the same check as the issuer's document: skolemizing it must not
-        // change its data. Otherwise deleting a member the skolemizer re-inserts, such as an @id in a
-        // @json value, recreates the signed bytes and still verifies (PR #37 review). The reveal's
-        // skolem ids are read back as the blank nodes they stand for.
-        RequireSameDataset(JsonLdSkolemizer.Deskolemize(CanonicalNQuadLines(revealDocument)), stable);
+        // Every blank node of the reveal must be in the holder's label map; an unmapped label would
+        // keep its c14n name and could never match a signed message.
+        if (BlankNodeLabels.LabelsOf(canonical).Any(label => !components.LabelMap.ContainsKey(label)))
+        {
+            return new VerifyData([], [], "The derived proof's label map does not cover the reveal document.");
+        }
 
-        var disclosedMessages = BlankNodeLabels.RelabelAndSort(stable, components.LabelMap);
+        var nquads = BlankNodeLabels.RelabelAndSort(canonical, components.LabelMap);
 
-        var revealedIndexes = components.MandatoryIndexes
-            .Concat(components.SelectiveIndexes)
-            .Distinct()
-            .OrderBy(x => x)
-            .ToList();
+        var mandatorySet = new HashSet<int>(components.MandatoryIndexes);
+        if (mandatorySet.Count != components.MandatoryIndexes.Count || mandatorySet.Any(index => index < 0 || index >= nquads.Count))
+        {
+            return new VerifyData([], [], "The derived proof's mandatory indexes do not address the reveal document.");
+        }
 
-        return new VerifyData(disclosedMessages, revealedIndexes);
+        if (components.SelectiveIndexes.Distinct().Count() != components.SelectiveIndexes.Count || components.SelectiveIndexes.Any(index => index < 0))
+        {
+            return new VerifyData([], [], "The derived proof's selective indexes are not distinct non-negative positions.");
+        }
+
+        var mandatory = new List<string>();
+        var nonMandatory = new List<string>();
+        for (var i = 0; i < nquads.Count; i++)
+        {
+            (mandatorySet.Contains(i) ? mandatory : nonMandatory).Add(nquads[i]);
+        }
+
+        if (nonMandatory.Count != components.SelectiveIndexes.Count)
+        {
+            return new VerifyData([], [], "The number of disclosed non-mandatory statements does not equal the number of selective indexes.");
+        }
+
+        return new VerifyData(mandatory, nonMandatory, null);
     }
 
     // Skolem ids are urn:bnid: IRIs that deskolemization reads back as blank nodes, so the issuer's
     // document must not hold one of its own: it would become a blank node too, and could merge with
     // the skolemized node it collides with (adversarial review). Checked on the canonical form, so a
-    // compact IRI that only a context expands into urn:bnid: is caught as well. The reveal document
-    // carries skolem ids by design, so verification does not run this.
+    // compact IRI that only a context expands into urn:bnid: is caught as well. Verification
+    // canonicalizes the reveal document as given and does not skolemize, so it does not run this.
     private IReadOnlyList<string> RequireNoSkolemIris(JsonElement document)
     {
         var usesNamespace = false;
@@ -545,18 +625,18 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     }
 
     // Skolemization works on compact JSON without the context, so it can mistake a JSON value for a
-    // node and add an @id to it, such as a @json literal or an @id map: the signed data and the reveal
-    // document would then carry a member the issuer never wrote (adversarial review). So at every
-    // boundary (create, derive and verify) the document as given and the skolemized document, both
-    // with skolem ids read back as blank nodes, must canonicalize to the same dataset.
-    private void RequireSameDataset(IReadOnlyList<string> document, IReadOnlyList<string> stableNQuads)
+    // node and add an @id to it, such as a @json literal or an @id map: the signed data would then
+    // carry a member the issuer never wrote (adversarial review). So on creation and derivation the
+    // document as given and the skolemized document, with skolem ids read back as blank nodes, must
+    // canonicalize to the same dataset. Verification canonicalizes the reveal document as given.
+    private void RequireSameDataset(IReadOnlyList<string> document, IReadOnlyList<string> deskolemized)
     {
         string given;
         string skolemized;
         try
         {
             given = _canonicalizer.CanonicalizeNQuads(string.Concat(document));
-            skolemized = _canonicalizer.CanonicalizeNQuads(string.Concat(stableNQuads));
+            skolemized = _canonicalizer.CanonicalizeNQuads(string.Concat(deskolemized));
         }
         catch (RdfCanonicalizationException ex)
         {
@@ -565,22 +645,60 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         if (!string.Equals(given, skolemized, StringComparison.Ordinal))
         {
-            throw new ProofGenerationException(DataLossMessage, new JsonLdDataLossException(
-                "The JSON-LD input cannot be canonicalized without losing data: bbs-2023 skolemization would change "
-                + "it, which happens for a @json value or a container map."));
+            throw SkolemizationWouldChange();
         }
     }
 
-    // Skolemize → canonicalize (only named nodes survive) → deskolemize back to stable _:b*
-    // blank-node labels. The result is the document's N-Quads with document-order-stable ids.
-    private IReadOnlyList<string> SkolemizedToStableNQuads(JsonObject skolemized)
+    private static ProofGenerationException SkolemizationWouldChange()
+        => new(DataLossMessage, new JsonLdDataLossException(
+            "The JSON-LD input cannot be canonicalized without losing data: bbs-2023 skolemization would change "
+            + "it, which happens for a @json value, a container map, a top-level @graph, @nest or an aliased @id."));
+
+    // The skolemized document's canonical N-Quads with the skolem ids read back as blank nodes: the
+    // document's statements under document-order-stable input labels (_:b*), sorted.
+    private IReadOnlyList<string> DeskolemizedNQuads(JsonObject skolemized, IReadOnlyList<string> canonicalDocument)
     {
-        var element = JsonSerializer.SerializeToElement(skolemized, RdfcJson.JsonObjectTypeInfo);
-        var canonical = CanonicalNQuadLines(element);
-        var deskolemized = JsonLdSkolemizer.Deskolemize(canonical);
-        var sorted = deskolemized.ToList();
-        sorted.Sort(StringComparer.Ordinal);
-        return sorted;
+        IReadOnlyList<string> skolemizedNQuads;
+        try
+        {
+            skolemizedNQuads = CanonicalNQuadLines(JsonSerializer.SerializeToElement(skolemized, RdfcJson.JsonObjectTypeInfo));
+        }
+        catch (ProofGenerationException)
+        {
+            // The document itself canonicalized (canonicalDocument), so whatever stops the skolemized
+            // copy is the skolemizer's doing: the @id it added to a language map reads as a language
+            // tag, an @id added under @nest or beside an aliased @id is invalid JSON-LD, and so on.
+            throw SkolemizationWouldChange();
+        }
+
+        // After skolemization every node object has an IRI. A blank node still here has no stable
+        // input label, so a selection could not be relabeled consistently: an RDF list's nodes, or a
+        // blank node identifier used as a plain value, which compact JSON cannot tell from a string
+        // (the reference implementation cannot sign a @list either).
+        if (BlankNodeLabels.LabelsOf(skolemizedNQuads).Count > 0)
+        {
+            throw new ProofGenerationException(DataLossMessage, new JsonLdDataLossException(
+                "The JSON-LD input cannot be canonicalized without losing data: it holds a blank node that bbs-2023 "
+                + "skolemization cannot name, such as a @list's or a blank node identifier used as a plain value."));
+        }
+
+        var deskolemized = JsonLdSkolemizer.Deskolemize(skolemizedNQuads).ToList();
+        deskolemized.Sort(StringComparer.Ordinal);
+        RequireSameDataset(canonicalDocument, deskolemized);
+        return deskolemized;
+    }
+
+    // Each input blank-node label (without _:) → its RDFC-1.0 canonical label (without _:).
+    private IReadOnlyDictionary<string, string> CanonicalIdMap(IReadOnlyList<string> nquads)
+    {
+        try
+        {
+            return _canonicalizer.CanonicalizeNQuadsToMap(string.Concat(nquads));
+        }
+        catch (RdfCanonicalizationException ex)
+        {
+            throw new ProofGenerationException("The document could not be RDFC-canonicalized.", ex);
+        }
     }
 
     private IReadOnlyList<string> CanonicalNQuadLines(JsonElement document)
@@ -603,21 +721,30 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         return BlankNodeLabels.SplitLines(Encoding.UTF8.GetString(canonical));
     }
 
-    // The relabeled N-Quads of the skolemized selection over the given pointers — an exact
-    // string-subset of the whole document's relabeled N-Quads (skolem ids are shared).
-    private HashSet<string> SelectionNQuads(
-        JsonObject skolemizedDocument, IReadOnlyList<string> pointers, IReadOnlyDictionary<string, string> labelMap)
+    // The deskolemized N-Quads of the skolemized selection over the given pointers: the selection
+    // carries the whole document's skolem ids, so its statements are the whole document's, under
+    // the same input labels. Empty when the pointers select nothing.
+    private IReadOnlyList<string> SelectionNQuads(JsonObject skolemizedDocument, IReadOnlyList<string> pointers)
     {
         var element = JsonSerializer.SerializeToElement(skolemizedDocument, RdfcJson.JsonObjectTypeInfo);
-        var selection = JsonPointer.SelectJsonLd(element, pointers);
-        if (selection is JsonObject selectionObject)
+        JsonNode? selected;
+        try
         {
-            var selectionStable = SkolemizedToStableNQuads(selectionObject);
-            var relabeled = BlankNodeLabels.RelabelAndSort(selectionStable, labelMap);
-            return new HashSet<string>(relabeled, StringComparer.Ordinal);
+            selected = JsonPointer.SelectJsonLd(element, pointers);
+        }
+        catch (ArgumentException ex)
+        {
+            // A pointer that addresses nothing (the spec's selectJsonLd fails on it too).
+            throw new ProofGenerationException("A JSON pointer does not match the document.", ex);
         }
 
-        return new HashSet<string>(StringComparer.Ordinal);
+        if (selected is not JsonObject selection)
+        {
+            return [];
+        }
+
+        var canonical = CanonicalNQuadLines(JsonSerializer.SerializeToElement(selection, RdfcJson.JsonObjectTypeInfo));
+        return JsonLdSkolemizer.Deskolemize(canonical);
     }
 
     private DataIntegrityProof BuildProofConfig(JsonElement document, DataIntegrityProof proofOptions)
@@ -695,6 +822,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         {
             foreach (var pointer in pointers)
             {
+                if (pointer is null)
+                {
+                    throw new ProofGenerationException(message);
+                }
+
                 _ = JsonPointer.Parse(pointer);
             }
         }

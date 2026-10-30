@@ -71,14 +71,16 @@ public sealed class Bbs2023LifecycleTests
     }
 
     // The fixture's selective set plus additional baseline-feature selective subsets, so each
-    // distinct selective-disclosure pointer set is derived-then-verified.
+    // distinct selective-disclosure pointer set is derived-then-verified. Each selects at least one
+    // non-mandatory statement: the BBS provider cannot derive a proof that discloses no message, so a
+    // mandatory-only disclosure is refused (Bbs2023ConformanceTests).
     public static TheoryData<string[]> SelectivePointerSets()
     {
         var data = new TheoryData<string[]>();
         data.Add(JsonSerializer.Deserialize<string[]>(Fx.Text("w3c", "vc-di-bbs", "TestVectors", "windSelective.json"))!);
-        data.Add(new[] { "/credentialSubject/sails/1" });
+        data.Add(new[] { "/credentialSubject/sails/0" });
         data.Add(new[] { "/credentialSubject/boards/1", "/credentialSubject/sails/0" });
-        data.Add(Array.Empty<string>()); // mandatory-only disclosure (no selective pointers)
+        data.Add(new[] { "/credentialSubject/sails/1", "/credentialSubject/boards/1/boardName" }); // a mandatory pointer beside a selective one
         return data;
     }
 
@@ -115,7 +117,7 @@ public sealed class Bbs2023LifecycleTests
         var suite = new Bbs2023Cryptosuite();
         var secured = await CreateSecuredBaseAsync(suite, sk, hmacKey, WindMandatory());
 
-        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
         var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
 
         // Tamper a mandatory statement (issuer) — must fail, not throw.
@@ -137,17 +139,18 @@ public sealed class Bbs2023LifecycleTests
         // RECOMPUTES it at verify from the revealed mandatory messages.
         //
         // This isolates that binding: starting from an honest derived proof, we re-pack the derived
-        // proofValue moving one index from the mandatory set into the selective set. The BBS revealed
-        // set (mandatory ∪ selective) is UNCHANGED, so the BBS proof layer is still satisfied — only
-        // the recomputed mandatory header differs. Before the header binding this verified true (the
-        // mandatory partition was unenforced); now the recomputed header no longer matches the one
-        // the proof commits to, so verification fails.
+        // proofValue demoting one mandatory index (relative to the revealed N-Quads) and growing the
+        // selective index set (relative to the non-mandatory messages) by one, so the counts the
+        // verifier checks still agree. The revealed statements are UNCHANGED; only the recomputed
+        // mandatory header differs. Before the header binding this verified true (the mandatory
+        // partition was unenforced); now the recomputed header no longer matches the one the proof
+        // commits to, so verification fails.
         var (sk, hmacKey) = KeyMaterial();
         var suite = new Bbs2023Cryptosuite();
         var secured = await CreateSecuredBaseAsync(suite, sk, hmacKey, WindMandatory());
         var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
 
-        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
         var honestProof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
         var unsecured = Fx.Mutate(reveal, o => o.Remove("proof"));
 
@@ -157,9 +160,9 @@ public sealed class Bbs2023LifecycleTests
         // Malicious re-pack: demote the first mandatory index to the selective set.
         var components = Bbs2023ProofValue.ParseDerivedProof(honestProof.ProofValue!);
         components.MandatoryIndexes.Should().NotBeEmpty();
-        var demoted = components.MandatoryIndexes[0];
         var shrunkMandatory = components.MandatoryIndexes.Skip(1).ToList();
-        var grownSelective = components.SelectiveIndexes.Append(demoted).OrderBy(x => x).ToList();
+        var unusedSelective = Enumerable.Range(0, int.MaxValue).First(i => !components.SelectiveIndexes.Contains(i));
+        var grownSelective = components.SelectiveIndexes.Append(unusedSelective).OrderBy(x => x).ToList();
 
         var forgedValue = Bbs2023ProofValue.SerializeDerivedProof(
             components.BbsProof, components.LabelMap, shrunkMandatory, grownSelective, components.PresentationHeader);
@@ -176,7 +179,7 @@ public sealed class Bbs2023LifecycleTests
         var (sk, hmacKey) = KeyMaterial();
         var suite = new Bbs2023Cryptosuite();
         var secured = await CreateSecuredBaseAsync(suite, sk, hmacKey, WindMandatory());
-        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
 
         var wrongPk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.Generate(KeyType.Bls12381G2).PublicKey);
         VerifyReveal(suite, reveal, wrongPk).Verified.Should().BeFalse();
@@ -188,7 +191,7 @@ public sealed class Bbs2023LifecycleTests
         var (sk, hmacKey) = KeyMaterial();
         var suite = new Bbs2023Cryptosuite();
         var secured = await CreateSecuredBaseAsync(suite, sk, hmacKey, WindMandatory());
-        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
         var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
 
         var unsecured = Fx.Mutate(reveal, o => o.Remove("proof"));

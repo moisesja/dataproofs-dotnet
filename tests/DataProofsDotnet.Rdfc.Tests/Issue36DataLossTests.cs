@@ -844,10 +844,12 @@ public sealed class Issue36DataLossTests
     }
 
     // PR #37 review (5685854125): the issuer signs a @json value that already carries an @id, which
-    // skolemization leaves alone. Verification skolemized the reveal blindly, so a holder who deleted
-    // that member had it re-inserted, recreating the signed bytes: the deletion still verified.
+    // skolemization leaves alone. Verification used to skolemize the reveal blindly, so a holder who
+    // deleted that member had it re-inserted, recreating the signed bytes: the deletion still verified.
+    // Verification no longer skolemizes (PR #42): the reveal is canonicalized as given, so the deleted
+    // member changes the signed JSON literal and the BBS proof fails.
     [BbsFact]
-    public async Task Bbs2023_VerifyProof_RevealWhoseSkolemizationWouldRestoreADeletedMember_IsDataLossDetectionError()
+    public async Task Bbs2023_VerifyProof_RevealWithADeletedMemberOfAJsonValue_FailsVerification()
     {
         var (sk, hmacKey) = BbsKeyMaterial();
         var suite = new Bbs2023Cryptosuite();
@@ -868,11 +870,11 @@ public sealed class Issue36DataLossTests
         Direct(reveal).Verified.Should().BeTrue();
         pipeline.Verify(reveal, pk).Verified.Should().BeTrue();
 
-        Direct(deleted).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+        Direct(deleted).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
         var throughPipeline = pipeline.Verify(deleted, pk);
         throughPipeline.Verified.Should().BeFalse();
         throughPipeline.ProofResults.Should().ContainSingle().Which.Problems
-            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
 
         Direct(changed).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a changed value breaks the signature");
         pipeline.Verify(changed, pk).Verified.Should().BeFalse();
@@ -885,7 +887,7 @@ public sealed class Issue36DataLossTests
         var suite = new Bbs2023Cryptosuite();
         var baseProof = await suite.CreateBaseProofAsync(WindDoc(), BbsOptions(), sk, hmacKey, WindMandatory());
         var secured = Fx.Mutate(WindDoc(), vc => vc["proof"] = JsonSerializer.SerializeToNode(baseProof, DataProofsJsonOptions.Default));
-        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
         var derivedProof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
         var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
         var unsecured = Fx.Mutate(reveal, vc => vc.Remove("proof"));

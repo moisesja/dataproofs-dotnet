@@ -74,6 +74,16 @@ internal static class Bbs2023ProofValue
 
     private const int BbsPublicKeyLength = 96;
 
+    private const int BbsHeaderLength = 64;
+
+    private const int HmacKeyLength = 32;
+
+    // A BBS proof for BLS12-381-SHA-256 is three G1 points and four scalars (272 bytes) plus one
+    // 32-byte scalar per undisclosed message.
+    private const int BbsProofBaseLength = 272;
+
+    private const int BbsProofScalarLength = 32;
+
     /// <summary>Parses a <c>u2V0C…</c> base proof <c>proofValue</c> (§3.3.2).</summary>
     public static BaseProofComponents ParseBaseProof(string proofValue)
     {
@@ -99,6 +109,13 @@ internal static class Bbs2023ProofValue
         if (bbsSignature.Length != BbsSignatureLength || publicKey.Length != BbsPublicKeyLength)
         {
             throw new FormatException("A bbs-2023 base proofValue must carry an 80-byte BBS signature and a 96-byte public key.");
+        }
+
+        // The header is two SHA-256 hashes and the HMAC key is 32 bytes (the reference rejects other
+        // lengths); an empty or short one would otherwise derive a proof that can never verify.
+        if (bbsHeader.Length != BbsHeaderLength || hmacKey.Length != HmacKeyLength)
+        {
+            throw new FormatException("A bbs-2023 base proofValue must carry a 64-byte BBS header and a 32-byte HMAC key.");
         }
 
         return new BaseProofComponents(bbsSignature, bbsHeader, publicKey, hmacKey, mandatoryPointers);
@@ -147,21 +164,26 @@ internal static class Bbs2023ProofValue
         var presentationHeader = reader.ReadByteString();
         reader.ReadEndArray();
 
+        // A proof of another length cannot be a BBS proof; checked here so it fails as a malformed
+        // proofValue rather than inside the native library.
+        if (bbsProof.Length < BbsProofBaseLength || (bbsProof.Length - BbsProofBaseLength) % BbsProofScalarLength != 0)
+        {
+            throw new FormatException("A bbs-2023 derived proofValue must carry a BBS proof of 272 + 32·n bytes.");
+        }
+
         return new DerivedProofComponents(bbsProof, labelMap, mandatoryIndexes, selectiveIndexes, presentationHeader);
     }
 
     // --- compression helpers (spec §3.3.4 / §3.3.5) ---
 
-    // compressLabelMap (§3.3.4): a label map keyed by blank-node labels and valued by b-labels
-    // becomes a CBOR map of the integer suffixes. The wire framing (uint -> uint map) is
-    // W3C-identical; the key suffix may carry a "c14n" prefix (reference convention) or a "b"
-    // prefix (this suite's skolem-id keying — see Bbs2023Cryptosuite remarks).
+    // compressLabelMap (§3.3.4): the map from the reveal document's canonical labels ("c14n<int>")
+    // to the HMAC-shuffled labels ("b<int>") becomes a CBOR map of the integer suffixes.
     private static void WriteCompressedLabelMap(CborWriter writer, IReadOnlyDictionary<string, string> labelMap)
     {
         var compressed = new SortedDictionary<int, int>();
         foreach (var (key, value) in labelMap)
         {
-            compressed[StripLabel(key)] = StripLabel(value);
+            compressed[StripLabel(key, "c14n")] = StripLabel(value, "b");
         }
 
         writer.WriteStartMap(compressed.Count);
@@ -174,9 +196,8 @@ internal static class Bbs2023ProofValue
         writer.WriteEndMap();
     }
 
-    // decompressLabelMap (§3.3.5): restore both sides as "b<int>" — this suite's verifier
-    // reconstructs the reveal document with skolem-derived "b<int>" labels and relabels via
-    // the value, so both sides share that convention.
+    // decompressLabelMap (§3.3.5): keys are the reveal document's canonical labels ("c14n<int>"),
+    // values the HMAC-shuffled labels ("b<int>"), as the reference writes and reads them.
     private static IReadOnlyDictionary<string, string> ReadCompressedLabelMap(CborReader reader)
     {
         var count = reader.ReadStartMap();
@@ -185,7 +206,7 @@ internal static class Bbs2023ProofValue
         {
             var key = reader.ReadUInt32();
             var value = reader.ReadUInt32();
-            map["b" + key.ToString(CultureInfo.InvariantCulture)] = "b" + value.ToString(CultureInfo.InvariantCulture);
+            map["c14n" + key.ToString(CultureInfo.InvariantCulture)] = "b" + value.ToString(CultureInfo.InvariantCulture);
         }
 
         reader.ReadEndMap();
@@ -229,17 +250,13 @@ internal static class Bbs2023ProofValue
         return values;
     }
 
-    // Strips a "c14n" or "b" label prefix and parses the integer suffix.
-    private static int StripLabel(string label)
+    // Strips the expected label prefix and parses the integer suffix.
+    private static int StripLabel(string label, string prefix)
     {
-        var prefix = label.StartsWith("c14n", StringComparison.Ordinal) ? "c14n"
-            : label.StartsWith("b", StringComparison.Ordinal) ? "b"
-            : null;
-
-        if (prefix is null
+        if (!label.StartsWith(prefix, StringComparison.Ordinal)
             || !int.TryParse(label.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var value))
         {
-            throw new FormatException($"Label '{label}' is not of the form 'c14n<integer>' or 'b<integer>'.");
+            throw new FormatException($"Label '{label}' is not of the form '{prefix}<integer>'.");
         }
 
         return value;
