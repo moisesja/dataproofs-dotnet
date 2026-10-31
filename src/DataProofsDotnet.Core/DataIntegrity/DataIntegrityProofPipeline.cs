@@ -336,8 +336,8 @@ public sealed class DataIntegrityProofPipeline
         }
 
         // VC Data Integrity 1.0 §4.6: with known contexts supplied, the document is accepted only
-        // when every @context value is one of them, and the check runs after the proofs, as the
-        // specification requires. The proof results stay in the result for diagnostics.
+        // when every @context in it, at any depth, holds only those, and the check runs after the
+        // proofs, as the specification requires. The proof results stay in the result for diagnostics.
         if (options.KnownContexts is { } knownContexts && ContextProblem(securedDocument, knownContexts) is { } contextProblem)
         {
             return new DocumentVerificationResult
@@ -355,17 +355,53 @@ public sealed class DataIntegrityProofPipeline
         };
     }
 
-    // Context Validation (VC Data Integrity 1.0 §4.6) over context IRIs: every value of the
-    // document's @context must be a listed IRI. An inline context object cannot be a listed value,
-    // so it fails; a document without @context has nothing to validate. Messages do not quote the
-    // value (FR-23).
-    private static ProofProblem? ContextProblem(JsonElement securedDocument, IReadOnlyCollection<string> knownContexts)
+    // Context Validation (VC Data Integrity 1.0 §4.6) over context IRIs: every @context in the
+    // document, at any depth, must hold only listed IRIs. An inline context object cannot be a
+    // listed value, so it fails; a document without any @context has nothing to validate.
+    //
+    // Step 3 fails a subtree's @context outright, but the JCS suites copy @context into each proof
+    // and a presentation embeds credentials with their own, so a nested @context follows the root's
+    // rule instead (§2.4.1 allows equivalent protections). A listed context nested gives a holder
+    // nothing that adding it at the root does not.
+    //
+    // This goes by name alone, with no exemptions. Telling a JSON literal apart takes processing the
+    // contexts: a term's type can make one, and @value is a keyword only outside a container map,
+    // where it is an ordinary key whose value the processor expands. So every key named @context
+    // counts, as step 3 reads, and one inside a literal fails closed. TryAccept has bounded the
+    // depth, refused repeated members and made every name readable.
+    private static ProofProblem? ContextProblem(JsonElement element, IReadOnlyCollection<string> knownContexts)
     {
-        if (!securedDocument.TryGetProperty("@context", out var context))
+        if (element.ValueKind == JsonValueKind.Array)
         {
-            return null;
+            foreach (var item in element.EnumerateArray())
+            {
+                if (ContextProblem(item, knownContexts) is { } problem)
+                {
+                    return problem;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var member in element.EnumerateObject())
+            {
+                var problem = member.Name == "@context"
+                    ? ContextValueProblem(member.Value, knownContexts)
+                    : ContextProblem(member.Value, knownContexts);
+
+                if (problem is not null)
+                {
+                    return problem;
+                }
+            }
         }
 
+        return null;
+    }
+
+    // Messages do not quote the value (FR-23).
+    private static ProofProblem? ContextValueProblem(JsonElement context, IReadOnlyCollection<string> knownContexts)
+    {
         var values = context.ValueKind == JsonValueKind.Array ? context.EnumerateArray().ToList() : [context];
         foreach (var value in values)
         {
@@ -374,7 +410,7 @@ public sealed class DataIntegrityProofPipeline
                 return new ProofProblem
                 {
                     Code = ProofProblemCodes.ProofVerificationError,
-                    Message = "The secured document's @context holds a value that is not a context IRI, so it cannot be a known context.",
+                    Message = "A @context in the secured document holds a value that is not a context IRI, so it cannot be a known context.",
                 };
             }
 
@@ -383,7 +419,7 @@ public sealed class DataIntegrityProofPipeline
                 return new ProofProblem
                 {
                     Code = ProofProblemCodes.ProofVerificationError,
-                    Message = "The secured document's @context holds a value that is not a known context.",
+                    Message = "A @context in the secured document holds a value that is not a known context.",
                 };
             }
         }

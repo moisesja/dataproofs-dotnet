@@ -25,6 +25,7 @@ public sealed class Bbs2023HardeningTests
     private const string UnusableSignature = "The base proof's BBS signature could not be used to derive a proof.";
     private const string AlteredHeader = "The base proof's BBS header does not match the document and proof configuration: a mandatory value or the proof was altered after signing.";
     private const string MalformedBase = "The base proofValue is not a valid bbs-2023 base proof.";
+    private const string HmacKeyLength = "The bbs-2023 HMAC key must be 32 bytes.";
     private const string MalformedDerived = "The proofValue is not a valid bbs-2023 derived proof.";
 
     private static readonly byte[] Header = Convert.FromHexString("113377aa");
@@ -165,6 +166,37 @@ public sealed class Bbs2023HardeningTests
         var act = () => suite.DeriveProof(tampered, ["/credentialSubject/sails/0"], Header);
 
         act.Should().Throw<ProofGenerationException>().WithMessage(MalformedBase);
+    }
+
+    // ------------------------------------------------------------------ the HMAC key
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(16)]
+    [InlineData(31)]
+    [InlineData(33)]
+    [InlineData(64)]
+    public async Task HmacKey_OfAnotherLength_IsRefusedAtIssuance(int length)
+    {
+        // Not a BbsTheory: the refusal comes before anything reaches the BBS provider. The parser would
+        // otherwise refuse the returned proof only when the holder derives from it.
+        var (sk, _) = KeyMaterial();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(Vector("windDoc.json"), Options(), sk, new byte[length], WindMandatory());
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(HmacKeyLength);
+    }
+
+    [BbsFact]
+    public async Task HmacKey_Of32Bytes_IssuesDerivesAndVerifies()
+    {
+        var (sk, _) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var secured = await SecuredAsync(suite, Vector("windDoc.json"), ["/issuer"], sk, new byte[32]);
+
+        var (proof, unsecured) = Split(suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Header));
+
+        suite.VerifyProof(unsecured, proof, PublicKey(sk)).Verified.Should().BeTrue();
     }
 
     // ------------------------------------------------------------------ blank node identifiers

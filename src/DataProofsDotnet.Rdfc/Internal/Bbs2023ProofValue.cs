@@ -76,7 +76,7 @@ internal static class Bbs2023ProofValue
 
     private const int BbsHeaderLength = 64;
 
-    private const int HmacKeyLength = 32;
+    public const int HmacKeyLength = 32;
 
     // A BBS proof for BLS12-381-SHA-256 is three G1 points and four scalars (272 bytes) plus one
     // 32-byte scalar per undisclosed message.

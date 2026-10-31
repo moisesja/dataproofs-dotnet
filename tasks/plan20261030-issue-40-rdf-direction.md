@@ -273,3 +273,55 @@ with no inline threads, so each point was checked against head 68d2852. No runti
 - No adversarial subagent: the only `src` change is a comment.
 - Not addressed here: the two findings in `tasks/plan20261030-pr42-review.md`, which were never posted as PR
   comments, and the shelved size limits and number fixes.
+
+# Round 5 — fix the two defects in review 5720216431 (approved 2026-10-30)
+
+## Owner intent
+
+The review of 6b66977 requested changes: `KnownContexts` could be bypassed with a nested context, and bbs-2023
+issued base proofs its own derivation refused. Solve both in this PR. Both regressions were written first and
+seen failing on 6b66977, which reproduced the review's findings here.
+
+## Decisions
+
+- **D1 — Implement, not defer.** About as small as removing the option, and the owner chose to have it here.
+- **D2 — A nested `@context` follows the root's rule.** §4.6 step 3 fails any subtree's `@context`, but the JCS
+  suites copy `@context` into each proof, so that reading refuses every JCS proof and W3C's own vectors, and a
+  presentation embeds credentials with their own. §2.4.1 allows equivalent protections, and a listed context
+  nested gives a holder nothing that adding it at the root does not.
+- **D3 — Changed during the work.** The approved plan skipped `@value` as "never processed" and documented an
+  explicit `{"@type":"@json","@value":…}` as a workaround for a literal typed by a term. The adversarial review
+  disproved both. `@value` is a keyword only outside a container map: under an `@id` container it is a map key
+  whose value the processor expands, so a live context passed the skip. And on a term already typed `@json`, the
+  explicit spelling signs a different literal. Whether `@value` is the keyword depends on contexts Core cannot
+  read, so no name-based skip is safe. The walker now has no exemptions: every key named `@context` counts, as
+  step 3 reads, and a JSON literal holding one fails closed. This follows the plan's own tie-breaker: a wrong
+  skip is a bypass, and a false refusal is only visible.
+- **D4 — bbs-2023 refuses the key at issuance** with `ProofGenerationException`, and the parser is unchanged.
+  The 32 bytes come from the reference (`bbs-2023-cryptosuite/lib/proofValue.js`); the pinned draft gives no length.
+
+## Results
+
+- Regressions written first: 18 Core and 8 RDFC tests failed on 6b66977; the map-key and JSON-literal tests then
+  failed against the first version of the fix, which still had the skip.
+- Gates on a clean Release build with `/warnaserror`: 3,068 tests pass, none skipped; `dependency-hygiene`,
+  `api-surface-scan` and `samples-coverage` are clean; all 15 samples exit 0.
+- Mutations on the final tree, with files and the whole diff restored identically: no descent into object members
+  fails 19 Core and 5 RDFC tests; no descent into arrays, 6 and 1; no HMAC check, the 5 length rows; a `@value`
+  skip put back, 1 Core and 2 RDFC.
+- Adversarial review, rerun against the final walker: no relabeled document verifies with `KnownContexts` set, on
+  the plain, `@id`-map, Legacy RDFC and bbs-2023 routes. It did not cover `ecdsa-rdfc-2019`, the Legacy
+  `EcdsaSecp256r1Signature2019` suite, or a host without the BBS library.
+
+## Reported to the owner, not fixed here
+
+Found by the same review and reproduced by rerunning its tests. None comes from this round's change.
+
+- A `proofValue` over 4,096 characters, NetCid's default multibase cap, present since v1.5.0: a base proof that
+  long cannot be derived from, and a derived proof cannot be verified, from 87 undisclosed statements.
+- bbs-2023 pointers into a value object: `…/@type` as a mandatory pointer leaks `KeyNotFoundException` from
+  `DeriveProof`; `…/@value` derives a proof that cannot verify; `…/@language` leaves the mandatory claim unenforced.
+- bbs-2023 with `@context` only in the proof options derives a proof that cannot verify.
+- A wrong-length or invalid `bbsPrivateKey` throws `ArgumentException`, outside the documented exceptions.
+- An unlisted remote context reaches `IDocumentLoader` before the refusal, because the check runs after the
+  proofs, as the specification requires.

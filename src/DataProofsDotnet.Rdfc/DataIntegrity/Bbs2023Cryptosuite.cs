@@ -122,11 +122,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <param name="proofOptions">The proof options (type <c>DataIntegrityProof</c>,
     /// cryptosuite <c>bbs-2023</c>); no <c>proofValue</c>.</param>
     /// <param name="bbsPrivateKey">The issuer's 32-byte BLS12-381-G2 BBS private key.</param>
-    /// <param name="hmacKey">The per-credential HMAC key used to shuffle blank-node labels.</param>
+    /// <param name="hmacKey">The per-credential 32-byte HMAC key used to shuffle blank-node labels.</param>
     /// <param name="mandatoryPointers">RFC 6901 JSON Pointers selecting the always-revealed group.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
     /// <returns>The completed base proof including its <c>u2V0C…</c> <c>proofValue</c>.</returns>
-    /// <exception cref="ProofGenerationException">The options or document are invalid for this suite.</exception>
+    /// <exception cref="ProofGenerationException">The options, document or HMAC key are invalid for this suite.</exception>
     /// <exception cref="BbsUnavailableException">The BBS native library is unavailable.</exception>
     public Task<DataIntegrityProof> CreateBaseProofAsync(
         JsonElement unsecuredDocument,
@@ -139,6 +139,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
         ValidateProofOptions(proofOptions);
+
+        // The base proof parser requires this length, as the reference does, so a proof issued with
+        // another could never be derived from.
+        if (hmacKey.Length != Bbs2023ProofValue.HmacKeyLength)
+        {
+            throw new ProofGenerationException($"The bbs-2023 HMAC key must be {Bbs2023ProofValue.HmacKeyLength} bytes.");
+        }
 
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {

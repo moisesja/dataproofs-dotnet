@@ -72,7 +72,7 @@ public class ContextValidationTests
         result.Problems.Should().ContainSingle().Which.Should().BeEquivalentTo(new
         {
             Code = ProofProblemCodes.ProofVerificationError,
-            Message = "The secured document's @context holds a value that is not a known context.",
+            Message = "A @context in the secured document holds a value that is not a known context.",
         });
         result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue("the proof itself verified; the context is what fails");
         result.Problems.Single().Message.Should().NotContain(Unknown, "messages do not quote the input");
@@ -140,5 +140,126 @@ public class ContextValidationTests
         result.Verified.Should().BeFalse();
         result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeFalse();
         result.Problems.Should().ContainSingle().Which.Message.Should().Contain("not a known context");
+    }
+
+    // ------------------------------------------------------------------ nested contexts
+
+    private const string NotAKnownContext = "not a known context";
+    private const string NotAContextIri = "not a context IRI";
+    private const string InlineContext = "{\"nickname\":\"https://evil.example/vocab#nickname\"}";
+
+    /// <summary>A credential under the V2 context, plus <paramref name="members"/>.</summary>
+    private static string Vc(string members)
+        => "{\"@context\":\"" + V2 + "\",\"id\":\"urn:uuid:ctx\",\"type\":\"VerifiableCredential\",\"issuer\":\"did:example:issuer\"," + members + "}";
+
+    private static Task<JsonElement> SignDocumentAsync(string json)
+        => Pipeline.AddProofAsync(
+            Doc(json),
+            new DataIntegrityProof
+            {
+                Cryptosuite = EddsaJcs2022Cryptosuite.CryptosuiteName,
+                Created = "2026-01-01T00:00:00Z",
+                VerificationMethod = "did:example:alice#key-1",
+                ProofPurpose = ProofPurposes.AssertionMethod,
+            },
+            new KeyPairSigner(Key, new DefaultCryptoProvider()));
+
+    public static TheoryData<string, string, string> UnacceptedNestedContexts()
+    {
+        var unlisted = "\"@context\":\"" + Unknown + "\"";
+        var inline = "\"@context\":" + InlineContext;
+        return new()
+        {
+            // case, document, the message's phrase. Every container JSON-LD descends into, and the shapes a
+            // root-only reading would miss.
+            { "inline object in a node", Vc("\"credentialSubject\":{\"id\":\"did:example:alice\"," + inline + ",\"nickname\":\"Alice\"}"), NotAContextIri },
+            { "unlisted IRI in a node", Vc("\"credentialSubject\":{" + unlisted + ",\"name\":\"Alice\"}"), NotAKnownContext },
+            { "listed and inline together", Vc("\"credentialSubject\":{\"@context\":[\"" + V2 + "\"," + InlineContext + "]}"), NotAContextIri },
+            { "listed and unlisted together", Vc("\"credentialSubject\":{\"@context\":[\"" + V2 + "\",\"" + Unknown + "\"]}"), NotAKnownContext },
+            { "null, which clears the active context", Vc("\"credentialSubject\":{\"@context\":null}"), NotAContextIri },
+            { "in an array of nodes", Vc("\"credentialSubject\":[{\"id\":\"did:example:a\"},{" + inline + "}]"), NotAContextIri },
+            { "in an array inside an array", Vc("\"claims\":[[{" + inline + "}]]"), NotAContextIri },
+            { "several levels down", Vc("\"a\":{\"b\":{\"c\":[{\"d\":{" + inline + "}}]}}"), NotAContextIri },
+            { "under @graph", Vc("\"@graph\":[{" + inline + "}]"), NotAContextIri },
+            { "under @included", Vc("\"@included\":[{" + inline + "}]"), NotAContextIri },
+            { "under @reverse", Vc("\"@reverse\":{\"https://e.example/p\":{" + inline + "}}"), NotAContextIri },
+            { "under @nest", Vc("\"@nest\":{" + inline + "}"), NotAContextIri },
+            { "in a map", Vc("\"labels\":{\"en\":{" + inline + "}}"), NotAContextIri },
+            { "beside a @value", Vc("\"name\":{" + inline + ",\"@value\":\"Alice\"}"), NotAContextIri },
+            { "in a presentation's embedded credential", Vc("\"verifiableCredential\":[{\"@context\":[\"" + V2 + "\",\"" + Unknown + "\"],\"type\":\"VerifiableCredential\"}]"), NotAKnownContext },
+            { "with the key escaped", Vc("\"credentialSubject\":{\"\\u0040context\":" + InlineContext + "}"), NotAContextIri },
+            { "with no @context at the root", "{\"id\":\"urn:uuid:ctx\",\"credentialSubject\":{" + inline + "}}", NotAContextIri },
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(UnacceptedNestedContexts))]
+    public async Task KnownContexts_UnacceptedNestedContext_FailsTheDocumentAfterTheProofVerified(string @case, string document, string phrase)
+    {
+        var secured = await SignDocumentAsync(document);
+
+        var result = Verify(secured, [V2]);
+
+        result.Verified.Should().BeFalse(@case);
+        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue("the proof itself verified; the context is what fails");
+        var problem = result.Problems.Should().ContainSingle().Which;
+        problem.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
+        problem.Message.Should().Contain(phrase).And.NotContain("evil.example", "messages do not quote the input");
+    }
+
+    public static TheoryData<string, string> AcceptedNestedContexts() => new()
+    {
+        // case, document. A listed context nested gives a holder nothing that listing it at the root
+        // does not, and §4.6's literal "any subtree" would refuse every presentation.
+        { "listed IRI in a node", Vc("\"credentialSubject\":{\"@context\":\"" + V2 + "\",\"name\":\"Alice\"}") },
+        { "listed array in a node", Vc("\"credentialSubject\":{\"@context\":[\"" + V2 + "\",\"" + Examples + "\"]}") },
+        { "a presentation's embedded credentials", Vc("\"verifiableCredential\":[{\"@context\":[\"" + V2 + "\",\"" + Examples + "\"],\"type\":\"VerifiableCredential\"}]") },
+    };
+
+    [Theory]
+    [MemberData(nameof(AcceptedNestedContexts))]
+    public async Task KnownContexts_AcceptedNestedContext_Verifies(string @case, string document)
+    {
+        var secured = await SignDocumentAsync(document);
+
+        Verify(secured, Known).Verified.Should().BeTrue(@case);
+    }
+
+    public static TheoryData<string, string> JsonLiteralsHoldingAContextKey() => new()
+    {
+        // case, document. Telling these from a live context takes processing the contexts, and Core has no
+        // JSON-LD processor: a term's type can make a literal, and @value is a keyword only outside a
+        // container map. So the key counts: a false refusal, never a false accept.
+        { "typed by a term, as credentials/v2 types jsonSchema", Vc("\"credentialSubject\":{\"type\":\"JsonSchema\",\"jsonSchema\":{\"properties\":{\"@context\":{\"type\":\"array\"}}}}") },
+        { "an explicit @json value object", Vc("\"data\":{\"@type\":\"@json\",\"@value\":{\"@context\":" + InlineContext + "}}") },
+    };
+
+    [Theory]
+    [MemberData(nameof(JsonLiteralsHoldingAContextKey))]
+    public async Task KnownContexts_JsonLiteralHoldingAContextKey_FailsClosed(string @case, string document)
+    {
+        var secured = await SignDocumentAsync(document);
+
+        var result = Verify(secured, Known);
+
+        result.Verified.Should().BeFalse(@case);
+        result.Problems.Should().ContainSingle().Which.Message.Should().Contain(NotAContextIri);
+    }
+
+    [Fact]
+    public void KnownContexts_W3cVectorCarryingAContextInItsProof_Verifies()
+    {
+        // The JCS suites copy @context into the proof, so a literal reading of §4.6 step 3 ("any subtree")
+        // would refuse every JCS proof, this W3C vector included.
+        var signed = Fx.Json("w3c", "vc-di-eddsa", "TestVectors", "eddsa-jcs-2022", "signedJCS.json");
+        var keys = Fx.Json("w3c", "vc-di-eddsa", "TestVectors", "keyPair.json");
+        signed.GetProperty("proof").TryGetProperty("@context", out _).Should().BeTrue();
+
+        var result = Pipeline.Verify(
+            signed,
+            PublicKeyMaterial.FromMultikey(keys.GetProperty("publicKeyMultibase").GetString()!),
+            new ProofVerificationOptions { KnownContexts = Known });
+
+        result.Verified.Should().BeTrue();
     }
 }

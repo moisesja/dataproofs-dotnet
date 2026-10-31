@@ -495,3 +495,20 @@ docs in a scratch worktree before presenting a plan: the slip recorded for issue
   and turned out to be every `credentials/v2` credential that sets a default direction.
 - "Address the comments" states the goal. A scratch worktree is still an edit, so research stays read-only
   until the plan has a yes.
+
+## 2026-10-30 — An exemption in a security check needs the same proof as the check (PR #42)
+
+**Correction:** A review showed `KnownContexts` read only the root `@context`; its tests used root contexts under
+JCS, where the attack cannot happen. My fix then exempted `@value` because JSON-LD "never processes" it, and the
+approved plan said so. That is true of the keyword, not the key: under an `@id` container `@value` is a map key,
+and the adversarial review walked a live context through it. The workaround I had documented also signed a
+different literal.
+
+**The rule for myself:**
+- A control's test replays the attack where it can happen: for a relabeling after signing, on RDFC, after signing.
+  A test that builds only the easy shape proves the shape.
+- A syntactic check cannot exempt anything whose meaning depends on what it cannot read. If an exemption rests on
+  a claim about a processor, test that claim, including where the name stops being the keyword.
+- A documented workaround is a claim. Run it and compare the bytes before writing it down.
+- When evidence overturns an approved decision, apply the plan's stated tie-breaker and say plainly in the report
+  that the decision moved.

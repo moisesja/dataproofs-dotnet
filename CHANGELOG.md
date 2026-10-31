@@ -27,10 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a verified document under a `@context` that reads its terms differently (`boards` as `sails`); it
   verified here and on the reference implementation alike. The specification's answer is that
   applications MUST accept only known contexts, after the proofs are verified, and the pipeline had
-  no option for it. With `KnownContexts` set, every `@context` value of the secured document must be
-  one of the listed IRIs; an unlisted value or an inline context object fails the document with a
-  document-level `PROOF_VERIFICATION_ERROR` beside the per-proof results. Unset, nothing is checked,
-  as before. Found by the adversarial review of the bbs-2023 rework (PR #42).
+  no option for it. With `KnownContexts` set, every `@context` in the secured document, at any depth,
+  must hold only listed IRIs; an unlisted value, an inline context object or a `null` fails the
+  document with a document-level `PROOF_VERIFICATION_ERROR` beside the per-proof results. Unset,
+  nothing is checked, as before. A nested `@context` follows the root's rule rather than failing
+  outright as §4.6 step 3 reads, because the JCS suites copy `@context` into each proof and a
+  presentation embeds credentials with their own; §2.4.1 allows equivalent protections, and a listed
+  context nested gives a holder nothing that adding it at the root does not. The list is a set, so
+  order is not compared. Every key named `@context` counts, including one inside a JSON literal,
+  because telling a literal apart takes processing the contexts: a term's type can make one, and
+  `@value` is a keyword only outside a container map. So a literal holding that key, as a JSON Schema
+  under `credentials/v2`'s `jsonSchema` can, fails the document unless the key's value is a listed
+  IRI. Found by the adversarial review of the bbs-2023 rework (PR #42).
 
 ### Changed
 
@@ -201,6 +209,10 @@ source-additive, so this is a minor release.
   bbs-2023 skolemization cannot name, such as a @list's") instead of failing at verification. The
   reference implementation cannot sign them either. A language map is refused with the skolemization
   message, as documented, instead of the language-tag one.
+
+  `CreateBaseProofAsync` refuses an HMAC key that is not 32 bytes with `ProofGenerationException`
+  before signing. The base proof parser requires that length, as the reference implementation does,
+  so a proof issued with another could never be derived from.
 
 ### Known limitations
 
