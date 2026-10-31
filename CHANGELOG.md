@@ -53,10 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issuers sign. A verifier whose JSON-LD processor drops direction, the JSON-LD default, does not
   verify these proofs, as it does not verify theirs. Checked against jsonld.js 9.0.0 with
   `rdfDirection: 'i18n-datatype'`: the canonical N-Quads are byte-identical for directional value
-  objects, the VCDM 2.0 §11.1 shapes. Two differences are on its side: it drops a context-level default
-  `@direction` whenever a scoped context applies, because its active-context clone keeps `@language`
-  and `@vocab` but not `@direction` (dotNetRDF follows JSON-LD 1.1 API §5.3.2 and signs it), and it
-  signs a number's direction away silently, where this library refuses.
+  objects, the VCDM 2.0 §11.1 shapes. Three differences are on its side, and a proof over such a
+  document does not verify across the two. It drops a context-level default `@direction` whenever a
+  scoped context applies, because its active-context clone keeps `@language` and `@vocab` but not
+  `@direction` (dotNetRDF follows JSON-LD 1.1 API §5.3.2 and signs it). That reaches every
+  `credentials/v2` credential that sets one, since `VerifiableCredential` is a type-scoped term, so
+  issuers should write the direction on the value object instead. It emits an identical quad twice for
+  a literal spelled both as a directional string and with its explicit `i18n#` datatype, where a
+  dataset holds it once. And it signs a number's direction away silently, where this library refuses.
 
   This change alters no accepted input: direction-free documents are unaffected by it,
   direction-bearing ones were all refused, and proofs made before 1.5.0 over such documents verify in

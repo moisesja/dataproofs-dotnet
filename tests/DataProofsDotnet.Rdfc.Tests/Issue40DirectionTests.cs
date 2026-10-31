@@ -16,7 +16,7 @@ namespace DataProofsDotnet.Rdfc.Tests;
 /// the representation the reference Data Integrity implementations sign with. 1.5.0 refused every
 /// <c>@direction</c>, and earlier versions dropped it, so <c>ltr</c> and <c>rtl</c> signed the same
 /// bytes. A boolean or a number with a direction is still refused: dotNetRDF (like jsonld.js) types it
-/// as an XSD literal and drops the direction, where JSON-LD 1.1 API §8.2.2 step 12 would apply the i18n
+/// as an XSD literal and drops the direction, where JSON-LD 1.1 API §8.2.2 step 13.2 would apply the i18n
 /// datatype to its lexical form. Direction-free input is unchanged, which the
 /// W3C vector tests and <see cref="Issue36DataLossTests.CarriedDocuments"/> pin.
 /// </summary>
@@ -138,6 +138,49 @@ public sealed class Issue40DirectionTests
         nquads.Should().Be("<did:example:alice> <" + Name + "> \"n\" .\n<urn:uuid:40404040-0000-4000-8000-000000000040> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/2018/credentials#VerifiableCredential> .\n<urn:uuid:40404040-0000-4000-8000-000000000040> <https://www.w3.org/2018/credentials#credentialSubject> <did:example:alice> .\n<urn:uuid:40404040-0000-4000-8000-000000000040> <https://www.w3.org/2018/credentials#issuer> <did:example:issuer> .\n");
     }
 
+    public static TheoryData<string, string> NullDirectionalValues() => new()
+    {
+        // case, document. Expansion removes each of these, so the audit never sees @direction on a null.
+        { "beside a value in an array", Vc(Subject("\"name\":[\"n\",{\"@value\":null,\"@direction\":\"rtl\"}]")) },
+        { "in a @set", Vc(Subject("\"name\":\"n\",\"description\":{\"@set\":[{\"@value\":null,\"@direction\":\"rtl\"}]}")) },
+        { "in a list", Vc(Subject("\"name\":\"n\",\"steps\":[{\"@value\":null,\"@direction\":\"rtl\"}]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@container\":\"@list\"}}")) },
+    };
+
+    [Theory]
+    [MemberData(nameof(NullDirectionalValues))]
+    public void CanonicalizeJsonLd_DirectionOnANullValueAnywhere_ProducesNoLiteral(string @case, string document)
+    {
+        Canonical(document).Should().Contain("\"n\"", @case).And.NotContain(I18n);
+    }
+
+    public static TheoryData<string, string, string> ScopedDefaultDirections() => new()
+    {
+        // case, document, the statement the output must contain. jsonld.js 9.0.0 signs a plain "x" for all
+        // of these, because its active-context clone loses @direction. JSON-LD 1.1 API §5.3.2 reads the
+        // default from the active context, which a scoped context keeps, so the default still applies.
+        { "property-scoped", "{\"@context\":{\"@direction\":\"rtl\",\"inner\":{\"@id\":\"https://schema.org/about\",\"@context\":{\"note\":\"" + Name + "\"}}},\"@id\":\"urn:s\",\"inner\":{\"@id\":\"urn:o\",\"note\":\"x\"}}", "<urn:o> <" + Name + "> " + Literal("x", "", "rtl") + " ." },
+        { "type-scoped", "{\"@context\":{\"@direction\":\"rtl\",\"type\":\"@type\",\"Thing\":{\"@id\":\"https://schema.org/Thing\",\"@context\":{\"note\":\"" + Name + "\"}}},\"@id\":\"urn:s\",\"type\":\"Thing\",\"note\":\"x\"}", "<urn:s> <" + Name + "> " + Literal("x", "", "rtl") + " ." },
+        { "credentials/v2, whose VerifiableCredential is type-scoped", Vc(Subject("\"name\":\"x\""), V2With("{\"@direction\":\"rtl\"}")), "<did:example:alice> <" + Name + "> " + Literal("x", "", "rtl") + " ." },
+    };
+
+    [Theory]
+    [MemberData(nameof(ScopedDefaultDirections))]
+    public void CanonicalizeJsonLd_DefaultDirectionUnderAScopedContext_IsCarried(string @case, string document, string statement)
+    {
+        var nquads = Canonical(document);
+
+        nquads.Should().Contain(statement, @case);
+        Canonical(document.Replace("\"@direction\":\"rtl\"", "\"@direction\":\"ltr\"")).Should().NotBe(nquads, "a flipped default is signed differently");
+    }
+
+    [Fact]
+    public void CanonicalizeJsonLd_ScopedContextResettingTheDefaultDirection_ClearsIt()
+    {
+        var nquads = Canonical("{\"@context\":{\"@direction\":\"rtl\",\"inner\":{\"@id\":\"https://schema.org/about\",\"@context\":{\"@direction\":null,\"note\":\"" + Name + "\"}}},\"@id\":\"urn:s\",\"inner\":{\"@id\":\"urn:o\",\"note\":\"x\"}}");
+
+        nquads.Should().Contain("<urn:o> <" + Name + "> \"x\" .");
+    }
+
     [Fact]
     public void CanonicalizeJsonLd_RemoteContextDefaultDirection_Applies()
     {
@@ -157,7 +200,7 @@ public sealed class Issue40DirectionTests
     {
         // case, document, the message's phrase, input text the message must not quote (FR-23)
         // dotNetRDF (like jsonld.js) types a boolean or a number as an XSD literal and drops its direction
-        // without a warning, with or without rdfDirection; JSON-LD 1.1 API §8.2.2 step 12 would apply the
+        // without a warning, with or without rdfDirection; JSON-LD 1.1 API §8.2.2 step 13.2 would apply the
         // i18n datatype to the lexical form instead. The refusal follows the processor.
         { "@direction on a number", Vc(Subject("\"name\":{\"@value\":7,\"@direction\":\"rtl\"}")), Direction, "rtl" },
         { "@direction on a boolean", Vc(Subject("\"name\":{\"@value\":true,\"@direction\":\"rtl\"}")), Direction, "rtl" },
@@ -169,6 +212,11 @@ public sealed class Issue40DirectionTests
         { "language tag with a trailing newline and a direction", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"en\\n\",\"@direction\":\"ltr\"}")), MalformedLanguageTag, "en\n" },
         { "@index beside @direction", Vc(Subject("\"name\":{\"@value\":\"x\",\"@direction\":\"rtl\",\"@index\":\"admin\"}")), Index, "admin" },
         { "@direction on a node object", Vc(Subject("\"name\":\"n\",\"@direction\":\"rtl\"")), IgnoredContent, "rtl" },
+        // Without a @value there is no value object: expansion keeps the keyword on a node, and RDF gets a bare
+        // blank node, so jsonld.js signs "rtl" and "ltr" alike. These never reach the value-object guard.
+        { "@direction without a @value", Vc(Subject("\"name\":\"n\",\"description\":{\"@direction\":\"rtl\"}")), IgnoredContent, "rtl" },
+        { "@direction and @language without a @value", Vc(Subject("\"name\":\"n\",\"description\":{\"@language\":\"ar\",\"@direction\":\"rtl\"}")), IgnoredContent, "rtl" },
+        { "@direction without a @value in a list", Vc(Subject("\"name\":\"n\",\"steps\":[{\"@direction\":\"rtl\"}]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@container\":\"@list\"}}")), IgnoredContent, "rtl" },
     };
 
     [Theory]

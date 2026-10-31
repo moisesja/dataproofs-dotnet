@@ -34,7 +34,7 @@ issuers sign.
   enum would have required a constructor change and a migration note for no gain in safety; it is
   recorded as an alternative in the approved plan.
 - **D1 — Still refused:** `@direction` on a value that is not a string. dotNetRDF (like jsonld.js)
-  types booleans and numbers as XSD literals and drops the direction; JSON-LD 1.1 API §8.2.2 step 12
+  types booleans and numbers as XSD literals and drops the direction; JSON-LD 1.1 API §8.2.2 step 13.2
   would apply the i18n datatype to the lexical form instead (correction from the independent review
   of PR #42: the drop is processor behaviour, not the spec's, and the section is §8.2.2). New message: "uses @direction on a value that is not a string, which the canonical form
   does not carry". The language-tag check keeps running: with the i18n datatype a malformed tag
@@ -233,3 +233,43 @@ that "datasets without that shape are unaffected" was false.
   crash is a 3.5 s refusal; the 4.2 MB padded input 2.1 s against 11 s.
 - Adversarial review found no wrong accept.
 
+
+# Round 4 — respond to the posted review comments (approved 2026-10-30)
+
+## Owner intent
+
+Look at the PR comments and address the valid ones thoroughly. Two reviews are posted, both against 90b7bc8,
+with no inline threads, so each point was checked against head 68d2852. No runtime behaviour changes.
+
+## What each comment needed
+
+| Comment | Verdict | Outcome |
+|---|---|---|
+| Independent review: the direction loss is a dotNetRDF limitation, not the spec | Valid, mostly fixed in round 2 | Round 2 cited §8.2.2 step 12. The W3C text has the direction step at 13 and the i18n datatype at 13.2; corrected everywhere |
+| Automated 1: departs from #40's opt-in | Already handled | The owner wrote #40 and approved D0; the CHANGELOG states the verifier cost |
+| Automated 2: scoped-context interop edge | Valid, partly open | Pinned by tests; docs corrected (below) |
+| Automated 3: the guard fires on a null or missing `@value` | Null was pinned; missing never reaches that guard | Both pinned: null in an array, a `@set` and a list; missing in three shapes |
+| Automated 4: follow-ups for bbs `@list` and the constructors | Already handled | #43 is closed by this PR; the constructors are fixed in it |
+
+## What the check showed
+
+- dotNetRDF v3.5.1 `JsonLdParser.cs` and jsonld.js 9.0.0 `toRdf.js` both reach the direction branch only after
+  the boolean and number branches, so "dependency limitation" is right. §5.3.2 was already cited correctly.
+- The scoped-context difference is wider than the docs read. `VerifiableCredential` is a type-scoped term, so
+  jsonld.js signs a plain `"x"` for `[credentials/v2, {"@direction":"rtl"}]`: every v2 credential that sets a
+  default direction differs from ours, and a proof over one does not verify across the two.
+- The docs said two differences; round 1 measured three. The duplicate quad was missing from the CHANGELOG,
+  PRD and README, and is added.
+- `{"@direction":"rtl"}` with no `@value` is not a value object. jsonld.js gives it a bare blank node and signs
+  `rtl` and `ltr` alike. This library refuses it through `FindInNode`, which had no test.
+
+## Results
+
+- Gates on a clean Release build with `/warnaserror`: 3,033 tests pass, none skipped (10 added);
+  `dependency-hygiene`, `api-surface-scan` and `samples-coverage` are clean; all 15 samples exit 0.
+- Mutations, with the files restored and confirmed byte-identical: ignoring keywords on a node fails the three
+  new no-`@value` rows and the existing node-object row; turning `rdfDirection` off fails all three scoped rows.
+  The null rows and the scoped-reset test were not mutation-checked.
+- No adversarial subagent: the only `src` change is a comment.
+- Not addressed here: the two findings in `tasks/plan20261030-pr42-review.md`, which were never posted as PR
+  comments, and the shelved size limits and number fixes.

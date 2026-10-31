@@ -479,3 +479,19 @@ claim became my "hand walkthrough" in a public issue.
   estimate, say so in the question. A wrong number there makes the owner's answer worthless.
 - Only write what was done. "Hand run", "confirmed" and "reproduced" describe actions; a subagent's
   report is not my verification, and a fix that changes a limit changes what that limit protected.
+
+## 2026-10-30 — Correcting a citation means reading the numbered text (PR #42)
+
+**Correction:** The independent review of PR #42 said the direction rationale cited the wrong section and gave
+the right step, 13. I moved the citation to §8.2.2 but wrote "step 12" without counting the algorithm, and that
+number spread to the code, the tests and the PRD. Asked later to address the PR comments, I drafted tests and
+docs in a scratch worktree before presenting a plan: the slip recorded for issues #10 and #17.
+
+**The rule for myself:**
+- A corrected citation gets read at its target, step number included. If the review names the number, compare
+  mine with it before answering.
+- A review response is checked point by point against the diff, not by the commit that claims to answer it.
+- A documented difference needs its reach tested. "Whenever a scoped context applies" read like a corner case
+  and turned out to be every `credentials/v2` credential that sets a default direction.
+- "Address the comments" states the goal. A scratch worktree is still an edit, so research stays read-only
+  until the plan has a yes.

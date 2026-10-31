@@ -20,7 +20,7 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// <c>@direction</c> is carried, because <see cref="JsonLdContextCache.Options"/> sets
 /// <c>rdfDirection: i18n-datatype</c> (issue #40); a boolean's or a number's is still dropped, because
 /// dotNetRDF (like jsonld.js) types those as XSD literals and skips the direction step, so it is
-/// refused. JSON-LD 1.1 API §8.2.2 step 12 would instead type the lexical form with the i18n datatype;
+/// refused. JSON-LD 1.1 API §8.2.2 step 13.2 would instead type the lexical form with the i18n datatype;
 /// the refusal follows the processor, not the text.
 /// </para>
 /// <para>
@@ -178,8 +178,8 @@ internal static class JsonLdLossAudit
     {
         // A string's direction goes into its i18n datatype (JsonLdContextCache.Options). dotNetRDF (like
         // jsonld.js) types a boolean or a number as an XSD literal and drops its direction without a
-        // warning, where JSON-LD 1.1 API §8.2.2 step 12 would apply the i18n datatype (issue #40).
-        // A @type beside @direction fails expansion earlier.
+        // warning, where JSON-LD 1.1 API §8.2.2 step 13.2 would apply the i18n datatype (issue #40).
+        // A @type beside @direction fails expansion earlier, and expansion removes a null value object.
         if (value.ContainsKey("@direction") && value["@value"]?.Type != JTokenType.String)
         {
             return Direction;

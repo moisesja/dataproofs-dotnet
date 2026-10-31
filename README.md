@@ -62,7 +62,9 @@ representation that the reference Data Integrity implementations (jsonld-signatu
 built on it) sign with; the Data Integrity specifications name none. Flipping the direction breaks the
 proof. A verifier whose JSON-LD processor drops direction, the JSON-LD default, does not verify these
 proofs, as it does not verify theirs. The canonical form is byte-identical with jsonld.js for the VCDM
-2.0 value-object shapes; the CHANGELOG lists the two differences on its side.
+2.0 value-object shapes. The CHANGELOG lists the three differences on its side; the one to know is that
+jsonld.js drops a context-level default `@direction` from a `credentials/v2` credential, so write the
+direction on the value object.
 
 RDFC output matches the specification and `rdf-canonize` byte for byte, which dotNetRDF's own canonicalizer
 does not for documents with tied blank nodes (dotnetrdf/dotnetrdf#917). So this library runs a local fixed
