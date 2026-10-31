@@ -327,25 +327,22 @@ public sealed class DataIntegrityProofPipeline
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The proof member must be an object or an array of objects.");
         }
 
+        // VC Data Integrity 1.0 §4.6: with known contexts supplied, the document is accepted only when
+        // every @context in it, at any depth, holds only those. §2.4.1 allows a different ordering of
+        // the steps that gives the same protections. The suites load contexts while they verify, so
+        // this runs first: an unlisted context is never loaded, and a holder cannot choose a URL the
+        // verifier fetches. Such a document has no per-proof results.
+        if (options.KnownContexts is { } knownContexts && ContextProblem(securedDocument, knownContexts) is { } contextProblem)
+        {
+            return new DocumentVerificationResult { Verified = false, Problems = [contextProblem] };
+        }
+
         var results = new List<ProofVerificationResult>(proofElements.Count);
         foreach (var proofElement in proofElements)
         {
             cancellationToken.ThrowIfCancellationRequested();
             results.Add(await VerifySingleProofAsync(
                 securedDocument, proofElements, proofElement, keyProvider, options, cancellationToken).ConfigureAwait(false));
-        }
-
-        // VC Data Integrity 1.0 §4.6: with known contexts supplied, the document is accepted only
-        // when every @context in it, at any depth, holds only those, and the check runs after the
-        // proofs, as the specification requires. The proof results stay in the result for diagnostics.
-        if (options.KnownContexts is { } knownContexts && ContextProblem(securedDocument, knownContexts) is { } contextProblem)
-        {
-            return new DocumentVerificationResult
-            {
-                Verified = false,
-                ProofResults = results,
-                Problems = [contextProblem],
-            };
         }
 
         return new DocumentVerificationResult

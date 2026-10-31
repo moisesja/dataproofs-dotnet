@@ -315,13 +315,69 @@ seen failing on 6b66977, which reproduced the review's findings here.
 
 ## Reported to the owner, not fixed here
 
-Found by the same review and reproduced by rerunning its tests. None comes from this round's change.
+The same review found five more defects, reproduced by rerunning its tests. None came from this round's change.
+The owner then asked for all five to be fixed in this PR, so they moved to round 6.
 
-- A `proofValue` over 4,096 characters, NetCid's default multibase cap, present since v1.5.0: a base proof that
-  long cannot be derived from, and a derived proof cannot be verified, from 87 undisclosed statements.
-- bbs-2023 pointers into a value object: `…/@type` as a mandatory pointer leaks `KeyNotFoundException` from
-  `DeriveProof`; `…/@value` derives a proof that cannot verify; `…/@language` leaves the mandatory claim unenforced.
-- bbs-2023 with `@context` only in the proof options derives a proof that cannot verify.
-- A wrong-length or invalid `bbsPrivateKey` throws `ArgumentException`, outside the documented exceptions.
-- An unlisted remote context reaches `IDocumentLoader` before the refusal, because the check runs after the
-  proofs, as the specification requires.
+# Round 6 — fix the five remaining adversarial findings (approved 2026-10-30)
+
+## Owner intent
+
+"I want all to be fixed in this PR." Approved reading: "all" is the five defects listed at the end of round 5. The
+shelved stash stays shelved, and three smaller notes from the same review stay out: `previousProof` at bbs-2023
+issuance, a past `expires` accepted at issuance, and `/01` array indexes accepted though RFC 6901 forbids them.
+
+## Decisions
+
+- D1: a named `proofValue` limit of 1 MiB characters, enforced at parse and at serialization. NetCid's default of
+  4,096 is what broke long proofs. A limit stays because BBS verification cost grows with proof length. Enforcing
+  it on output means a proof this library returns can always be parsed back.
+- D2: every statement a pointer selects must be a statement of the document. `Group` used to drop the rest
+  silently, as the reference does. It is a rule about statements, not syntax: `…/@value` on a plain literal selects
+  the same statement and keeps working.
+- D3: a pointer may not end on a value object's member other than `@value`, which selects no statement, so D2
+  cannot see it. Known residual: an issuer who aliases `@language` and points at the alias still selects nothing,
+  which only weakens that issuer's own mandatory group.
+- D4: a derived proof keeps the proof's `@context` only when the document has none. Documents with a `@context` are
+  unchanged, keeping reference parity.
+- D5: `KnownContexts` runs before the proofs, which reverses what the reviewer was told in round 5. It is the only
+  automatic way to stop a holder choosing a URL the verifier fetches, because the suites load contexts during
+  verification and Core cannot reach the loader. §2.4.1 requires validation after verification, and also allows "a
+  different ordering of the steps, that provide the same protections". The cost: a refused document has empty
+  `ProofResults`, so its per-proof diagnostics are gone. `Verified` is false either way.
+- D6: an invalid `bbsPrivateKey` becomes `ProofGenerationException`, catching only `ArgumentException` so
+  `BbsUnavailableException` still propagates. The message does not quote the key.
+
+## Results
+
+- Regressions: 24 of 54 failed on 68e6d69 for the right reasons, including the loader fetching
+  `https://holder.example/contexts/v1`, which reproduced the one finding not yet rerun.
+- Each fix removed, on the tree before the final comment and doc wording edits: default decode limit, 3 tests fail;
+  no serialization limit, 1; no statement check, 5; no value-member check, 4; proof `@context` dropped, 1; key error
+  not translated, 7; check moved back after the proofs, 3 (1 RDFC, 2 Core). Restores were byte-identical.
+- Real interop with the reference, both directions. Ours verified there at 100 undisclosed statements (4,657
+  characters), 1,000 undisclosed (43,059) and 120 mandatory pointers (base proof 7,756). The reference's verified
+  here at 100 and 1,000 undisclosed (4,652 and 43,053).
+- The PRD's claim about the reference was tested and corrected: on a language-tagged literal the reference signs
+  and derives `…/@value` and then fails verification, but throws at signing for `@language` and `@type`.
+- Adversarial review of the six fixes. D1 and D6 held. In 121 pointer cases it found no false refusal, and its
+  findings against this round were fixed here, each with a test seen failing first:
+  - D2's check passed when a pointer's `@value` landed on an identical plain value beside it, leaving the
+    language-tagged claim unbound. A pointer may now end on `@value` only when the value object holds nothing else.
+    One case both 68e6d69 and the reference verify is now refused: `…/0/@value` on an explicit `xsd:string` value with
+    an identical plain value beside it. The whole value still works, so the simple rule stays.
+  - A pointer to an `@id` only skolemization adds issued a base proof that could never be derived from, and leaked
+    `ArgumentException` at derivation. Pointers are now checked against the document as given, which also restored
+    the right message for a missing member of a value object, and made `SelectionNQuads`'s catch unreachable.
+  - "An unlisted context is never loaded" was too strong: it holds for values a document names, and a listed context
+    still brings its imports, scoped contexts and redirects. Docs corrected, and a test pins the listed case.
+- Stored base proofs with a mandatory pointer D3 refuses cannot be derived from. Decided to keep it: 1.5.0 bbs proofs
+  do not work with this code anyway (round 2, D4), and the reference refuses that pointer at signing.
+- Documented, not changed: a pointer past a nested `@context` that reads as another statement of the document selects
+  that one, and a pointer to `@context` selects no statement. Verification reaches about 10 seconds at the
+  `proofValue` limit, genuine or not (24,000 scalars, 10.6 seconds, on a forged proof).
+- The two new rules removed: no document check, 5 tests fail; `@value` allowed on any value object, 1. The earlier
+  seven ran before these last changes, and interop was not rerun after them; both changes only add refusals.
+- Everything else the review found went to the owner directly.
+- Gates on a clean Release `/warnaserror` build (33 projects, 0 warnings): 3,100 tests pass, 0 skipped (Rdfc 802,
+  Core 539, Jose 1,336, Legacy 278, Cose 129, DI 11, ApiSurface 5). Dependency hygiene, API surface scan and samples
+  coverage clean. All 15 samples exit 0.

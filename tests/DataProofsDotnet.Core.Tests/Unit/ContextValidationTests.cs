@@ -62,7 +62,7 @@ public class ContextValidationTests
     }
 
     [Fact]
-    public async Task KnownContexts_UnknownValue_FailsTheDocumentAfterTheProofVerified()
+    public async Task KnownContexts_UnknownValue_FailsTheDocumentBeforeAnyProofIsVerified()
     {
         var secured = await SignAsync("[\"" + V2 + "\",\"" + Unknown + "\"]");
 
@@ -74,7 +74,7 @@ public class ContextValidationTests
             Code = ProofProblemCodes.ProofVerificationError,
             Message = "A @context in the secured document holds a value that is not a known context.",
         });
-        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue("the proof itself verified; the context is what fails");
+        result.ProofResults.Should().BeEmpty("an unlisted context is refused before anything could load it");
         result.Problems.Single().Message.Should().NotContain(Unknown, "messages do not quote the input");
     }
 
@@ -130,7 +130,7 @@ public class ContextValidationTests
     }
 
     [Fact]
-    public async Task KnownContexts_FailedProofAndUnknownContext_ReportsBoth()
+    public async Task KnownContexts_UnknownContext_IsReportedWithoutVerifyingTheProof()
     {
         var secured = await SignAsync("[\"" + V2 + "\",\"" + Unknown + "\"]");
         var wrongKey = PublicKeyMaterial.FromRaw(KeyType.Ed25519, Fx.SeedKey(0x08).PublicKey);
@@ -138,7 +138,7 @@ public class ContextValidationTests
         var result = Pipeline.Verify(secured, wrongKey, new ProofVerificationOptions { KnownContexts = Known });
 
         result.Verified.Should().BeFalse();
-        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeFalse();
+        result.ProofResults.Should().BeEmpty();
         result.Problems.Should().ContainSingle().Which.Message.Should().Contain("not a known context");
     }
 
@@ -194,14 +194,15 @@ public class ContextValidationTests
 
     [Theory]
     [MemberData(nameof(UnacceptedNestedContexts))]
-    public async Task KnownContexts_UnacceptedNestedContext_FailsTheDocumentAfterTheProofVerified(string @case, string document, string phrase)
+    public async Task KnownContexts_UnacceptedNestedContext_FailsTheDocument(string @case, string document, string phrase)
     {
         var secured = await SignDocumentAsync(document);
+
+        Pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue("{0}: the proof is sound; the context is what fails", @case);
 
         var result = Verify(secured, [V2]);
 
         result.Verified.Should().BeFalse(@case);
-        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue("the proof itself verified; the context is what fails");
         var problem = result.Problems.Should().ContainSingle().Which;
         problem.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
         problem.Message.Should().Contain(phrase).And.NotContain("evil.example", "messages do not quote the input");

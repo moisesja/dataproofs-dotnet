@@ -72,6 +72,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private const string DataLossMessage =
         "The document or proof configuration cannot be RDFC-canonicalized without losing data, so it cannot be secured.";
 
+    private const string PartOfAValue = "A JSON pointer selects part of a value, not a whole statement of the document.";
+    private const string PointerMismatch = "A JSON pointer does not match the document.";
+
     private static readonly DefaultKeyGenerator KeyGenerator = new();
 
     private readonly IRdfCanonicalizer _canonicalizer;
@@ -123,10 +126,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// cryptosuite <c>bbs-2023</c>); no <c>proofValue</c>.</param>
     /// <param name="bbsPrivateKey">The issuer's 32-byte BLS12-381-G2 BBS private key.</param>
     /// <param name="hmacKey">The per-credential 32-byte HMAC key used to shuffle blank-node labels.</param>
-    /// <param name="mandatoryPointers">RFC 6901 JSON Pointers selecting the always-revealed group.</param>
+    /// <param name="mandatoryPointers">RFC 6901 JSON Pointers selecting the always-revealed group. Each
+    /// must select whole statements of the document, not part of a value.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
     /// <returns>The completed base proof including its <c>u2V0C…</c> <c>proofValue</c>.</returns>
-    /// <exception cref="ProofGenerationException">The options, document or HMAC key are invalid for this suite.</exception>
+    /// <exception cref="ProofGenerationException">The options, document, pointers or keys are invalid for this suite.</exception>
     /// <exception cref="BbsUnavailableException">The BBS native library is unavailable.</exception>
     public Task<DataIntegrityProof> CreateBaseProofAsync(
         JsonElement unsecuredDocument,
@@ -158,7 +162,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var publicKey = KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, bbsPrivateKey.Span).PublicKey;
+        var publicKey = PublicKeyOf(bbsPrivateKey.Span);
 
         var proofConfig = BuildProofConfig(unsecuredDocument, proofOptions);
         _ = JsonInputCheck.SerializeChecked(proofConfig, RdfcJson.ProofTypeInfo, "The proof configuration");
@@ -257,8 +261,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             disclosure.SelectiveIndexes, presentationHeader.Span);
 
         // The derived proof carries no @context of its own, as the reference's does not: the reveal
-        // document's applies, and the verifier borrows it.
-        var derivedProof = baseProof with { ProofValue = derivedProofValue, Context = null };
+        // document's applies, and the verifier borrows it. A document without one has nothing to
+        // lend, so the proof keeps the context it was signed with.
+        var derivedProof = baseProof with
+        {
+            ProofValue = derivedProofValue,
+            Context = unsecured.TryGetProperty("@context", out _) ? null : baseProof.Context,
+        };
         revealDocument["proof"] = JsonSerializer.SerializeToNode(derivedProof, RdfcJson.ProofTypeInfo);
 
         return JsonSerializer.SerializeToElement(revealDocument, RdfcJson.JsonObjectTypeInfo);
@@ -391,12 +400,13 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     // skolemizer cannot name (an RDF list's) would have no stable input label, so it is refused.
 
     // The whole document's relabeled, sorted canonical N-Quads (the BBS message universe), the
-    // input-label → b-label map a selection is relabeled through, and the skolemized document the
-    // selections are taken from.
+    // input-label → b-label map a selection is relabeled through, the skolemized document the
+    // selections are taken from, and the document as given, which a reveal is taken from.
     private readonly record struct TransformResult(
         IReadOnlyList<string> NQuads,
         IReadOnlyDictionary<string, string> LabelMap,
-        JsonObject SkolemizedDocument);
+        JsonObject SkolemizedDocument,
+        JsonNode Document);
 
     // One pointer group's partition of TransformResult.NQuads: the matching statements with their
     // absolute indexes, the rest with theirs, and the selection's deskolemized N-Quads.
@@ -420,13 +430,25 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         var labelMap = canonicalIdMap.ToDictionary(pair => pair.Key, pair => shuffled[pair.Value], StringComparer.Ordinal);
         var nquads = BlankNodeLabels.RelabelAndSort(deskolemized, labelMap);
 
-        return new TransformResult(nquads, labelMap, skolemized);
+        return new TransformResult(nquads, labelMap, skolemized, JsonNode.Parse(document.GetRawText())!);
     }
 
     // The group of TransformResult.NQuads a pointer set addresses: the skolemized selection's
     // N-Quads, relabeled through the shared label map, are an exact string-subset of the whole.
     private GroupResult Group(TransformResult transformed, IReadOnlyList<string> pointers)
     {
+        // Against the document as given: a pointer to an @id that only skolemization added would select
+        // here and then fail in the reveal, after a base proof that could never be derived from.
+        if (!pointers.All(pointer => JsonPointer.Resolves(transformed.Document, pointer)))
+        {
+            throw new ProofGenerationException(PointerMismatch);
+        }
+
+        if (pointers.Any(pointer => JsonPointer.SelectsPartOfAValue(transformed.Document, pointer)))
+        {
+            throw new ProofGenerationException(PartOfAValue);
+        }
+
         var deskolemizedSelection = SelectionNQuads(transformed.SkolemizedDocument, pointers);
         var selected = new HashSet<string>(
             BlankNodeLabels.RelabelAndSort(deskolemizedSelection, transformed.LabelMap), StringComparer.Ordinal);
@@ -447,6 +469,14 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
                 nonMatchingIndexes.Add(i);
                 nonMatching.Add(transformed.NQuads[i]);
             }
+        }
+
+        // A selected statement the document does not hold comes from a pointer into a value, or past a
+        // nested @context: it reads differently alone. Dropping it silently leaves a mandatory claim
+        // unbound and a reveal that cannot verify, as the reference's does, so it is refused here (PR #42 review).
+        if (matching.Count != selected.Count)
+        {
+            throw new ProofGenerationException(PartOfAValue);
         }
 
         return new GroupResult(matchingIndexes, matching, nonMatchingIndexes, nonMatching, deskolemizedSelection);
@@ -734,18 +764,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private IReadOnlyList<string> SelectionNQuads(JsonObject skolemizedDocument, IReadOnlyList<string> pointers)
     {
         var element = JsonSerializer.SerializeToElement(skolemizedDocument, RdfcJson.JsonObjectTypeInfo);
-        JsonNode? selected;
-        try
-        {
-            selected = JsonPointer.SelectJsonLd(element, pointers);
-        }
-        catch (ArgumentException ex)
-        {
-            // A pointer that addresses nothing (the spec's selectJsonLd fails on it too).
-            throw new ProofGenerationException("A JSON pointer does not match the document.", ex);
-        }
-
-        if (selected is not JsonObject selection)
+        if (JsonPointer.SelectJsonLd(element, pointers) is not JsonObject selection)
         {
             return [];
         }
@@ -793,6 +812,19 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     {
         var joined = string.Concat(mandatoryNQuads);
         return Hash.Sha256(Encoding.UTF8.GetBytes(joined));
+    }
+
+    // KeyGenerator reports a wrong length or an invalid scalar as ArgumentException.
+    private static byte[] PublicKeyOf(ReadOnlySpan<byte> privateKey)
+    {
+        try
+        {
+            return KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, privateKey).PublicKey;
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ProofGenerationException("The bbs-2023 private key is not a valid BLS12-381-G2 key.", ex);
+        }
     }
 
     private static (DataIntegrityProof Proof, JsonElement Unsecured) SplitProof(JsonElement securedDocument)

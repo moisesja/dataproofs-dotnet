@@ -73,7 +73,6 @@ public sealed class ContextValidationRdfcTests
         var result = Verify(relabeled, [V2]);
 
         result.Verified.Should().BeFalse(@case);
-        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue();
         result.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
     }
 
@@ -118,28 +117,72 @@ public sealed class ContextValidationRdfcTests
         var result = pipeline.Verify(relabeled, PublicKey, new ProofVerificationOptions { KnownContexts = [V2, Listed] });
 
         result.Verified.Should().BeFalse();
-        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue();
         result.Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
     }
 
     [Fact]
-    public async Task KnownContexts_JsonLiteralHoldingAContextKey_FailsThoughItsProofVerifies()
+    public async Task KnownContexts_UnlistedContextInTheDocument_IsNeverLoaded()
+    {
+        // A holder adds a URL after signing. Verifying it would have the verifier fetch what the holder
+        // chose, and only the walker, run first, can stop that: the suites load contexts while they verify.
+        const string Unlisted = "https://holder.example/contexts/v1";
+        var loader = new MapLoader(new Dictionary<string, string>
+        {
+            [Unlisted] = "{\"@context\":{\"nickname\":\"https://schema.org/name\"}}",
+        });
+        var pipeline = new DataIntegrityProofPipeline(RdfcCryptosuiteRegistration.CreateWithRdfcSuites(new RdfcDocumentCanonicalizer(loader)));
+        var relabeled = Relabel(await SignedCredentialAsync(), "\"" + Unlisted + "\"");
+
+        var refused = pipeline.Verify(relabeled, PublicKey, new ProofVerificationOptions { KnownContexts = [V2] });
+
+        refused.Verified.Should().BeFalse();
+        loader.Loaded.Should().NotContain(Unlisted);
+
+        pipeline.Verify(relabeled, PublicKey, new ProofVerificationOptions { KnownContexts = [V2, Unlisted] }).Verified.Should().BeTrue();
+        loader.Loaded.Should().Contain(Unlisted, "a listed context is still loaded");
+    }
+
+    [Fact]
+    public async Task KnownContexts_WhatAListedContextImports_LoadsWithIt()
+    {
+        // The list covers the values a document holds. Listing a context trusts what it references.
+        const string Listed = "https://issuer.example/contexts/v1";
+        const string Imported = "https://elsewhere.example/contexts/base";
+        var loader = new MapLoader(new Dictionary<string, string>
+        {
+            [Listed] = "{\"@context\":{\"@version\":1.1,\"@import\":\"" + Imported + "\"}}",
+            [Imported] = "{\"@context\":{\"nickname\":\"https://schema.org/name\"}}",
+        });
+        var pipeline = new DataIntegrityProofPipeline(RdfcCryptosuiteRegistration.CreateWithRdfcSuites(new RdfcDocumentCanonicalizer(loader)));
+        var relabeled = Relabel(await SignedCredentialAsync(), "\"" + Listed + "\"");
+
+        pipeline.Verify(relabeled, PublicKey, new ProofVerificationOptions { KnownContexts = [V2, Listed] }).Verified.Should().BeTrue();
+
+        loader.Loaded.Should().Contain(Imported);
+    }
+
+    [Fact]
+    public async Task KnownContexts_JsonLiteralHoldingAContextKey_FailsThoughItsProofIsSound()
     {
         // Telling a literal from a live context takes processing the contexts, so the key counts anyway.
         // A false refusal, never a false accept.
         var secured = await SignAsync("\"credentialSubject\":{\"id\":\"did:example:alice\",\"https://e.example/data\":"
             + "{\"@type\":\"@json\",\"@value\":{\"@context\":" + Nickname + ",\"nickname\":\"Alice\"}}}");
 
-        var result = Verify(secured, [V2]);
-
-        result.Verified.Should().BeFalse();
-        result.ProofResults.Should().ContainSingle().Which.Verified.Should().BeTrue();
+        Verify(secured, null).Verified.Should().BeTrue();
+        Verify(secured, [V2]).Verified.Should().BeFalse();
     }
 
     private sealed class MapLoader(Dictionary<string, string> contexts) : IDocumentLoader
     {
-        public LoadedContextDocument Load(Uri url) => contexts.TryGetValue(url.AbsoluteUri, out var content)
-            ? new LoadedContextDocument(url, content)
-            : OfflineDocumentLoader.Instance.Load(url);
+        public List<string> Loaded { get; } = [];
+
+        public LoadedContextDocument Load(Uri url)
+        {
+            Loaded.Add(url.AbsoluteUri);
+            return contexts.TryGetValue(url.AbsoluteUri, out var content)
+                ? new LoadedContextDocument(url, content)
+                : OfflineDocumentLoader.Instance.Load(url);
+        }
     }
 }

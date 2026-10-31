@@ -78,6 +78,11 @@ internal static class Bbs2023ProofValue
 
     public const int HmacKeyLength = 32;
 
+    // NetCid's default decode limit is 4,096 characters, which a derived proof passes at about 87
+    // undisclosed statements. BBS verification grows with the proof, so a limit stays: this one
+    // holds about 22,000.
+    public const int MaxProofValueLength = 1024 * 1024;
+
     // A BBS proof for BLS12-381-SHA-256 is three G1 points and four scalars (272 bytes) plus one
     // 32-byte scalar per undisclosed message.
     private const int BbsProofBaseLength = 272;
@@ -267,7 +272,15 @@ internal static class Bbs2023ProofValue
         var buffer = new byte[header.Length + cbor.Length];
         header.CopyTo(buffer, 0);
         cbor.CopyTo(buffer, header.Length);
-        return Multibase.Encode(buffer, MultibaseEncoding.Base64Url);
+        var encoded = Multibase.Encode(buffer, MultibaseEncoding.Base64Url);
+
+        // The parser refuses anything longer, so a suite must never hand one out.
+        if (encoded.Length > MaxProofValueLength)
+        {
+            throw new ProofGenerationException($"The bbs-2023 proofValue would exceed {MaxProofValueLength} characters.");
+        }
+
+        return encoded;
     }
 
     private static byte[] DecodeHeadered(string proofValue, byte[] header, string kind)
@@ -278,7 +291,7 @@ internal static class Bbs2023ProofValue
             throw new FormatException("A bbs-2023 proofValue must be multibase base64url-no-pad ('u' prefix).");
         }
 
-        if (!Multibase.TryDecode(proofValue, out var bytes, out var encoding) || encoding != MultibaseEncoding.Base64Url)
+        if (!Multibase.TryDecode(proofValue, out var bytes, out var encoding, MaxProofValueLength) || encoding != MultibaseEncoding.Base64Url)
         {
             throw new FormatException("The bbs-2023 proofValue is not valid multibase base64url-no-pad.");
         }

@@ -111,7 +111,8 @@ foreach (var (suiteName, keyType, label) in cases)
         {
             ExpectedProofPurpose = ProofPurposes.AssertionMethod,
             // VC Data Integrity 1.0 §4.6: a proof binds the RDF statements, not the JSON that compacted
-            // them, so accept only documents whose @context values are known. Checked after the proofs.
+            // them, so accept only documents whose @context values are known. Checked first, so an
+            // unknown context is never loaded.
             KnownContexts = ["https://www.w3.org/ns/credentials/v2", "https://www.w3.org/ns/credentials/examples/v2"],
         });
     Console.WriteLine($"  resolver-path verified: {resolverResult.Verified}");
@@ -123,8 +124,8 @@ foreach (var (suiteName, keyType, label) in cases)
             ExpectedProofPurpose = ProofPurposes.AssertionMethod,
             KnownContexts = ["https://www.w3.org/ns/credentials/v2"],
         });
-    Check(!unknownContext.Verified && unknownContext.Problems.Count == 1 && unknownContext.ProofResults[0].Verified,
-        $"{label}: a @context value outside the known list fails context validation after the proof verified");
+    Check(!unknownContext.Verified && unknownContext.Problems.Count == 1 && unknownContext.ProofResults.Count == 0,
+        $"{label}: a @context value outside the known list fails context validation before any proof is verified");
 
     // Raw-key-path verification (signature only).
     PublicKeyMaterial rawKey = PublicKeyMaterial.FromMultikey(publicKeyMultibase);

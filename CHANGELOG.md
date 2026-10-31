@@ -29,8 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applications MUST accept only known contexts, after the proofs are verified, and the pipeline had
   no option for it. With `KnownContexts` set, every `@context` in the secured document, at any depth,
   must hold only listed IRIs; an unlisted value, an inline context object or a `null` fails the
-  document with a document-level `PROOF_VERIFICATION_ERROR` beside the per-proof results. Unset,
-  nothing is checked, as before. A nested `@context` follows the root's rule rather than failing
+  document with a document-level `PROOF_VERIFICATION_ERROR`. Unset, nothing is checked, as before.
+  The check runs before the proofs, because the suites load contexts while they verify: a context a
+  document names loads only if listed, so a holder cannot choose a URL the verifier fetches. Listing a
+  context also trusts what it references, whose imports, scoped contexts and redirects load with it. A
+  refused document has no per-proof results, so read `Verified`, not `ProofResults`. §2.4.1 orders the
+  check after the proofs but allows a different ordering that gives the same protections. A nested `@context` follows the root's rule rather than failing
   outright as §4.6 step 3 reads, because the JCS suites copy `@context` into each proof and a
   presentation embeds credentials with their own; §2.4.1 allows equivalent protections, and a listed
   context nested gives a holder nothing that adding it at the root does not. The list is a set, so
@@ -212,7 +216,29 @@ source-additive, so this is a minor release.
 
   `CreateBaseProofAsync` refuses an HMAC key that is not 32 bytes with `ProofGenerationException`
   before signing. The base proof parser requires that length, as the reference implementation does,
-  so a proof issued with another could never be derived from.
+  so a proof issued with another could never be derived from. An invalid private key now also throws
+  `ProofGenerationException`, where it used to throw `ArgumentException`.
+
+  A JSON pointer must now select whole statements of the document. One that selects part of a value,
+  such as `…/@type`, `…/@language`, `…/@value` on a language-tagged or typed literal, or a member inside
+  a JSON literal, or that loses a nested `@context` on the way, or that names an `@id` only skolemization
+  adds, is refused with `ProofGenerationException`, at issuance for mandatory pointers and at derivation
+  for selective ones. These used to leak `KeyNotFoundException` or `ArgumentException`, derive a proof
+  that could not verify, or leave a mandatory claim unenforced. `…/@value` on a value object holding
+  nothing else selects the same statement and still works. The check compares statements, so a pointer
+  past a nested `@context` that reads as another statement of the document selects that one, and a
+  pointer to `@context` selects no statement.
+
+  A document with no `@context` of its own, secured with one in the proof options, now derives a proof
+  that verifies: the derived proof keeps that context, since the document has none to lend.
+
+- **bbs-2023 proofs over 4,096 characters work.** NetCid's default decode limit refused any longer
+  `proofValue`, since 1.5.0, so a base proof with many mandatory pointers could not be derived from, and
+  a derived proof with 87 or more undisclosed statements could not be verified. The limit is now
+  1 MiB characters, about 22,000 undisclosed statements, and issuance and derivation refuse to produce
+  anything longer, so a returned proof can always be parsed. Verification cost grows with the proof,
+  genuine or not, to about 10 seconds at the limit as measured here, so a host that accepts proofs from
+  strangers should cap request size.
 
 ### Known limitations
 

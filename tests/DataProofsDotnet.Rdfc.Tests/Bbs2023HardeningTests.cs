@@ -6,6 +6,7 @@ using DataProofsDotnet.Rdfc.DataIntegrity;
 using DataProofsDotnet.Rdfc.Internal;
 using DataProofsDotnet.Rdfc.Tests.TestSupport;
 using FluentAssertions;
+using NetCid;
 using NetCrypto;
 using Xunit;
 
@@ -26,6 +27,13 @@ public sealed class Bbs2023HardeningTests
     private const string AlteredHeader = "The base proof's BBS header does not match the document and proof configuration: a mandatory value or the proof was altered after signing.";
     private const string MalformedBase = "The base proofValue is not a valid bbs-2023 base proof.";
     private const string HmacKeyLength = "The bbs-2023 HMAC key must be 32 bytes.";
+    private const string InvalidPrivateKey = "The bbs-2023 private key is not a valid BLS12-381-G2 key.";
+    private const string PartOfAValue = "A JSON pointer selects part of a value, not a whole statement of the document.";
+    private const string X = "https://x.example/";
+    private const string XPointer = "https:~1~1x.example~1";
+    private const string BlankNode = "\"" + X + "n\":{\"" + X + "a\":\"1\"},\"description\":\"d\"";
+    private const string SkolemIdPointer = "/credentialSubject/" + XPointer + "n/@id";
+    private const int ProofValueLimit = Bbs2023ProofValue.MaxProofValueLength;
     private const string MalformedDerived = "The proofValue is not a valid bbs-2023 derived proof.";
 
     private static readonly byte[] Header = Convert.FromHexString("113377aa");
@@ -51,6 +59,19 @@ public sealed class Bbs2023HardeningTests
         VerificationMethod = "did:example:issuer#key-1",
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
+
+    /// <summary>A VCDM 2.0 credential whose subject holds <paramref name="members"/>.</summary>
+    private static JsonElement Credential(string members)
+        => JsonDocument.Parse("{\"@context\":\"" + V2 + "\",\"id\":\"urn:uuid:46464646-0000-4000-8000-000000000042\",\"type\":\"VerifiableCredential\","
+            + "\"issuer\":\"did:example:issuer\",\"credentialSubject\":{\"id\":\"did:example:alice\"," + members + "}}").RootElement.Clone();
+
+    private static string Values(int count) => string.Join(",", Enumerable.Range(0, count).Select(i => "\"v" + i + "\""));
+
+    private static bool Verifies(Bbs2023Cryptosuite suite, JsonElement reveal, byte[] sk)
+    {
+        var (proof, unsecured) = Split(reveal);
+        return suite.VerifyProof(unsecured, proof, PublicKey(sk)).Verified;
+    }
 
     private static string[] WindMandatory() => JsonSerializer.Deserialize<string[]>(Fx.Text("w3c", "vc-di-bbs", Vectors, "windMandatory.json"))!;
 
@@ -197,6 +218,215 @@ public sealed class Bbs2023HardeningTests
         var (proof, unsecured) = Split(suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Header));
 
         suite.VerifyProof(unsecured, proof, PublicKey(sk)).Verified.Should().BeTrue();
+    }
+
+    // ------------------------------------------------------------------ the private key
+
+    [BbsTheory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(31, 1)]
+    [InlineData(33, 1)]
+    [InlineData(64, 1)]
+    [InlineData(32, 0)]
+    [InlineData(32, 0xFF)]
+    public async Task PrivateKey_NotAValidKey_IsTheDocumentedException(int length, int fill)
+    {
+        var (_, hmacKey) = KeyMaterial();
+        var key = Enumerable.Repeat((byte)fill, length).ToArray();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(Credential("\"name\":\"Alice\""), Options(), key, hmacKey, ["/issuer"]);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(InvalidPrivateKey);
+    }
+
+    // ------------------------------------------------------------------ long proof values
+
+    [BbsFact]
+    public async Task BaseProof_LongerThanTheMultibaseDefault_CanBeDerivedFrom()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var document = Credential("\"" + X + "a\":[" + Values(200) + "],\"description\":\"d\"");
+        string[] mandatory = [.. Enumerable.Range(0, 120).Select(i => "/credentialSubject/" + XPointer + "a/" + i)];
+
+        var secured = await SecuredAsync(suite, document, mandatory, sk, hmacKey);
+        secured.GetProperty("proof").GetProperty("proofValue").GetString()!.Length.Should().BeGreaterThan(Multibase.DefaultMaxInputLength);
+
+        Verifies(suite, suite.DeriveProof(secured, ["/credentialSubject/description"], Header), sk).Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task DerivedProof_LongerThanTheMultibaseDefault_Verifies()
+    {
+        // 87 undisclosed statements was enough to make a derived proof unverifiable.
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var secured = await SecuredAsync(suite, Credential("\"" + X + "a\":[" + Values(100) + "],\"description\":\"d\""), ["/issuer"], sk, hmacKey);
+
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/description"], Header);
+
+        reveal.GetProperty("proof").GetProperty("proofValue").GetString()!.Length.Should().BeGreaterThan(Multibase.DefaultMaxInputLength);
+        Verifies(suite, reveal, sk).Should().BeTrue();
+        Verifies(suite, Fx.Mutate(reveal, d => d["credentialSubject"]!["description"] = "tampered"), sk).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ProofValue_PastTheLimit_IsNotProduced()
+    {
+        // The parser refuses it, so a suite that returned one would hand out a proof nothing can read.
+        var act = () => Bbs2023ProofValue.SerializeBaseProof(new byte[80], new byte[64], new byte[96], new byte[32], [new string('a', ProofValueLimit)]);
+
+        act.Should().Throw<ProofGenerationException>().WithMessage("The bbs-2023 proofValue would exceed*");
+    }
+
+    [Fact]
+    public void ProofValue_AtTheLimit_Parses()
+    {
+        var pointer = new string('a', (ProofValueLimit * 3 / 4) - 300);
+        var proofValue = Bbs2023ProofValue.SerializeBaseProof(new byte[80], new byte[64], new byte[96], new byte[32], [pointer]);
+
+        proofValue.Length.Should().BeInRange(ProofValueLimit - 1000, ProofValueLimit);
+        Bbs2023ProofValue.ParseBaseProof(proofValue).MandatoryPointers.Should().ContainSingle().Which.Should().Be(pointer);
+    }
+
+    [Fact]
+    public void ProofValue_OverTheLimit_IsMalformed()
+    {
+        var proofValue = Multibase.Encode(new byte[ProofValueLimit], MultibaseEncoding.Base64Url);
+
+        var act = () => Bbs2023ProofValue.ParseBaseProof(proofValue);
+
+        act.Should().Throw<FormatException>().WithMessage("The bbs-2023 proofValue is not valid multibase base64url-no-pad.");
+    }
+
+    // ------------------------------------------------------------------ pointers into a value
+
+    public static TheoryData<string, string, string> PointersIntoAValue() => new()
+    {
+        // case, the subject's value, the pointer. None selects a whole statement: the selection reads
+        // differently from the document, or reads as nothing, so it cannot be bound or disclosed.
+        { "a typed value's @type", "\"" + X + "d\":{\"@value\":\"2020-01-01T00:00:00Z\",\"@type\":\"http://www.w3.org/2001/XMLSchema#dateTime\"}", "/credentialSubject/" + XPointer + "d/@type" },
+        { "a language-tagged value's @value", "\"name\":{\"@value\":\"Alice\",\"@language\":\"en\"}", "/credentialSubject/name/@value" },
+        { "a value's @language", "\"name\":{\"@value\":\"Alice\",\"@language\":\"en\"}", "/credentialSubject/name/@language" },
+        { "a value's @direction", "\"name\":{\"@value\":\"Alice\",\"@direction\":\"rtl\"}", "/credentialSubject/name/@direction" },
+        { "inside a JSON literal", "\"" + X + "j\":{\"@type\":\"@json\",\"@value\":[1,2]}", "/credentialSubject/" + XPointer + "j/@value/0" },
+    };
+
+    [BbsTheory]
+    [MemberData(nameof(PointersIntoAValue))]
+    public async Task MandatoryPointer_IntoAValue_IsRefusedAtIssuance(string @case, string value, string pointer)
+    {
+        var (sk, hmacKey) = KeyMaterial();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(Credential(value + ",\"description\":\"d\""), Options(), sk, hmacKey, [pointer]);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>(@case)).WithMessage(PartOfAValue);
+    }
+
+    [BbsTheory]
+    [MemberData(nameof(PointersIntoAValue))]
+    public async Task SelectivePointer_IntoAValue_IsRefusedAtDerivation(string @case, string value, string pointer)
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var secured = await SecuredAsync(suite, Credential(value + ",\"description\":\"d\""), ["/issuer"], sk, hmacKey);
+
+        var act = () => suite.DeriveProof(secured, [pointer], Header);
+
+        act.Should().Throw<ProofGenerationException>(@case).WithMessage(PartOfAValue);
+    }
+
+    [BbsFact]
+    public async Task Pointer_ThatLosesANestedContext_IsRefused()
+    {
+        // Selecting inside the subtree drops the @context that defined the term, so the root reads it
+        // as another statement.
+        var (sk, hmacKey) = KeyMaterial();
+        var document = JsonDocument.Parse("{\"@context\":[\"" + V2 + "\",{\"@vocab\":\"https://vocab.example/\"}],\"id\":\"urn:uuid:46464646-0000-4000-8000-000000000042\","
+            + "\"type\":\"VerifiableCredential\",\"issuer\":\"did:example:issuer\",\"credentialSubject\":{\"id\":\"did:example:alice\",\"description\":\"d\","
+            + "\"" + X + "inner\":{\"id\":\"urn:example:inner\",\"@context\":{\"note\":\"https://other.example/note\"},\"note\":\"x\"}}}").RootElement.Clone();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, Options(), sk, hmacKey, ["/credentialSubject/" + XPointer + "inner/note"]);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(PartOfAValue);
+    }
+
+    [BbsFact]
+    public async Task ValuePointer_ThatWouldLandOnAPlainSibling_IsRefused()
+    {
+        // Alone, @value reads as the plain literal beside it, so the language-tagged claim would stay unbound.
+        var (sk, hmacKey) = KeyMaterial();
+        var document = Credential("\"name\":[{\"@value\":\"Alice\",\"@language\":\"en\"},\"Alice\"],\"description\":\"d\"");
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, Options(), sk, hmacKey, ["/credentialSubject/name/0/@value"]);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(PartOfAValue);
+    }
+
+    [BbsFact]
+    public async Task MandatoryPointer_ToASkolemId_IsRefusedAtIssuance()
+    {
+        // Skolemization adds that @id. The reveal comes from the document as given, which has none, so
+        // the base proof could never be derived from.
+        var (sk, hmacKey) = KeyMaterial();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(Credential(BlankNode), Options(), sk, hmacKey, [SkolemIdPointer]);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(PointerMismatch);
+    }
+
+    [BbsFact]
+    public async Task SelectivePointer_ToASkolemId_IsRefusedAtDerivation()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var secured = await SecuredAsync(suite, Credential(BlankNode), ["/issuer"], sk, hmacKey);
+
+        var act = () => suite.DeriveProof(secured, [SkolemIdPointer], Header);
+
+        act.Should().Throw<ProofGenerationException>().WithMessage(PointerMismatch);
+    }
+
+    [BbsFact]
+    public async Task Pointer_ToAMemberTheValueDoesNotHave_DoesNotMatchTheDocument()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var document = Credential("\"name\":{\"@value\":\"Alice\",\"@language\":\"en\"},\"description\":\"d\"");
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, Options(), sk, hmacKey, ["/credentialSubject/name/nope"]);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(PointerMismatch);
+    }
+
+    [BbsTheory]
+    [InlineData("a plain value's @value", "\"name\":{\"@value\":\"Alice\"}", "/credentialSubject/name/@value")]
+    [InlineData("a whole language-tagged value", "\"name\":{\"@value\":\"Alice\",\"@language\":\"en\"}", "/credentialSubject/name")]
+    public async Task Pointer_ThatSelectsAWholeStatement_Works(string @case, string value, string pointer)
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var secured = await SecuredAsync(suite, Credential(value + ",\"description\":\"d\""), [pointer], sk, hmacKey);
+
+        Verifies(suite, suite.DeriveProof(secured, ["/credentialSubject/description"], Header), sk).Should().BeTrue(@case);
+    }
+
+    // ------------------------------------------------------------------ @context only in the options
+
+    [BbsFact]
+    public async Task ProofContext_WithADocumentThatHasNone_StaysOnTheDerivedProof()
+    {
+        // The document has no @context to lend, so the derived proof needs its own.
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        var document = JsonDocument.Parse("{\"@id\":\"urn:uuid:46464646-0000-4000-8000-000000000046\",\"https://schema.org/name\":\"Alice\",\"https://schema.org/description\":\"d\"}").RootElement.Clone();
+        var baseProof = await suite.CreateBaseProofAsync(document, Options() with { Context = JsonDocument.Parse("\"" + V2 + "\"").RootElement.Clone() }, sk, hmacKey, ["/https:~1~1schema.org~1name"]);
+        var secured = Fx.Mutate(document, d => d["proof"] = JsonSerializer.SerializeToNode(baseProof, DataProofsJsonOptions.Default));
+
+        var reveal = suite.DeriveProof(secured, ["/https:~1~1schema.org~1description"], Header);
+
+        Verifies(suite, reveal, sk).Should().BeTrue();
+        Verifies(suite, Fx.Mutate(reveal, d => d["https://schema.org/description"] = "tampered"), sk).Should().BeFalse();
     }
 
     // ------------------------------------------------------------------ blank node identifiers
