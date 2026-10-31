@@ -54,8 +54,22 @@ Typical causes:
   Relative IRIs resolved against an `@base` are respelled too, so they are refused.
 - **Distinct IRIs dotNetRDF treats as one.** Example: `https://host` next to `https://host/`. Their
   statements would merge.
+- **A boolean or number with `@direction`.** dotNetRDF types it as an XSD literal and drops the direction.
 
-Accepted input canonicalizes to the same bytes as before. See FR-9 in the PRD for the full rule.
+A string's base direction is carried, not refused. `{"@value":"x","@language":"ar","@direction":"rtl"}`
+is signed as `"x"^^<https://www.w3.org/ns/i18n#ar_rtl>`, the JSON-LD 1.1 `rdfDirection: i18n-datatype`
+representation that the reference Data Integrity implementations (jsonld-signatures and the cryptosuites
+built on it) sign with; the Data Integrity specifications name none. Flipping the direction breaks the
+proof. A verifier whose JSON-LD processor drops direction, the JSON-LD default, does not verify these
+proofs, as it does not verify theirs. The canonical form is byte-identical with jsonld.js for the VCDM
+2.0 value-object shapes. The CHANGELOG lists the three differences on its side; the one to know is that
+jsonld.js drops a context-level default `@direction` from a `credentials/v2` credential, so write the
+direction on the value object.
+
+RDFC output matches the specification and `rdf-canonize` byte for byte, which dotNetRDF's own canonicalizer
+does not for documents with tied blank nodes (dotnetrdf/dotnetrdf#917). So this library runs a local fixed
+copy of it. Proofs over those documents made by 1.5.0 or earlier stop verifying; the CHANGELOG explains
+which. See FR-9 in the PRD for the full rule.
 
 ## Native AOT and trimming
 

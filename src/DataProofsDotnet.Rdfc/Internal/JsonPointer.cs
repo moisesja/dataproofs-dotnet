@@ -48,6 +48,20 @@ internal static class JsonPointer
         return tokens;
     }
 
+    /// <summary>Whether <paramref name="pointer"/> addresses a value in <paramref name="document"/>.</summary>
+    public static bool Resolves(JsonNode document, string pointer)
+        => Parse(pointer).Aggregate((JsonNode?)document, Step) is not null;
+
+    /// <summary>
+    /// Whether <paramref name="pointer"/> ends inside a value object that holds more than its
+    /// <c>@value</c>. Alone, its <c>@language</c> or <c>@direction</c> is no statement, so selecting it
+    /// selects nothing, and nothing shows that it did. Alone, its <c>@value</c> is another literal,
+    /// which a statement beside it can match. Only the whole object selects the value.
+    /// </summary>
+    public static bool SelectsPartOfAValue(JsonNode document, string pointer)
+        => Parse(pointer).SkipLast(1).Aggregate((JsonNode?)document, Step) is JsonObject { Count: > 1 } value
+            && value.ContainsKey("@value");
+
     /// <summary>
     /// Builds the JSON-LD sub-document containing only the values addressed by
     /// <paramref name="pointers"/>, copying the document's <c>@context</c> and the
@@ -73,6 +87,12 @@ internal static class JsonPointer
         foreach (var pointer in pointers)
         {
             var tokens = Parse(pointer);
+            if (tokens.Count == 0)
+            {
+                // The empty pointer addresses the whole document (RFC 6901; the spec's selectJsonLd).
+                return JsonNode.Parse(document.GetRawText());
+            }
+
             selection = SelectPath(source, tokens, selection);
         }
 
@@ -131,13 +151,15 @@ internal static class JsonPointer
     {
         var sourceCursor = source;
 
-        // The path's value must exist in the source; a pointer addressing nothing is skipped.
+        // The path's value must exist in the source. A pointer addressing nothing is an error, as in
+        // the spec's selectJsonLd: silently skipping it let an issuer's mandatory pointer, or a
+        // holder's selective one, select nothing without anyone noticing (PR #42 review).
         foreach (var token in tokens)
         {
             sourceCursor = Step(sourceCursor, token);
             if (sourceCursor is null)
             {
-                return selection;
+                throw new ArgumentException("A JSON pointer does not match the document.", nameof(tokens));
             }
         }
 

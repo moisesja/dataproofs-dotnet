@@ -327,6 +327,16 @@ public sealed class DataIntegrityProofPipeline
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The proof member must be an object or an array of objects.");
         }
 
+        // VC Data Integrity 1.0 §4.6: with known contexts supplied, the document is accepted only when
+        // every @context in it, at any depth, holds only those. §2.4.1 allows a different ordering of
+        // the steps that gives the same protections. The suites load contexts while they verify, so
+        // this runs first: an unlisted context is never loaded, and a holder cannot choose a URL the
+        // verifier fetches. Such a document has no per-proof results.
+        if (options.KnownContexts is { } knownContexts && ContextProblem(securedDocument, knownContexts) is { } contextProblem)
+        {
+            return new DocumentVerificationResult { Verified = false, Problems = [contextProblem] };
+        }
+
         var results = new List<ProofVerificationResult>(proofElements.Count);
         foreach (var proofElement in proofElements)
         {
@@ -340,6 +350,78 @@ public sealed class DataIntegrityProofPipeline
             Verified = results.Count > 0 && results.All(r => r.Verified),
             ProofResults = results,
         };
+    }
+
+    // Context Validation (VC Data Integrity 1.0 §4.6) over context IRIs: every @context in the
+    // document, at any depth, must hold only listed IRIs. An inline context object cannot be a
+    // listed value, so it fails; a document without any @context has nothing to validate.
+    //
+    // Step 3 fails a subtree's @context outright, but the JCS suites copy @context into each proof
+    // and a presentation embeds credentials with their own, so a nested @context follows the root's
+    // rule instead (§2.4.1 allows equivalent protections). A listed context nested gives a holder
+    // nothing that adding it at the root does not.
+    //
+    // This goes by name alone, with no exemptions. Telling a JSON literal apart takes processing the
+    // contexts: a term's type can make one, and @value is a keyword only outside a container map,
+    // where it is an ordinary key whose value the processor expands. So every key named @context
+    // counts, as step 3 reads, and one inside a literal fails closed. TryAccept has bounded the
+    // depth, refused repeated members and made every name readable.
+    private static ProofProblem? ContextProblem(JsonElement element, IReadOnlyCollection<string> knownContexts)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (ContextProblem(item, knownContexts) is { } problem)
+                {
+                    return problem;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var member in element.EnumerateObject())
+            {
+                var problem = member.Name == "@context"
+                    ? ContextValueProblem(member.Value, knownContexts)
+                    : ContextProblem(member.Value, knownContexts);
+
+                if (problem is not null)
+                {
+                    return problem;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Messages do not quote the value (FR-23).
+    private static ProofProblem? ContextValueProblem(JsonElement context, IReadOnlyCollection<string> knownContexts)
+    {
+        var values = context.ValueKind == JsonValueKind.Array ? context.EnumerateArray().ToList() : [context];
+        foreach (var value in values)
+        {
+            if (value.ValueKind != JsonValueKind.String)
+            {
+                return new ProofProblem
+                {
+                    Code = ProofProblemCodes.ProofVerificationError,
+                    Message = "A @context in the secured document holds a value that is not a context IRI, so it cannot be a known context.",
+                };
+            }
+
+            if (!knownContexts.Contains(value.GetString()!, StringComparer.Ordinal))
+            {
+                return new ProofProblem
+                {
+                    Code = ProofProblemCodes.ProofVerificationError,
+                    Message = "A @context in the secured document holds a value that is not a known context.",
+                };
+            }
+        }
+
+        return null;
     }
 
     private async Task<ProofVerificationResult> VerifySingleProofAsync(
