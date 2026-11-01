@@ -71,6 +71,21 @@ public class ProofOptionsBindingTests
         Expires = expires,
     };
 
+    private const string UndefinedTerms = "https://www.w3.org/ns/credentials/undefined-terms/v2";
+    private const string UndefinedTerm = "https://www.w3.org/ns/credentials/undefined-term#";
+
+    // The proof terms, written inline so that no protected context limits what a term can mean.
+    private const string ProofTerms =
+        "\"id\":\"@id\",\"type\":\"@type\",\"Ed25519Signature2020\":\"" + Sec + "Ed25519Signature2020\","
+        + "\"created\":{\"@id\":\"http://purl.org/dc/terms/created\",\"@type\":\"" + XsdDateTime + "\"},"
+        + "\"verificationMethod\":{\"@id\":\"" + Sec + "verificationMethod\",\"@type\":\"@id\"},"
+        + "\"proofPurpose\":{\"@id\":\"" + Sec + "proofPurpose\",\"@type\":\"@vocab\"},"
+        + "\"assertionMethod\":{\"@id\":\"" + Sec + "assertionMethod\",\"@type\":\"@id\"},"
+        + "\"claim\":\"https://example.org/claim\"";
+
+    private static JsonElement Inline(string extraTerms) => Parse(
+        "{\"@context\":{" + ProofTerms + extraTerms + "},\"id\":\"urn:uuid:46464646-0000-4000-8000-000000000042\",\"claim\":\"value\"}");
+
     private static string ContextArray(string[] contexts, params string[] inlineContexts)
         => "[" + string.Join(",", contexts.Select(context => "\"" + context + "\"").Concat(inlineContexts)) + "]";
 
@@ -101,23 +116,102 @@ public class ProofOptionsBindingTests
     public async Task AChallengeTheIssuerNeverSignedIsRefusedUnderAnUnprotectedContext()
     {
         var (pipeline, signer, publicKey, type, _) = Setup(Ed25519Signature2020Cryptosuite.ProofType);
-        const string terms =
-            "\"id\":\"@id\",\"type\":\"@type\",\"Ed25519Signature2020\":\"" + Sec + "Ed25519Signature2020\","
-            + "\"created\":{\"@id\":\"http://purl.org/dc/terms/created\",\"@type\":\"" + XsdDateTime + "\"},"
-            + "\"verificationMethod\":{\"@id\":\"" + Sec + "verificationMethod\",\"@type\":\"@id\"},"
-            + "\"proofPurpose\":{\"@id\":\"" + Sec + "proofPurpose\",\"@type\":\"@vocab\"},"
-            + "\"assertionMethod\":{\"@id\":\"" + Sec + "assertionMethod\",\"@type\":\"@id\"},"
-            + "\"claim\":\"https://example.org/claim\"";
-        var document = Parse("{\"@context\":{" + terms + "},\"id\":\"urn:uuid:46464646-0000-4000-8000-000000000042\",\"claim\":\"value\"}");
-        var secured = await pipeline.AddProofAsync(document, Options(type), signer);
+        var secured = await pipeline.AddProofAsync(Inline(string.Empty), Options(type), signer);
         pipeline.Verify(secured, publicKey).Verified.Should().BeTrue();
 
         var attacked = Fx.Mutate(secured, node =>
         {
-            node["@context"] = JsonNode.Parse("{" + terms + ",\"challenge\":\"@type\",\"abc\":\"" + Sec + "Ed25519Signature2020\"}");
+            node["@context"] = Inline(",\"challenge\":\"@type\",\"abc\":\"" + Sec + "Ed25519Signature2020\"").GetProperty("@context").Deserialize<JsonNode>();
             ((JsonObject)node["proof"]!)["challenge"] = "abc";
         });
 
         pipeline.Verify(attacked, publicKey, new ProofVerificationOptions { ExpectedChallenge = "abc" }).Verified.Should().BeFalse();
+    }
+
+    // EcdsaSecp256r1Signature2019 has no published context: under undefined-terms/v2 its whole proof
+    // reads under that context's @vocab, so that is where the signed statements are.
+    [Fact]
+    public async Task ExpiredProofStaysExpiredWhenRenamedUnderAVocab()
+    {
+        var type = EcdsaSecp256r1Signature2019Cryptosuite.ProofType;
+        var (pipeline, signer, publicKey, _, _) = Setup(type);
+        var contexts = new[] { CredentialsV2, UndefinedTerms };
+        var secured = await pipeline.AddProofAsync(Credential(ContextArray(contexts)), Options(type, Expiry), signer);
+        pipeline.Verify(secured, publicKey, At(BeforeExpiry)).Verified.Should().BeTrue();
+        pipeline.Verify(secured, publicKey, At(AfterExpiry)).Verified.Should().BeFalse();
+
+        var attacked = Fx.Mutate(secured, node =>
+        {
+            node["@context"] = JsonNode.Parse(ContextArray(contexts, "{\"renamed\":\"" + UndefinedTerm + "expires\"}"));
+            var proof = (JsonObject)node["proof"]!;
+            proof.Remove("expires");
+            proof["renamed"] = Expiry;
+        });
+
+        pipeline.Verify(attacked, publicKey, At(AfterExpiry)).Verified.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(Ed25519Signature2020Cryptosuite.ProofType, false)]
+    [InlineData(EcdsaSecp256r1Signature2019Cryptosuite.ProofType, false)]
+    [InlineData(EcdsaSecp256r1Signature2019Cryptosuite.ProofType, true)]
+    public async Task EveryMemberRoundTrips(string type, bool underAVocab)
+    {
+        var (pipeline, signer, publicKey, _, contexts) = Setup(type);
+        var context = underAVocab ? [CredentialsV2, UndefinedTerms] : contexts;
+        var options = Options(type, Expiry) with
+        {
+            Id = "urn:uuid:46464646-0000-4000-8000-000000000043",
+            Domain = "https://a.example/path?q=1",
+            Challenge = "a\"b\\c\nd\U0001F600e\u0301",
+            Nonce = "n",
+        };
+
+        var secured = await pipeline.AddProofAsync(Credential(ContextArray(context)), options, signer);
+
+        pipeline.Verify(secured, publicKey, new ProofVerificationOptions
+        {
+            VerificationTime = BeforeExpiry,
+            ExpectedProofPurpose = ProofPurposes.AssertionMethod,
+            ExpectedDomain = options.Domain,
+            ExpectedChallenge = options.Challenge,
+        }).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AnApplicationsOwnPurposeRoundTrips()
+    {
+        var (pipeline, signer, publicKey, type, _) = Setup(Ed25519Signature2020Cryptosuite.ProofType);
+        var document = Inline(",\"capabilityRevocation\":\"urn:zcap-dotnet:revocation:v1#capabilityRevocation\"");
+
+        var secured = await pipeline.AddProofAsync(document, Options(type) with { ProofPurpose = "capabilityRevocation" }, signer);
+
+        pipeline.Verify(secured, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = "capabilityRevocation" })
+            .Verified.Should().BeTrue();
+    }
+
+    // A delegated capability embeds its parent, whose own proof has the same type. Under
+    // @container: @graph that proof is in a named graph, and it is not the proof being verified.
+    [Fact]
+    public async Task AParentProofEmbeddedInANamedGraphDoesNotStopADelegation()
+    {
+        var (pipeline, signer, publicKey, type, _) = Setup(Ed25519Signature2020Cryptosuite.ProofType);
+        var document = Inline(
+            ",\"proof\":{\"@id\":\"" + Sec + "proof\",\"@type\":\"@id\",\"@container\":\"@graph\"}"
+            + ",\"capabilityChain\":{\"@id\":\"" + Sec + "capabilityChain\",\"@type\":\"@id\",\"@container\":\"@list\"}");
+        var parent = Parse(
+            "{\"id\":\"urn:zcap:parent\",\"proof\":{\"type\":\"Ed25519Signature2020\",\"created\":\"2026-10-29T00:00:00Z\","
+            + "\"verificationMethod\":\"did:example:parent#key-1\",\"proofPurpose\":\"assertionMethod\"}}");
+        var options = Options(type) with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["capabilityChain"] = Parse("[\"urn:zcap:root\"," + parent.GetRawText() + "]"),
+            },
+        };
+
+        var secured = await pipeline.AddProofAsync(document, options, signer);
+
+        pipeline.Verify(secured, publicKey).Verified.Should().BeTrue();
     }
 }

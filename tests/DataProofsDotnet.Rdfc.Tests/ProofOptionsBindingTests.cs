@@ -277,6 +277,160 @@ public class ProofOptionsBindingTests
             .Verified.Should().BeFalse();
     }
 
+    // Quotes, control characters, a character past the BMP and a decomposed one: the signed form
+    // of each is escaped or left as is, and must still read back as the member.
+    private const string HostileValue = "a\"b\\c\nd\te\U0001F600e\u0301";
+
+    public static TheoryData<string> Purposes() => new()
+    {
+        ProofPurposes.AssertionMethod,
+        ProofPurposes.Authentication,
+        ProofPurposes.CapabilityInvocation,
+        ProofPurposes.CapabilityDelegation,
+        ProofPurposes.KeyAgreement,
+    };
+
+    private static DataIntegrityProof EveryMember(string suite, string purpose) => new()
+    {
+        Id = "urn:uuid:46464646-0000-4000-8000-000000000043",
+        Cryptosuite = suite,
+        Created = "2026-10-30T00:00:00.123456Z",
+        Expires = "2027-01-01T00:00:00+01:00",
+        VerificationMethod = "did:example:issuer#key-1",
+        ProofPurpose = purpose,
+        Domain = "https://a.example/path?q=1",
+        Challenge = HostileValue,
+        Nonce = HostileValue,
+    };
+
+    private static ProofVerificationOptions ExpectingEveryMember(string purpose) => new()
+    {
+        VerificationTime = BeforeExpiry,
+        ExpectedProofPurpose = purpose,
+        ExpectedDomain = "https://a.example/path?q=1",
+        ExpectedChallenge = HostileValue,
+    };
+
+    [Theory]
+    [MemberData(nameof(Purposes))]
+    public async Task Rdfc_EveryMemberAndPurposeRoundTrips(string purpose)
+    {
+        foreach (var suite in new[] { EddsaRdfc2022Cryptosuite.CryptosuiteName, EcdsaRdfc2019Cryptosuite.CryptosuiteName })
+        {
+            var (key, publicKey) = RdfcKey(suite);
+            var secured = await Pipeline.AddProofAsync(Credential(), EveryMember(suite, purpose), Fx.Signer(key));
+
+            Pipeline.Verify(secured, publicKey, ExpectingEveryMember(purpose)).Verified.Should().BeTrue();
+        }
+    }
+
+    [BbsTheory]
+    [MemberData(nameof(Purposes))]
+    public async Task Bbs_EveryMemberAndPurposeRoundTrips(string purpose)
+    {
+        var (_, _, publicKey) = BbsKeys();
+        var reveal = await DeriveBbs(
+            Credential(), EveryMember(Bbs2023Cryptosuite.CryptosuiteName, purpose), ["/issuer"], ["/credentialSubject/name"]);
+
+        Pipeline.Verify(reveal, publicKey, ExpectingEveryMember(purpose)).Verified.Should().BeTrue();
+    }
+
+    [Theory, MemberData(nameof(RdfcSuites))]
+    public async Task Rdfc_ANonceTheIssuerNeverSignedIsRefused(string suite)
+    {
+        var (key, publicKey) = RdfcKey(suite);
+        var secured = await SignRdfc(suite, key);
+
+        var attacked = OnProof(secured, proof =>
+        {
+            proof["nonce"] = "abc";
+            proof["@context"] = InlineContext(",\"nonce\":\"@type\",\"abc\":\"" + Sec + "DataIntegrityProof\"");
+        });
+
+        Pipeline.Verify(attacked, publicKey).ProofResults.Should().ContainSingle()
+            .Which.Problems.Should().ContainSingle(problem => problem.Message!.Contains("nonce"));
+    }
+
+    [Theory, MemberData(nameof(RdfcSuites))]
+    public async Task Rdfc_AVerificationMethodTheIssuerNeverSignedIsRefused(string suite)
+    {
+        var (key, publicKey) = RdfcKey(suite);
+        var secured = await SignRdfc(suite, key);
+
+        var attacked = OnProof(secured, proof =>
+        {
+            proof["signedMethod"] = proof["verificationMethod"]!.DeepClone();
+            proof["verificationMethod"] = "abc";
+            proof["@context"] = JsonNode.Parse(
+                InlineContext(string.Empty).ToJsonString()[..^1].Replace(
+                    "\"verificationMethod\":", "\"signedMethod\":", StringComparison.Ordinal)
+                + ",\"verificationMethod\":\"@type\",\"abc\":\"" + Sec + "DataIntegrityProof\"}");
+        });
+
+        Pipeline.Verify(attacked, publicKey).ProofResults.Should().ContainSingle()
+            .Which.Problems.Should().ContainSingle(problem => problem.Message!.Contains("verificationMethod"));
+    }
+
+    [Theory, MemberData(nameof(RdfcSuites))]
+    public async Task Rdfc_AProofIdRenamedAwayIsRefused(string suite)
+    {
+        var (key, publicKey) = RdfcKey(suite);
+        var secured = await Pipeline.AddProofAsync(Credential(), new DataIntegrityProof
+        {
+            Id = "urn:uuid:46464646-0000-4000-8000-000000000044",
+            Cryptosuite = suite,
+            Created = "2026-10-30T00:00:00Z",
+            VerificationMethod = "did:example:issuer#key-1",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+        }, Fx.Signer(key));
+        Pipeline.Verify(secured, publicKey).Verified.Should().BeTrue();
+
+        var attacked = OnProof(secured, proof =>
+        {
+            proof["signedId"] = proof["id"]!.DeepClone();
+            proof.Remove("id");
+            proof["@context"] = InlineContext(",\"signedId\":\"@id\"");
+        });
+
+        Pipeline.Verify(attacked, publicKey).ProofResults.Should().ContainSingle()
+            .Which.Problems.Should().ContainSingle(problem => problem.Message!.Contains(" id "));
+    }
+
+    [Fact]
+    public async Task AProofIsNotIssuedWhenItsMemberWouldNotBindAtVerification()
+    {
+        var (key, _) = RdfcKey(EddsaRdfc2022Cryptosuite.CryptosuiteName);
+        var document = Parse("{\"@context\":{" + ProofTerms + ",\"domain\":\"https://example.org/elsewhere\",\"claim\":\"https://example.org/claim\"},\"claim\":\"value\"}");
+
+        var act = () => Pipeline.AddProofAsync(document, new DataIntegrityProof
+        {
+            Cryptosuite = EddsaRdfc2022Cryptosuite.CryptosuiteName,
+            Created = "2026-10-30T00:00:00Z",
+            VerificationMethod = "did:example:issuer#key-1",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+            Domain = "a.example",
+        }, Fx.Signer(key));
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*domain*");
+    }
+
+    [Fact]
+    public async Task AProofIsNotIssuedWhenItsTypeIsNotAnRdfType()
+    {
+        var (key, _) = RdfcKey(EddsaRdfc2022Cryptosuite.CryptosuiteName);
+        var document = Parse("{\"@context\":{\"@vocab\":\"https://example.org/\"},\"claim\":\"value\"}");
+
+        var act = () => Pipeline.AddProofAsync(document, new DataIntegrityProof
+        {
+            Cryptosuite = EddsaRdfc2022Cryptosuite.CryptosuiteName,
+            Created = "2026-10-30T00:00:00Z",
+            VerificationMethod = "did:example:issuer#key-1",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+        }, Fx.Signer(key));
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*type*");
+    }
+
     [BbsFact]
     public async Task KnownContextsStillRefusesTheContextOnItsOwn()
     {
