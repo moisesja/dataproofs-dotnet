@@ -140,10 +140,10 @@ internal static class ProofOptionsBinding
         => signed.TrueForAll(term => term.Kind != TermKind.BlankNode)
             && signed.Select(term => term.Value).ToHashSet(StringComparer.Ordinal).SetEquals(members);
 
-    // Under a @vocab a purpose is a plain string. As an IRI, a registered purpose must carry its own,
-    // and any other names a term of the issuer's context, which has no table here, so the signed IRI
-    // must end in that name: an application's own purpose works, and a value that is itself a path
-    // cannot alias a longer IRI's tail.
+    // Under a @vocab a purpose is a plain string. As an IRI, a registered purpose and its IRI have one
+    // spelling each, so the purpose a caller reads is the one the issuer wrote. Any other names a term
+    // of the issuer's context, which has no table here, so the signed IRI must end in that name: an
+    // application's own purpose works, and a value that is itself a path cannot alias a longer IRI's tail.
     private static bool PurposeAgrees(List<Term> signed, string? purpose)
     {
         if (purpose is null)
@@ -155,6 +155,7 @@ internal static class ProofOptionsBinding
         {
             [{ Kind: TermKind.Literal, Value: var literal }] => literal == purpose,
             [{ Kind: TermKind.Iri, Value: var iri }] when RegisteredPurposes.TryGetValue(purpose, out var registered) => iri == registered,
+            [{ Kind: TermKind.Iri, Value: var iri }] when RegisteredPurposes.ContainsValue(iri) => false,
             [{ Kind: TermKind.Iri, Value: var iri }] => iri == purpose
                 || (purpose.Length > 0 && purpose.IndexOfAny(['/', '#', ':']) < 0 && EndsInName(iri, purpose)),
             _ => false,

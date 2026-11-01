@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Legacy.DataIntegrity;
 using DataProofsDotnet.Legacy.Tests.TestSupport;
+using DataProofsDotnet.Rdfc.DataIntegrity;
 using FluentAssertions;
 using NetCrypto;
 using Xunit;
@@ -187,6 +188,69 @@ public class ProofOptionsBindingTests
             Inline(",\"domain\":\"https://example.org/elsewhere\""), Options(type) with { Domain = "a.example" }, signer);
 
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*domain*");
+    }
+
+    // eddsa-rdfc-2022 and the legacy RDFC variant build the same signing input, so nothing but the
+    // comparison tells one's proof from the other's under a context that renames the type.
+    private static (DataIntegrityProofPipeline Pipeline, KeyPairSigner Signer, PublicKeyMaterial PublicKey) BothEd25519Suites()
+    {
+        var registry = CryptosuiteRegistry.CreateDefault();
+        registry.Register(new EddsaRdfc2022Cryptosuite());
+        registry.Register(new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc));
+        var key = Fx.SeedKey(0x21, KeyType.Ed25519);
+        return (new DataIntegrityProofPipeline(registry), Fx.Signer(key), PublicKeyMaterial.FromRaw(KeyType.Ed25519, key.PublicKey));
+    }
+
+    private const string BothProofTypes =
+        ",\"DataIntegrityProof\":\"" + Sec + "DataIntegrityProof\",\"cryptosuite\":\"" + Sec + "cryptosuite\"";
+
+    [Fact]
+    public async Task ADataIntegrityProofCannotBePresentedAsALegacyOne()
+    {
+        var (pipeline, signer, publicKey) = BothEd25519Suites();
+        var secured = await pipeline.AddProofAsync(Inline(BothProofTypes), new DataIntegrityProof
+        {
+            Cryptosuite = EddsaRdfc2022Cryptosuite.CryptosuiteName,
+            Created = "2026-10-30T00:00:00Z",
+            VerificationMethod = "did:example:issuer#key-1",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+        }, signer);
+        pipeline.Verify(secured, publicKey).Verified.Should().BeTrue();
+
+        var attacked = Fx.Mutate(secured, node =>
+        {
+            var context = (JsonObject)node["@context"]!;
+            context[Ed25519Signature2020Cryptosuite.ProofType] = Sec + "DataIntegrityProof";
+            context["suite"] = Sec + "cryptosuite";
+            var proof = (JsonObject)node["proof"]!;
+            proof["type"] = Ed25519Signature2020Cryptosuite.ProofType;
+            proof["suite"] = proof["cryptosuite"]!.DeepClone();
+            proof.Remove("cryptosuite");
+        });
+
+        pipeline.Verify(attacked, publicKey).ProofResults.Should().ContainSingle().Which.Verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ALegacyProofCannotBePresentedAsADataIntegrityOne()
+    {
+        var (pipeline, signer, publicKey) = BothEd25519Suites();
+        var secured = await pipeline.AddProofAsync(Inline(string.Empty), Options(Ed25519Signature2020Cryptosuite.ProofType), signer);
+        pipeline.Verify(secured, publicKey).Verified.Should().BeTrue();
+
+        var attacked = Fx.Mutate(secured, node =>
+        {
+            var context = (JsonObject)node["@context"]!;
+            context["DataIntegrityProof"] = Sec + "Ed25519Signature2020";
+            context["cryptosuite"] = "@type";
+            context[EddsaRdfc2022Cryptosuite.CryptosuiteName] = Sec + "Ed25519Signature2020";
+            var proof = (JsonObject)node["proof"]!;
+            proof["type"] = "DataIntegrityProof";
+            proof["cryptosuite"] = EddsaRdfc2022Cryptosuite.CryptosuiteName;
+            proof.Remove("@context");
+        });
+
+        pipeline.Verify(attacked, publicKey).ProofResults.Should().ContainSingle().Which.Verified.Should().BeFalse();
     }
 
     [Fact]

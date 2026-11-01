@@ -49,7 +49,8 @@ used to verify, listed under Security.
   - a proof with no `rdf:type` statement, as under a bare `@vocab` that leaves `type` unaliased;
   - a compact IRI under a custom prefix in `id`, `verificationMethod` or `previousProof`, whose JSON
     spelling is not the signed IRI;
-  - a `proofPurpose` that is neither a registered purpose nor the name its signed IRI ends in.
+  - a `proofPurpose` other than a registered purpose's name, for a signed registered purpose, or for
+    any other purpose, a name its signed IRI does not end in.
 
   **Not covered.** The library does not know what an unmodeled member
   (`DataIntegrityProof.AdditionalProperties`, such as a ZCAP `capabilityChain`) or a document claim
