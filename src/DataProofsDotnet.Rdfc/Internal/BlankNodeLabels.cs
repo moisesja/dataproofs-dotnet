@@ -74,7 +74,7 @@ internal static class BlankNodeLabels
             relabeled.Add(Relabel(nquad, labelMap));
         }
 
-        relabeled.Sort(StringComparer.Ordinal);
+        relabeled.Sort(UnicodeCodePointComparer.Instance);
         return relabeled;
     }
 
@@ -150,7 +150,10 @@ internal static class BlankNodeLabels
             else if (nquad[i] == '_' && i + 1 < nquad.Length && nquad[i + 1] == ':')
             {
                 var end = i + 2;
-                while (end < nquad.Length && char.IsAsciiLetterOrDigit(nquad[end]))
+                // This helper consumes serialized N-Quads, whose blank-node terms end at a
+                // space. Input labels can contain punctuation and non-ASCII characters;
+                // recognizing only the generated c14n/b label alphabet truncates them.
+                while (end < nquad.Length && nquad[end] != ' ')
                 {
                     end++;
                 }

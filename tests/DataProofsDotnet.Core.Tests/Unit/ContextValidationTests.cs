@@ -210,8 +210,7 @@ public class ContextValidationTests
 
     public static TheoryData<string, string> AcceptedNestedContexts() => new()
     {
-        // case, document. A listed context nested gives a holder nothing that listing it at the root
-        // does not, and §4.6's literal "any subtree" would refuse every presentation.
+        // case, document. This option checks URI membership, not an exact-context profile.
         { "listed IRI in a node", Vc("\"credentialSubject\":{\"@context\":\"" + V2 + "\",\"name\":\"Alice\"}") },
         { "listed array in a node", Vc("\"credentialSubject\":{\"@context\":[\"" + V2 + "\",\"" + Examples + "\"]}") },
         { "a presentation's embedded credentials", Vc("\"verifiableCredential\":[{\"@context\":[\"" + V2 + "\",\"" + Examples + "\"],\"type\":\"VerifiableCredential\"}]") },

@@ -349,7 +349,7 @@ public sealed class Bbs2023HardeningTests
 
         var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, Options(), sk, hmacKey, ["/credentialSubject/" + XPointer + "inner/note"]);
 
-        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(PartOfAValue);
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage("bbs-2023 selection requires @context only at the document root*");
     }
 
     [BbsFact]
@@ -485,7 +485,7 @@ public sealed class Bbs2023HardeningTests
     // ------------------------------------------------------------------ the derived proof
 
     [BbsFact]
-    public async Task DerivedProof_CarriesNoContext_AndVerificationBorrowsTheDocuments()
+    public async Task DerivedProof_PreservesTheBaseProofContext()
     {
         var (sk, hmacKey) = KeyMaterial();
         var suite = new Bbs2023Cryptosuite();
@@ -494,8 +494,8 @@ public sealed class Bbs2023HardeningTests
         var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Header);
         var (proof, unsecured) = Split(reveal);
 
-        reveal.GetProperty("proof").TryGetProperty("@context", out _).Should().BeFalse("the reference's derived proof carries none");
-        proof.Context.Should().BeNull();
+        reveal.GetProperty("proof").TryGetProperty("@context", out _).Should().BeTrue();
+        proof.Context.Should().NotBeNull();
         suite.VerifyProof(unsecured, proof, PublicKey(sk)).Verified.Should().BeTrue();
     }
 

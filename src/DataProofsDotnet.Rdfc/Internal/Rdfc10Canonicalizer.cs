@@ -238,7 +238,8 @@ internal sealed class Rdfc10Canonicalizer(RdfCanonicalizationHashAlgorithm hashA
         IOrderedEnumerable<string> nquads = _blankNodeToQuadsMap[identifier]
             .Select(quad => PrepareQuadForHash(quad, identifier))
             .Select(quad => formatter.Format(quad.Triple, quad.Graph) + '\n')
-            .OrderBy(p => p, StringComparer.Ordinal);
+            // DataProofsDotnet: RDFC §4.6.3 requires Unicode code-point order.
+            .OrderBy(p => p, UnicodeCodePointComparer.Instance);
 
         return _firstDegreeHashes[identifier] = MultiHash(nquads); // DataProofsDotnet: see _firstDegreeHashes.
     }
@@ -512,7 +513,8 @@ internal sealed class Rdfc10Canonicalizer(RdfCanonicalizationHashAlgorithm hashA
                 var formatter = new DirectLabelNQuadsFormatter();
                 OutputDataset.Graphs
                     .SelectMany(graph => graph.Triples.Select(triple => formatter.Format(triple, graph.Name)))
-                    .OrderBy(p => p, StringComparer.Ordinal).ToList().ForEach(s =>
+                    // DataProofsDotnet: RDFC §5 requires Unicode code-point order.
+                    .OrderBy(p => p, UnicodeCodePointComparer.Instance).ToList().ForEach(s =>
                     {
                         sb.Append(s);
                         sb.Append("\n");

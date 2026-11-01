@@ -1,4 +1,5 @@
 using FluentAssertions;
+using DataProofsDotnet.Rdfc.Internal;
 using VDS.RDF;
 using VDS.RDF.Parsing;
 using Xunit;
@@ -37,16 +38,37 @@ public sealed class RdfCanonicalizationDeviationTests
         => new RdfcDocumentCanonicalizer().CanonicalizeNQuads(TiedSubtrees).Should().Be(SpecifiedCanonicalForm);
 
     [Fact]
-    public void SortOrder_FollowsRdfCanonize_NotTheSpecificationsCodePoints()
+    public void SortOrder_FollowsTheSpecificationsCodePoints()
     {
-        // A deliberate deviation: the specification sorts by code point, which would put U+FF21 before
-        // U+1F600. rdf-canonize, and so the proofs in the field, sort by UTF-16 code unit.
+        // RDFC §5: U+FF21 precedes U+1F600. UTF-16 code-unit ordering reverses these.
         var grinning = char.ConvertFromUtf32(0x1F600);
         const string fullwidthA = "\uFF21";
         var input = $"<urn:s> <urn:p> \"{fullwidthA}\" .\n<urn:s> <urn:p> \"{grinning}\" .\n";
 
         new RdfcDocumentCanonicalizer().CanonicalizeNQuads(input)
-            .Should().Be($"<urn:s> <urn:p> \"{grinning}\" .\n<urn:s> <urn:p> \"{fullwidthA}\" .\n");
+            .Should().Be(input);
+    }
+
+    [Theory]
+    [InlineData(RdfCanonicalizationHashAlgorithm.Sha256, "control2", "c14n1")]
+    [InlineData(RdfCanonicalizationHashAlgorithm.Sha384, "control1", "c14n0")]
+    public void FirstDegreeHash_UsesCodePointOrderedQuads(RdfCanonicalizationHashAlgorithm algorithm, string control, string expectedLabel)
+    {
+        // Independently hashed first-degree fixtures: _:a's two quads must hash in Ａ, 😀 order.
+        // These controls fall between the correct and UTF-16-ordered hashes, so swapping the
+        // ordering changes identifier issuance, not only final output serialization.
+        var input = $"_:a <urn:p> \"😀\" .\n_:a <urn:p> \"Ａ\" .\n_:b <urn:p> \"{control}\" .\n";
+        new RdfcDocumentCanonicalizer().CanonicalizeNQuadsToMap(input, algorithm)["a"].Should().Be(expectedLabel);
+    }
+
+    [Fact]
+    public void CodePointOrdering_HandlesScalarBoundariesAndPrefixes()
+    {
+        int[] points = [0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xe000, 0xffff, 0x10000, 0x1f600, 0x10ffff];
+        var expected = points.Select(char.ConvertFromUtf32).ToArray();
+        expected.Reverse().OrderBy(value => value, UnicodeCodePointComparer.Instance).Should().Equal(expected);
+        foreach (var value in expected)
+            UnicodeCodePointComparer.Instance.Compare(value, value + "a").Should().BeNegative();
     }
 
     [Fact]

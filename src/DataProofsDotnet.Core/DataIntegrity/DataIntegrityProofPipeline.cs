@@ -327,11 +327,10 @@ public sealed class DataIntegrityProofPipeline
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The proof member must be an object or an array of objects.");
         }
 
-        // VC Data Integrity 1.0 §4.6: with known contexts supplied, the document is accepted only when
-        // every @context in it, at any depth, holds only those. §2.4.1 allows a different ordering of
-        // the steps that gives the same protections. The suites load contexts while they verify, so
-        // this runs first: an unlisted context is never loaded, and a holder cannot choose a URL the
-        // verifier fetches. Such a document has no per-proof results.
+        // URI preflight: refuse unlisted @context values named directly in the document before
+        // any proof processing can load them. The loader separately establishes trust in the
+        // actual content, including imports/scoped contexts/redirects. This is not the complete
+        // VC Data Integrity §4.6 context policy. A refused document has no per-proof results.
         if (options.KnownContexts is { } knownContexts && ContextProblem(securedDocument, knownContexts) is { } contextProblem)
         {
             return new DocumentVerificationResult { Verified = false, Problems = [contextProblem] };

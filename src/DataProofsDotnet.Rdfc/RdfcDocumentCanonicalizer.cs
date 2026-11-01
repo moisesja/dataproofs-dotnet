@@ -72,8 +72,10 @@ namespace DataProofsDotnet.Rdfc;
 /// wrong order, so its canonical form differs from the specification's for ordinary documents, such as
 /// two unnamed objects sharing a nested value, and proofs over those documents did not verify across
 /// implementations in either direction. Output here is byte-identical to <c>rdf-canonize</c> on the
-/// committed differential corpus. The copy goes away when an upstream release fixes the defect;
-/// <c>RdfCanonicalizationDeviationTests</c> reports when.
+/// committed differential corpus. Unicode code-point ordering follows RDFC-1.0, including
+/// first-degree hashing; <c>rdf-canonize</c> 5.0.0 instead uses UTF-16 ordering, so affected
+/// character pairs produce different bytes. Replace the copy only when an upstream release
+/// passes the deviation, differential, Unicode-order and resource-limit tests.
 /// </para>
 /// </remarks>
 public sealed class RdfcDocumentCanonicalizer : IRdfCanonicalizer

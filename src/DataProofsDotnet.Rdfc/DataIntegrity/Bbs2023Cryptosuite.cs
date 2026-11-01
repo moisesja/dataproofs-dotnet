@@ -60,8 +60,15 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// non-mandatory messages); the reveal document is selected from the document as the issuer wrote
 /// it, so its blank nodes stay blank; and the derived proof's label map is keyed by the reveal's
 /// canonical (<c>c14n*</c>) labels, which the verifier recomputes by canonicalizing the reveal as
-/// given. The W3C derived-proof vector verifies here, and reveals made here verify on the reference
-/// verifier (PR #42). The suite is pinned to a Candidate Recommendation draft (PRD §12.3).
+/// given. The W3C derived-proof vector verifies here; the committed cross-stack check exercises
+/// two sample disclosures. Unicode code-point ordering differs from the reference's UTF-16
+/// ordering for some character pairs. The suite is pinned to a Candidate Recommendation draft (PRD §12.3).
+/// </para>
+/// <para>
+/// Creation and derivation require <c>@context</c> only at the document root. Nested members
+/// with that name are conservatively refused even inside literal JSON; root context definitions
+/// can contain scoped contexts. Selection preserves nulls inside whole JSON literals, and
+/// derivation preserves the base proof context. Other skolemizer restrictions are recorded in FR-12.
 /// </para>
 /// </remarks>
 public sealed class Bbs2023Cryptosuite : ICryptosuite
@@ -260,14 +267,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             disclosure.BbsProof, disclosure.LabelMap, disclosure.MandatoryIndexes,
             disclosure.SelectiveIndexes, presentationHeader.Span);
 
-        // The derived proof carries no @context of its own, as the reference's does not: the reveal
-        // document's applies, and the verifier borrows it. A document without one has nothing to
-        // lend, so the proof keeps the context it was signed with.
-        var derivedProof = baseProof with
-        {
-            ProofValue = derivedProofValue,
-            Context = unsecured.TryGetProperty("@context", out _) ? null : baseProof.Context,
-        };
+        // Add Derived Proof copies the proof and replaces only proofValue. A document can be
+        // re-compacted without changing its RDF; its current context need not interpret the
+        // signed proof extensions the same way as the base proof's own context.
+        var derivedProof = baseProof with { ProofValue = derivedProofValue };
         revealDocument["proof"] = JsonSerializer.SerializeToNode(derivedProof, RdfcJson.ProofTypeInfo);
 
         return JsonSerializer.SerializeToElement(revealDocument, RdfcJson.JsonObjectTypeInfo);
@@ -421,6 +424,12 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     // canonicalize once to learn each input label's c14n label, HMAC-shuffle those, relabel and sort.
     private TransformResult Transform(JsonElement document, ReadOnlySpan<byte> hmacKey)
     {
+        if (JsonPointer.HasNestedContext(document))
+        {
+            throw new ProofGenerationException(
+                "bbs-2023 selection requires @context only at the document root; nested @context members are not supported.");
+        }
+
         var canonicalDocument = RequireNoSkolemIris(document);
         var skolemized = JsonLdSkolemizer.Skolemize(document);
         var deskolemized = DeskolemizedNQuads(skolemized, canonicalDocument);
@@ -471,9 +480,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             }
         }
 
-        // A selected statement the document does not hold comes from a pointer into a value, or past a
-        // nested @context: it reads differently alone. Dropping it silently leaves a mandatory claim
-        // unbound and a reveal that cannot verify, as the reference's does, so it is refused here (PR #42 review).
+        // This is a consistency check, not a substitute for preserving selection semantics:
+        // a rewritten statement can accidentally match another original statement. Nested
+        // contexts are refused before transformation and selection preserves copied literal data.
         if (matching.Count != selected.Count)
         {
             throw new ProofGenerationException(PartOfAValue);
@@ -720,7 +729,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         }
 
         var deskolemized = JsonLdSkolemizer.Deskolemize(skolemizedNQuads).ToList();
-        deskolemized.Sort(StringComparer.Ordinal);
+        deskolemized.Sort(UnicodeCodePointComparer.Instance);
         RequireSameDataset(canonicalDocument, deskolemized);
         return deskolemized;
     }
