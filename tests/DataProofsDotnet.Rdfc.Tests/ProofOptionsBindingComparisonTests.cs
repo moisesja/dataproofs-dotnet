@@ -151,6 +151,26 @@ public class ProofOptionsBindingComparisonTests
     public void AProofWithNoTypeStatementIsRefused()
         => Exactly(Proof(), Signed().Skip(1)).Should().Contain("type");
 
+    // Each would give the members a different vocabulary to be read from.
+    [Fact]
+    public void AProofTypedUnderTwoVocabulariesIsRefused()
+        => Mismatch(Proof(), $"{Root} {RdfType} <https://example.org/vocab#DataIntegrityProof> .").Should().Contain("type");
+
+    [Theory]
+    [InlineData("https://example.org/vocab#")]
+    [InlineData("https://example.org/vocab/")]
+    public void AnyVocabularyEndsInAHashOrASlash(string vocabulary)
+        => Exactly(
+                Proof(),
+                [
+                    $"{Root} {RdfType} <{vocabulary}DataIntegrityProof> .",
+                    $"{Root} <{vocabulary}cryptosuite> \"eddsa-rdfc-2022\" .",
+                    $"{Root} <{vocabulary}created> \"{Created}\" .",
+                    $"{Root} <{vocabulary}proofPurpose> \"assertionMethod\" .",
+                    $"{Root} <{vocabulary}verificationMethod> \"{Method}\" .",
+                ])
+            .Should().BeNull();
+
     [Fact]
     public void AnotherTypeIsNotTheProof()
         => Mismatch(Proof() with { Type = "Ed25519Signature2020" }).Should().Contain("type");
