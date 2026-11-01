@@ -139,6 +139,12 @@ internal abstract class RdfcCryptosuite : ICryptosuite
             throw new ProofGenerationException("The document or proof configuration could not be RDFC-canonicalized.", ex);
         }
 
+        // Never issue a proof the verifier would refuse.
+        if (ProofOptionsBinding.Mismatch(canonicalProofConfig, proofConfig) is { } mismatch)
+        {
+            throw new ProofGenerationException(mismatch);
+        }
+
         var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, signer.KeyType);
 
         var rawSignature = await signer.SignAsync(hashData, cancellationToken).ConfigureAwait(false);
@@ -227,6 +233,12 @@ internal abstract class RdfcCryptosuite : ICryptosuite
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofTransformationError,
                     "The document or proof configuration could not be RDFC-canonicalized.", proof);
+            }
+
+            // The pipeline decided on the proof's JSON; the signature covers these bytes.
+            if (ProofOptionsBinding.Mismatch(canonicalProofConfig, proofConfig) is { } mismatch)
+            {
+                return ProofVerificationResult.Failure(ProofProblemCodes.ProofVerificationError, mismatch, proof);
             }
 
             var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, publicKey.KeyType);
