@@ -197,6 +197,16 @@ both, and RFC 8259 admits them, so that half is a spec-valid narrowing: minor ma
 that was already a minor. It also rejects this library's own earlier output — documents those suites
 secured from input with a nested duplicate — which the CHANGELOG names, as the policy requires.
 
+**Worked example — 2.0.0 (GHSA-6fxh-mc39-94vc).** Most of this release would be a minor on its own: the
+RDFC and `bbs-2023` corrections bring emitted bytes into conformance, and `KnownContexts` and
+`LegacyVariantVerification` are additive. The major comes from the API rule: four RDFC constructors
+traded their parameterless overload for one defaulted parameter, so a `where T : new()` constraint stops
+compiling. No known consumer has one, and the owner chose the major over recording an exception. The
+rule this adds: **a source-breaking change is a major even when no known consumer uses the broken
+shape**, because the consumers this project can see are not all of them. The same release narrows the
+accept-set for spec-valid proofs (those the CHANGELOG lists as newly refused), which is minor or major
+material by itself, and which a version number alone cannot soften: read that list before upgrading.
+
 ## Downstream consumers
 
 Other repositories pin this package family and move in lockstep with it, so a release here is what
@@ -204,7 +214,7 @@ unblocks their work:
 
 | Repository | Packages | Open dependency on a release |
 | --- | --- | --- |
-| [moisesja/zcap-dotnet](https://github.com/moisesja/zcap-dotnet) (`ZcapLd.Core`, `ZcapLd.AspNetCore`) | `Core`, `Rdfc`, `Legacy` | [#154](https://github.com/moisesja/zcap-dotnet/issues/154) (native AOT) waits for the release that closes [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27) — v1.4.0 — and then bumps to it. |
+| [moisesja/zcap-dotnet](https://github.com/moisesja/zcap-dotnet) (`ZcapLd.Core`, `ZcapLd.AspNetCore`) | `Core`, `Rdfc`, `Legacy` | [#154](https://github.com/moisesja/zcap-dotnet/issues/154) (native AOT) waits for the release that closes [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27) — v1.4.0 — and then bumps to it. The follow-up to [#159](https://github.com/moisesja/zcap-dotnet/issues/159) adopts `LegacyVariantVerification.ConstructedVariantOnly`, new in v2.0.0; a test there pins its absence and fails on the bump by design. |
 
 When a CHANGELOG entry names a downstream issue, tagging the release is the signal that issue waits
 for: after the publish job succeeds, note the released version on the downstream issue. A release

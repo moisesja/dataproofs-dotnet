@@ -7,11 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Release classification:** the four RDFC constructor changes below remove actual parameterless
-constructors. Ordinary `new X()` calls remain valid, but `where T : new()` consumers must change
-source. Under the current `RELEASING.md` source-level policy this combined release requires a major
-version unless that API change is redesigned before release. Binary recompilation alone is not the
-complete migration. No version or release tag is assigned by this PR.
+## [2.0.0] - 2026-11-01
+
+**This is a major release.** The four RDFC constructor changes under Changed remove actual
+parameterless constructors: ordinary `new X()` calls remain valid, but `where T : new()` consumers must
+change source, and recompiling alone is not the complete migration. It also changes the bytes RDFC and
+bbs-2023 sign, so inventory stored proofs as described under Fixed, and it refuses some proofs that
+used to verify, listed under Security.
+
+### Security
+
+- **Proof options can no longer be changed without the key**
+  ([GHSA-6fxh-mc39-94vc](https://github.com/moisesja/dataproofs-dotnet/security/advisories/GHSA-6fxh-mc39-94vc)).
+  Verification decides on a proof's JSON members, an RDFC or bbs-2023 signature covers the RDF those
+  members expand to, and `@context` is not signed. So anyone holding a proof, with no key and default
+  verification options, could spell the same RDF with other JSON, by adding a term to the proof's
+  `@context` or to the document's. Each of these verified on 1.5.0:
+  - an expired proof, with `expires` renamed under a term for the same predicate, so that the verifier
+    saw no expiry;
+  - a `challenge` the issuer never signed, in a member that spelled something already signed, so that a
+    proof passed for a verifier's fresh challenge;
+  - a `domain` swapped for another the same way;
+  - a `proofPurpose` name mapped to the IRI that was signed, so that a proof made for `assertionMethod`
+    passed as `authentication`.
+
+  A proof now verifies only if the members the library reads are what was signed. The suites read the
+  canonical N-Quads they hash and compare them with `id`, `type`, `cryptosuite`, `created`, `expires`,
+  `verificationMethod`, `proofPurpose`, `challenge`, `domain`, `nonce` and `previousProof` in both
+  directions, so a member renamed away and a member the issuer never signed both fail with
+  `PROOF_VERIFICATION_ERROR`. The same check runs at creation, which throws `ProofGenerationException`
+  rather than issue a proof that could not verify. This affects `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`,
+  `bbs-2023` and the RDFC variant of `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019`. The JCS
+  suites sign the JSON itself and were not affected. No public API changes, and no signed bytes change.
+  Versions up to 1.5.0 have no mitigation in the library: upgrade.
+
+  **Newly refused.** A member is read from the predicate the published contexts give it, or from its
+  name in the vocabulary of the proof's own type, which is how a proof reads under
+  `credentials/undefined-terms/v2`. These shapes are allowed by the specifications and verified before,
+  but the library cannot confirm what they say, so they are refused:
+  - a context mapping a modeled member to any other predicate;
+  - a proof with no `rdf:type` statement, as under a bare `@vocab` that leaves `type` unaliased;
+  - a compact IRI under a custom prefix in `id`, `verificationMethod` or `previousProof`, whose JSON
+    spelling is not the signed IRI;
+  - a `proofPurpose` that is neither a registered purpose nor the name its signed IRI ends in.
+
+  **Not covered.** The library does not know what an unmodeled member
+  (`DataIntegrityProof.AdditionalProperties`, such as a ZCAP `capabilityChain`) or a document claim
+  means, so neither is compared. An application that acts on one must pin its contexts, with
+  `ProofVerificationOptions.KnownContexts` and approved context content or with contexts it supplies
+  itself. An issuer whose context maps a modeled member to a predicate of another name can still lose
+  that member to a rename; no published context does this.
 
 ### Added
 

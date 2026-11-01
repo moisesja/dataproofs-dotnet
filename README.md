@@ -73,6 +73,11 @@ differs from the standard when supplementary characters compete with U+E000–U+
 This library follows the standard in that case, so those proofs do not cross-verify with that version.
 The CHANGELOG explains the affected old proofs and issuer-driven reissuance requirements.
 
+An RDFC or bbs-2023 proof verifies only if the proof options the library reads (`expires`, `domain`,
+`challenge`, `proofPurpose`, …) are what the issuer signed, whatever `@context` says. That does not
+reach what the library does not read: `@context` is not signed, so an application acting on a document
+claim or an unmodeled proof member must pin its contexts.
+
 `ProofVerificationOptions.KnownContexts` is a URI allowlist, not content authentication. Use it with
 approved immutable offline contexts or a loader that checks approved hashes of context content and
 its dependencies. Validate any stricter context-order/nesting profile separately. See the
