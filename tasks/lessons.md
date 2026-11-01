@@ -427,3 +427,102 @@ parameter, which `RELEASING.md` explicitly accepts and 1.3.0 already shipped for
   catches nothing.
 - An "A or B" in a plan or PR body needs the alternatives considered and why they lost. A binary
   choice stated without alternatives is usually incomplete.
+
+## 2026-10-30 — A finding I can fix is a task, not a note (PR #42)
+
+**Mistake:** The adversarial review of the `@direction` change found a bbs-2023 false refusal (`@list`
+reveals never verify) and a misleading refusal message, and the activation spike found the same
+two-constructor defect PR #39 had fixed for the Legacy suites, now on the canonicalizer and the RDFC
+suites. I recorded all three as "known limitations" and "follow-ups" and shipped the PR. The owner's
+answer: "I want things fixed in this PR, too much pushing work to other iterations." Digging into
+the list bug then exposed that bbs-2023 did not interoperate with the reference implementation at
+all, which the deferred note would have hidden for another release.
+
+**Why it happened:** I treated the issue's title as the scope boundary and priced "fix now" as scope
+creep without pricing "defer" at all. A limitation paragraph felt like diligence; it was deferral.
+
+**The rule for myself:**
+- A defect found while working a PR is fixed in that PR by default. Before writing "known
+  limitation" or "follow-up" beside a finding, state what fixing it costs and ask; deferral is the
+  owner's decision, not mine.
+- "Pre-existing" is not a reason to defer. It is a reason to check how deep it goes: a false refusal
+  with an unexplained cause is a symptom until the cause is known, and the cause here was a design
+  deviation from the spec.
+- An interop claim ("wire form matches the reference") needs a cross-implementation check, not a
+  structural one. Run the reference against our output and ours against theirs before claiming it.
+
+## 2026-10-30 — A decision handed to the owner needs a verified scope and cost (PR #42)
+
+**Mistake:** The adversarial review reported an RDFC-1.0 interop failure. I confirmed one six-quad
+dataset, then gave the owner a choice: implement RDFC-1.0 ourselves ("about a day, a few hundred
+lines") or report upstream. I described the trigger as "two identical blank nodes that each own
+further blank nodes", wrote that into the CHANGELOG and PRD, said datasets without that shape were
+unaffected, and filed an upstream issue with a mechanism I had inferred from one output. The owner
+chose "report upstream and document" on that basis. All of it was wrong. A 16,000-dataset comparison
+showed the trigger was far wider (56% of a sample of ordinary credentials with a shared nested value),
+the real cause was in two lines I had never read, and the fix was three lines. The subagent's own
+example had not even reproduced when I ran it, and I moved on instead of asking why.
+
+**Why it happened:** I generalized from one failing dataset to a rule, and sized the fix without
+reading the dependency's source, which was one `gh api` call away. A subagent's "hand-computed"
+claim became my "hand walkthrough" in a public issue.
+
+**The rule for myself:**
+- One failing case is a symptom, not a scope. Before stating when a bug fires, measure: run a
+  differential over generated inputs and test the stated condition against the result. "Unaffected"
+  is a claim that needs its own evidence.
+- Read the dependency's code before describing its bug or estimating the fix. If a tool's source
+  is public, a mechanism inferred from output is a hypothesis, and must be labelled one.
+- A prediction about the cause gets tested: emulate the suspected defect and require its output to
+  match the real one, or patch it and watch the failures stop.
+- A decision offered to the owner carries the evidence for its scope and cost. If either is an
+  estimate, say so in the question. A wrong number there makes the owner's answer worthless.
+- Only write what was done. "Hand run", "confirmed" and "reproduced" describe actions; a subagent's
+  report is not my verification, and a fix that changes a limit changes what that limit protected.
+
+## 2026-10-30 — Correcting a citation means reading the numbered text (PR #42)
+
+**Correction:** The independent review of PR #42 said the direction rationale cited the wrong section and gave
+the right step, 13. I moved the citation to §8.2.2 but wrote "step 12" without counting the algorithm, and that
+number spread to the code, the tests and the PRD. Asked later to address the PR comments, I drafted tests and
+docs in a scratch worktree before presenting a plan: the slip recorded for issues #10 and #17.
+
+**The rule for myself:**
+- A corrected citation gets read at its target, step number included. If the review names the number, compare
+  mine with it before answering.
+- A review response is checked point by point against the diff, not by the commit that claims to answer it.
+- A documented difference needs its reach tested. "Whenever a scoped context applies" read like a corner case
+  and turned out to be every `credentials/v2` credential that sets a default direction.
+- "Address the comments" states the goal. A scratch worktree is still an edit, so research stays read-only
+  until the plan has a yes.
+
+## 2026-10-30 — An exemption in a security check needs the same proof as the check (PR #42)
+
+**Correction:** A review showed `KnownContexts` read only the root `@context`; its tests used root contexts under
+JCS, where the attack cannot happen. My fix then exempted `@value` because JSON-LD "never processes" it, and the
+approved plan said so. That is true of the keyword, not the key: under an `@id` container `@value` is a map key,
+and the adversarial review walked a live context through it. The workaround I had documented also signed a
+different literal.
+
+**The rule for myself:**
+- A control's test replays the attack where it can happen: for a relabeling after signing, on RDFC, after signing.
+  A test that builds only the easy shape proves the shape.
+- A syntactic check cannot exempt anything whose meaning depends on what it cannot read. If an exemption rests on
+  a claim about a processor, test that claim, including where the name stops being the keyword.
+- A documented workaround is a claim. Run it and compare the bytes before writing it down.
+- When evidence overturns an approved decision, apply the plan's stated tie-breaker and say plainly in the report
+  that the decision moved.
+
+## 2026-10-31 — A background agent needs a time budget, and an absolute needs its scope (PR #42)
+
+**Correction:** "the fuck is going on here? you've been running for hours." The adversarial review ran for about 11
+hours with nothing committed: one request hung for 4 hours 40 minutes, and I resumed the agent with no limit. I had
+ended my turn saying I would wait, so the owner saw nothing. The same review then disproved a line I had just written,
+"an unlisted context is never loaded", which held only for values a document names.
+
+**The rule for myself:**
+- Give a background agent a time budget and a narrow list of attacks, and say when I expect it back. If it overruns,
+  tell the owner what is blocked and what is already done, rather than waiting in silence.
+- Work that is verified and blocked only on a review is worth reporting while the review runs.
+- "Never", "always" and "every" in a doc are claims about every route. State the scope I tested, and pin the edge of
+  that scope with a test.

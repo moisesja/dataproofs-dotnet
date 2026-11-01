@@ -1,0 +1,11 @@
+{
+  "name": "check-bbs-interop",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node verify.mjs" },
+  "dependencies": {
+    "@digitalbazaar/bbs-2023-cryptosuite": "2.0.1",
+    "@digitalbazaar/data-integrity": "2.0.0",
+    "jsonld-signatures": "11.6.0"
+  }
+}

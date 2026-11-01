@@ -27,9 +27,15 @@ internal static class JsonLdSkolemizer
     /// <summary>The URN scheme the skolemizer maps blank nodes onto.</summary>
     public const string UrnPrefix = "urn:bnid:";
 
+    // Generated skolem labels carry a per-process random part so they cannot collide with a blank
+    // node identifier the document spells out itself (which is preserved, as the reference does).
+    private static readonly string Run = Guid.NewGuid().ToString("N");
+
     /// <summary>
-    /// Returns a copy of <paramref name="document"/> with every <c>@id</c>-less node object
-    /// assigned a deterministic <c>urn:bnid:_:b{n}</c> identifier (document-order counter).
+    /// Returns a copy of <paramref name="document"/> in which every node object has an IRI: an
+    /// <c>@id</c>-less one gets <c>urn:bnid:_:b{n}x{run}</c> (document-order counter), and one whose
+    /// <c>@id</c> or <c>id</c> is a blank node identifier <c>_:x</c> gets <c>urn:bnid:_:x</c>, so a
+    /// shared identifier keeps naming one node.
     /// </summary>
     public static JsonObject Skolemize(JsonElement document)
     {
@@ -51,10 +57,19 @@ internal static class JsonLdSkolemizer
             case JsonObject obj:
                 // Assign a stable id to every blank node object (including the top-level node,
                 // which is itself a blank node when it carries no @id) so selections inherit it.
-                if (IsNodeObject(obj) && !HasId(obj))
+                if (IsNodeObject(obj))
                 {
-                    obj["@id"] = UrnPrefix + "_:b" + counter.ToString(CultureInfo.InvariantCulture);
-                    counter++;
+                    var idKey = obj.ContainsKey("@id") ? "@id" : obj.ContainsKey("id") ? "id" : null;
+                    if (idKey is null)
+                    {
+                        obj["@id"] = UrnPrefix + "_:b" + counter.ToString(CultureInfo.InvariantCulture) + "x" + Run;
+                        counter++;
+                    }
+                    else if (obj[idKey] is JsonValue value && value.TryGetValue<string>(out var id)
+                        && id.StartsWith("_:", StringComparison.Ordinal))
+                    {
+                        obj[idKey] = UrnPrefix + id;
+                    }
                 }
 
                 foreach (var property in obj.ToArray())
@@ -97,9 +112,6 @@ internal static class JsonLdSkolemizer
     // A node object carries graph structure (it is not a JSON-LD value/list/set wrapper).
     private static bool IsNodeObject(JsonObject obj)
         => !obj.ContainsKey("@value") && !obj.ContainsKey("@list") && !obj.ContainsKey("@set");
-
-    private static bool HasId(JsonObject obj)
-        => obj.ContainsKey("@id") || obj.ContainsKey("id");
 
     // Replaces each "<urn:bnid:_:bN>" IRI term with the blank node "_:bN". Literals are left whole:
     // one may contain that text, which is data, not a skolem id (adversarial review).

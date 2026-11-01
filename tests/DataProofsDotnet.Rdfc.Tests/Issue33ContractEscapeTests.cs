@@ -209,24 +209,28 @@ public sealed class Issue33Bbs2023Tests
     {
         string[] selective = kind == "empty selection" ? [] : ["/doesnotexist"];
 
-        // A base proof with no mandatory pointers, and a selection that is empty or matches
-        // nothing, reveals no statement. The BBS provider refuses that with ArgumentException,
-        // so it is rejected before the provider is called (PR #35 review comment 6456380810).
+        // A base proof with no mandatory pointers and an empty selection reveals no statement. The
+        // BBS provider refuses that with ArgumentException, so it is rejected before the provider is
+        // called (PR #35 review comment 6456380810). A pointer that matches nothing is its own
+        // refusal, as in the spec's selectJsonLd (PR #42 review).
         var secured = await SecuredBaseAsync(mandatory: []);
 
-        AssertDeriveFails(Parse(secured), selective, "The selective disclosure reveals no statements.");
+        AssertDeriveFails(Parse(secured), selective, kind == "empty selection"
+            ? "The selective disclosure reveals no statements."
+            : "A JSON pointer does not match the document.");
     }
 
     [BbsFact]
     public async Task DeriveProof_SomethingToReveal_StillDerives()
     {
-        // Controls for the case above: without mandatory pointers a matching selection derives,
-        // and with a mandatory pointer an empty selection derives.
+        // Controls for the case above: without mandatory pointers a matching selection derives. With
+        // a mandatory pointer and an empty selection the disclosure is mandatory-only, which the BBS
+        // provider cannot derive (it needs a revealed index), so it is the other documented refusal.
         var noMandatory = await SecuredBaseAsync(mandatory: []);
         var issuerMandatory = await SecuredBaseAsync(mandatory: ["/issuer"]);
 
         _suite.DeriveProof(Parse(noMandatory), Selective, Header).ValueKind.Should().Be(JsonValueKind.Object);
-        _suite.DeriveProof(Parse(issuerMandatory), [], Header).ValueKind.Should().Be(JsonValueKind.Object);
+        AssertDeriveFails(Parse(issuerMandatory), [], "A mandatory-only disclosure is not supported: the BBS provider needs at least one disclosed message, so select at least one non-mandatory statement.");
     }
 
     [BbsFact]
@@ -295,7 +299,7 @@ public sealed class Issue33Bbs2023Tests
 
     private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private static readonly string[] Selective = ["/credentialSubject/sails/1"];
+    private static readonly string[] Selective = ["/credentialSubject/sails/0"];
 
     private static readonly ReadOnlyMemory<byte> Header = Convert.FromHexString("113377aa");
 

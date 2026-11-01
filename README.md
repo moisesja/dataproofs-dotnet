@@ -54,8 +54,31 @@ Typical causes:
   Relative IRIs resolved against an `@base` are respelled too, so they are refused.
 - **Distinct IRIs dotNetRDF treats as one.** Example: `https://host` next to `https://host/`. Their
   statements would merge.
+- **A boolean or number with `@direction`.** dotNetRDF types it as an XSD literal and drops the direction.
 
-Accepted input canonicalizes to the same bytes as before. See FR-9 in the PRD for the full rule.
+A string's base direction is carried, not refused. `{"@value":"x","@language":"ar","@direction":"rtl"}`
+is signed as `"x"^^<https://www.w3.org/ns/i18n#ar_rtl>`, the JSON-LD 1.1 `rdfDirection: i18n-datatype`
+representation that the reference Data Integrity implementations (jsonld-signatures and the cryptosuites
+built on it) sign with; the Data Integrity specifications name none. Flipping the direction breaks the
+proof. A verifier whose JSON-LD processor drops direction, the JSON-LD default, does not verify these
+proofs, as it does not verify theirs. The canonical form is byte-identical with jsonld.js for the VCDM
+2.0 value-object shapes. The CHANGELOG lists the three differences on its side; the one to know is that
+jsonld.js drops a context-level default `@direction` from a `credentials/v2` credential, so write the
+direction on the value object.
+
+RDFC uses a local corrected copy of dotNetRDF's canonicalizer for tied blank nodes
+(dotnetrdf/dotnetrdf#917), with work/depth guards and Unicode code-point ordering. The committed
+1,870-case corpus matches `rdf-canonize` 5.0.0; that implementation's UTF-16 ordering nevertheless
+differs from the standard when supplementary characters compete with U+E000–U+FFFF characters.
+This library follows the standard in that case, so those proofs do not cross-verify with that version.
+The CHANGELOG explains the affected old proofs and issuer-driven reissuance requirements.
+
+`ProofVerificationOptions.KnownContexts` is a URI allowlist, not content authentication. Use it with
+approved immutable offline contexts or a loader that checks approved hashes of context content and
+its dependencies. Validate any stricter context-order/nesting profile separately. See the
+[BBS service admission example](samples/DataProofsDotnet.Samples.BbsSelectiveDisclosure/README.md)
+for concrete request/shape/proof/concurrency limits; the library's canonicalizer work budget does not
+cover JSON-LD expansion or native BBS verification.
 
 ## Native AOT and trimming
 

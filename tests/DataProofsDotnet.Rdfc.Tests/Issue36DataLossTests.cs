@@ -29,7 +29,7 @@ public sealed class Issue36DataLossTests
     private const string MalformedIri = "has an IRI that is not a well-formed absolute IRI";
     private const string MalformedLanguageTag = "has a language tag that is not well-formed";
     private const string BlankNodeProperty = "uses a blank node as a property, which RDF cannot carry";
-    private const string Direction = "uses @direction, which the canonical form does not carry";
+    private const string Direction = "uses @direction on a value that is not a string, which the canonical form does not carry";
     private const string Index = "uses @index, which the canonical form does not carry";
     private const string RespelledIri = "has an IRI that the canonical form would spell differently";
     private const string IgnoredContent = "has content that JSON-LD processing ignores";
@@ -83,7 +83,9 @@ public sealed class Issue36DataLossTests
         { "blank node as a property", Vc(Subject("\"_:clearance\":\"admin\"")), BlankNodeProperty, "clearance" },
         { "named graph with a malformed name", Vc(Subject("\"name\":\"n\"") + ",\"@included\":[{\"@id\":\"urn:graph[0]\",\"@graph\":[{\"@id\":\"urn:uuid:inner\",\"name\":\"n\"}]}]"), MalformedIri, "graph" },
         { "list member with brackets", Vc(Subject("\"steps\":[\"urn:step:1\",\"urn:step[2]\"]"), V2With("{\"steps\":{\"@id\":\"https://e.example/vocab#steps\",\"@type\":\"@id\",\"@container\":\"@list\"}}")), MalformedIri, "step[2]" },
-        { "@direction", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"ar\",\"@direction\":\"rtl\"}")), Direction, "rtl" },
+        // A string's direction is carried in its i18n datatype (issue #40, Issue40DirectionTests); a
+        // number's is dropped without a warning, since the number becomes an XSD literal first.
+        { "@direction on a number", Vc(Subject("\"name\":{\"@value\":7,\"@direction\":\"rtl\"}")), Direction, "rtl" },
         { "malformed language tag", Vc(Subject("\"name\":{\"@value\":\"x\",\"@language\":\"not a tag\"}")), MalformedLanguageTag, "not a tag" },
         // Expansion drops a set object's @index without a warning, so it never reached the audit (PR #37
         // re-review 5686538504); aliases of either keyword count.
@@ -842,10 +844,12 @@ public sealed class Issue36DataLossTests
     }
 
     // PR #37 review (5685854125): the issuer signs a @json value that already carries an @id, which
-    // skolemization leaves alone. Verification skolemized the reveal blindly, so a holder who deleted
-    // that member had it re-inserted, recreating the signed bytes: the deletion still verified.
+    // skolemization leaves alone. Verification used to skolemize the reveal blindly, so a holder who
+    // deleted that member had it re-inserted, recreating the signed bytes: the deletion still verified.
+    // Verification no longer skolemizes (PR #42): the reveal is canonicalized as given, so the deleted
+    // member changes the signed JSON literal and the BBS proof fails.
     [BbsFact]
-    public async Task Bbs2023_VerifyProof_RevealWhoseSkolemizationWouldRestoreADeletedMember_IsDataLossDetectionError()
+    public async Task Bbs2023_VerifyProof_RevealWithADeletedMemberOfAJsonValue_FailsVerification()
     {
         var (sk, hmacKey) = BbsKeyMaterial();
         var suite = new Bbs2023Cryptosuite();
@@ -866,11 +870,11 @@ public sealed class Issue36DataLossTests
         Direct(reveal).Verified.Should().BeTrue();
         pipeline.Verify(reveal, pk).Verified.Should().BeTrue();
 
-        Direct(deleted).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+        Direct(deleted).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
         var throughPipeline = pipeline.Verify(deleted, pk);
         throughPipeline.Verified.Should().BeFalse();
         throughPipeline.ProofResults.Should().ContainSingle().Which.Problems
-            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.DataLossDetectionError);
+            .Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError);
 
         Direct(changed).Problems.Should().ContainSingle().Which.Code.Should().Be(ProofProblemCodes.ProofVerificationError, "a changed value breaks the signature");
         pipeline.Verify(changed, pk).Verified.Should().BeFalse();
@@ -883,7 +887,7 @@ public sealed class Issue36DataLossTests
         var suite = new Bbs2023Cryptosuite();
         var baseProof = await suite.CreateBaseProofAsync(WindDoc(), BbsOptions(), sk, hmacKey, WindMandatory());
         var secured = Fx.Mutate(WindDoc(), vc => vc["proof"] = JsonSerializer.SerializeToNode(baseProof, DataProofsJsonOptions.Default));
-        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/1"], Convert.FromHexString("113377aa"));
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
         var derivedProof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
         var pk = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk).PublicKey);
         var unsecured = Fx.Mutate(reveal, vc => vc.Remove("proof"));

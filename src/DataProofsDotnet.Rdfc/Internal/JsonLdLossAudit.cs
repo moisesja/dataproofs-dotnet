@@ -15,9 +15,13 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// and malformed language tags, and reports them only as <see cref="JsonLdProcessorOptions.SafeMode"/>
 /// warnings. Deserialization of the expanded form skips every IRI that is not a well-formed
 /// absolute IRI (subjects, types, properties, objects, named-graph names, list members), skips
-/// blank-node properties, and ignores <c>@direction</c> and <c>@index</c>. It reports only some of
-/// those skips, even in safe mode: a named graph, a property or a list member disappears without
-/// a warning.
+/// blank-node properties, and ignores <c>@index</c>. It reports only some of those skips, even in
+/// safe mode: a named graph, a property or a list member disappears without a warning. A string's
+/// <c>@direction</c> is carried, because <see cref="JsonLdContextCache.Options"/> sets
+/// <c>rdfDirection: i18n-datatype</c> (issue #40); a boolean's or a number's is still dropped, because
+/// dotNetRDF (like jsonld.js) types those as XSD literals and skips the direction step, so it is
+/// refused. JSON-LD 1.1 API §8.2.2 step 13.2 would instead type the lexical form with the i18n datatype;
+/// the refusal follows the processor, not the text.
 /// </para>
 /// <para>
 /// So <see cref="FindLoss(string, JsonLdContextCache)"/> expands the input exactly as
@@ -58,7 +62,7 @@ internal static class JsonLdLossAudit
     public const string MalformedIri = "has an IRI that is not a well-formed absolute IRI";
     public const string MalformedLanguageTag = "has a language tag that is not well-formed";
     public const string BlankNodeProperty = "uses a blank node as a property, which RDF cannot carry";
-    public const string Direction = "uses @direction, which the canonical form does not carry";
+    public const string Direction = "uses @direction on a value that is not a string, which the canonical form does not carry";
     public const string Index = "uses @index, which the canonical form does not carry";
     public const string RespelledIri = "has an IRI that the canonical form would spell differently";
     public const string MergedTerms = "has distinct terms that the canonical form would merge into one";
@@ -172,7 +176,11 @@ internal static class JsonLdLossAudit
 
     private static string? FindInValueObject(JObject value)
     {
-        if (value.ContainsKey("@direction"))
+        // A string's direction goes into its i18n datatype (JsonLdContextCache.Options). dotNetRDF (like
+        // jsonld.js) types a boolean or a number as an XSD literal and drops its direction without a
+        // warning, where JSON-LD 1.1 API §8.2.2 step 13.2 would apply the i18n datatype (issue #40).
+        // A @type beside @direction fails expansion earlier, and expansion removes a null value object.
+        if (value.ContainsKey("@direction") && value["@value"]?.Type != JTokenType.String)
         {
             return Direction;
         }

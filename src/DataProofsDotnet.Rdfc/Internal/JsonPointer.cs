@@ -48,6 +48,20 @@ internal static class JsonPointer
         return tokens;
     }
 
+    /// <summary>Whether <paramref name="pointer"/> addresses a value in <paramref name="document"/>.</summary>
+    public static bool Resolves(JsonNode document, string pointer)
+        => Parse(pointer).Aggregate((JsonNode?)document, Step) is not null;
+
+    /// <summary>
+    /// Whether <paramref name="pointer"/> ends inside a value object that holds more than its
+    /// <c>@value</c>. Alone, its <c>@language</c> or <c>@direction</c> is no statement, so selecting it
+    /// selects nothing, and nothing shows that it did. Alone, its <c>@value</c> is another literal,
+    /// which a statement beside it can match. Only the whole object selects the value.
+    /// </summary>
+    public static bool SelectsPartOfAValue(JsonNode document, string pointer)
+        => Parse(pointer).SkipLast(1).Aggregate((JsonNode?)document, Step) is JsonObject { Count: > 1 } value
+            && value.ContainsKey("@value");
+
     /// <summary>
     /// Builds the JSON-LD sub-document containing only the values addressed by
     /// <paramref name="pointers"/>, copying the document's <c>@context</c> and the
@@ -69,11 +83,20 @@ internal static class JsonPointer
 
         var source = JsonNode.Parse(document.GetRawText())!;
         JsonNode? selection = null;
+        // Only arrays built while walking pointers contain selection holes. Deep-copied arrays
+        // (notably inside @json literals) contain actual data, including meaningful nulls.
+        var sparseArrays = new Dictionary<JsonArray, HashSet<int>>(ReferenceEqualityComparer.Instance);
 
         foreach (var pointer in pointers)
         {
             var tokens = Parse(pointer);
-            selection = SelectPath(source, tokens, selection);
+            if (tokens.Count == 0)
+            {
+                // The empty pointer addresses the whole document (RFC 6901; the spec's selectJsonLd).
+                return JsonNode.Parse(document.GetRawText());
+            }
+
+            selection = SelectPath(source, tokens, selection, sparseArrays);
         }
 
         if (selection is JsonObject selectionObject)
@@ -85,64 +108,68 @@ internal static class JsonPointer
             }
         }
 
-        // The index-preserving build leaves null gaps where array elements were not selected;
-        // remove them so the selection is dense JSON-LD. Blank-node subjects keep HMAC-stable
-        // labels regardless of array position, so the n-quads still match the full document's.
-        CompactArrays(selection);
+        // Densify only the tracked sparse arrays (selectJsonLd step 6), preserving every
+        // explicitly populated slot. Process backwards so removing a hole cannot shift later indexes.
+        foreach (var (array, populated) in sparseArrays)
+        {
+            for (var i = array.Count - 1; i >= 0; i--)
+            {
+                if (!populated.Contains(i)) array.RemoveAt(i);
+            }
+        }
         return selection;
     }
 
-    private static void CompactArrays(JsonNode? node)
+    /// <summary>
+    /// The selection algorithm assumes only a root context. Check syntactically, conservatively
+    /// including literal data, without guessing which objects a JSON-LD processor treats as literals.
+    /// Context definitions themselves may contain scoped contexts and are left to the processor.
+    /// </summary>
+    public static bool HasNestedContext(JsonElement document, bool root = true)
     {
-        switch (node)
+        switch (document.ValueKind)
         {
-            case JsonObject obj:
-                foreach (var property in obj.ToArray())
+            case JsonValueKind.Object:
+                foreach (var property in document.EnumerateObject())
                 {
-                    CompactArrays(property.Value);
-                }
-
-                break;
-
-            case JsonArray array:
-                var kept = new List<JsonNode?>(array.Count);
-                foreach (var element in array.ToArray())
-                {
-                    if (element is not null)
+                    if (property.NameEquals("@context"))
                     {
-                        kept.Add(element);
+                        if (!root) return true;
                     }
+                    else if (HasNestedContext(property.Value, false)) return true;
                 }
-
-                array.Clear();
-                foreach (var element in kept)
+                break;
+            case JsonValueKind.Array:
+                foreach (var element in document.EnumerateArray())
                 {
-                    CompactArrays(element);
-                    array.Add(element);
+                    if (HasNestedContext(element, false)) return true;
                 }
-
                 break;
         }
+        return false;
     }
 
     // Walks one pointer path against the source, materializing the addressed value into the
     // accumulating selection (creating intermediate containers and copying type members).
-    private static JsonNode? SelectPath(JsonNode source, IReadOnlyList<string> tokens, JsonNode? selection)
+    private static JsonNode? SelectPath(JsonNode source, IReadOnlyList<string> tokens, JsonNode? selection,
+        Dictionary<JsonArray, HashSet<int>> sparseArrays)
     {
         var sourceCursor = source;
 
-        // The path's value must exist in the source; a pointer addressing nothing is skipped.
+        // The path's value must exist in the source. A pointer addressing nothing is an error, as in
+        // the spec's selectJsonLd: silently skipping it let an issuer's mandatory pointer, or a
+        // holder's selective one, select nothing without anyone noticing (PR #42 review).
         foreach (var token in tokens)
         {
             sourceCursor = Step(sourceCursor, token);
             if (sourceCursor is null)
             {
-                return selection;
+                throw new ArgumentException("A JSON pointer does not match the document.", nameof(tokens));
             }
         }
 
         // Re-walk, mirroring the structure into the selection and copying type members.
-        selection ??= NewContainerLike(source);
+        selection ??= NewContainerLike(source, sparseArrays);
         var selCursor = selection;
         var srcCursor = source;
 
@@ -156,11 +183,11 @@ internal static class JsonPointer
             var last = i == tokens.Count - 1;
             if (last)
             {
-                Assign(selCursor, token, DeepClone(srcCursor));
+                Assign(selCursor, token, DeepClone(srcCursor), sparseArrays);
             }
             else
             {
-                var next = GetOrCreateChild(selCursor, token, srcCursor);
+                var next = GetOrCreateChild(selCursor, token, srcCursor, sparseArrays);
                 selCursor = next;
             }
         }
@@ -210,7 +237,8 @@ internal static class JsonPointer
         _ => null,
     };
 
-    private static JsonNode GetOrCreateChild(JsonNode selectionCursor, string token, JsonNode sourceChild)
+    private static JsonNode GetOrCreateChild(JsonNode selectionCursor, string token, JsonNode sourceChild,
+        Dictionary<JsonArray, HashSet<int>> sparseArrays)
     {
         switch (selectionCursor)
         {
@@ -220,12 +248,13 @@ internal static class JsonPointer
                     return existing;
                 }
 
-                var created = NewContainerLike(sourceChild);
+                var created = NewContainerLike(sourceChild, sparseArrays);
                 obj[token] = created;
                 return created;
 
             case JsonArray array:
                 var index = int.Parse(token);
+                if (sparseArrays.TryGetValue(array, out var populated)) populated.Add(index);
                 while (array.Count <= index)
                 {
                     array.Add(null);
@@ -236,7 +265,7 @@ internal static class JsonPointer
                     return slot;
                 }
 
-                var newChild = NewContainerLike(sourceChild);
+                var newChild = NewContainerLike(sourceChild, sparseArrays);
                 array[index] = newChild;
                 return newChild;
 
@@ -245,7 +274,8 @@ internal static class JsonPointer
         }
     }
 
-    private static void Assign(JsonNode selectionCursor, string token, JsonNode? value)
+    private static void Assign(JsonNode selectionCursor, string token, JsonNode? value,
+        Dictionary<JsonArray, HashSet<int>> sparseArrays)
     {
         switch (selectionCursor)
         {
@@ -254,6 +284,7 @@ internal static class JsonPointer
                 break;
             case JsonArray array:
                 var index = int.Parse(token);
+                if (sparseArrays.TryGetValue(array, out var populated)) populated.Add(index);
                 while (array.Count <= index)
                 {
                     array.Add(null);
@@ -266,8 +297,13 @@ internal static class JsonPointer
         }
     }
 
-    private static JsonNode NewContainerLike(JsonNode source)
-        => source is JsonArray ? new JsonArray() : new JsonObject();
+    private static JsonNode NewContainerLike(JsonNode source, Dictionary<JsonArray, HashSet<int>> sparseArrays)
+    {
+        if (source is not JsonArray) return new JsonObject();
+        var array = new JsonArray();
+        sparseArrays.Add(array, []);
+        return array;
+    }
 
     private static JsonNode? DeepClone(JsonNode? node)
         => node is null ? null : JsonNode.Parse(node.ToJsonString());

@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **551**
-- Covered by at least one sample: **549**
+- Public members across 6 packages: **548**
+- Covered by at least one sample: **546**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -170,6 +170,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedChallenge`
 - `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedDomain`
 - `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.ExpectedProofPurpose`
+- `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.KnownContexts`
 - `DataProofsDotnet.DataIntegrity.ProofVerificationOptions.VerificationTime`
 - `DataProofsDotnet.DataIntegrity.ProofVerificationResult (type)`
 - `DataProofsDotnet.DataIntegrity.ProofVerificationResult..ctor()`
@@ -509,7 +510,6 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Dispose`
 - `DataProofsDotnet.Rdfc.CachingNetworkDocumentLoader.Load`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite (type)`
-- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite..ctor()`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite..ctor(IRdfCanonicalizer)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateProofAsync`
@@ -519,14 +519,12 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Name`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.VerifyProof`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite (type)`
-- `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite..ctor()`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite..ctor(IRdfCanonicalizer)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CreateProofAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CryptosuiteName`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.Name`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.VerifyProof`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite (type)`
-- `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite..ctor()`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite..ctor(IRdfCanonicalizer)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CreateProofAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CryptosuiteName`
@@ -558,7 +556,6 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Rdfc.RdfCanonicalizationException..ctor(String,Exception)`
 - `DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm (type)`
 - `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer (type)`
-- `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer..ctor()`
 - `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer..ctor(IDocumentLoader)`
 - `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeJsonLd`
 - `DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuads`

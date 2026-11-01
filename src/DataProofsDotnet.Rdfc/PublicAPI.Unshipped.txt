@@ -1,7 +1,6 @@
 #nullable enable
 DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite
-DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Bbs2023Cryptosuite() -> void
-DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Bbs2023Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
+DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Bbs2023Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> void
 DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, System.ReadOnlyMemory<byte> bbsPrivateKey, System.ReadOnlyMemory<byte> hmacKey, System.Collections.Generic.IReadOnlyList<string!>! mandatoryPointers, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
 DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
 DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.DeriveProof(System.Text.Json.JsonElement securedBaseDocument, System.Collections.Generic.IReadOnlyList<string!>! selectivePointers, System.ReadOnlyMemory<byte> presentationHeader) -> System.Text.Json.JsonElement
@@ -10,14 +9,12 @@ DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.Name.get -> string!
 DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
 const DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CryptosuiteName = "bbs-2023" -> string!
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite
-DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite() -> void
-DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
+DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.EcdsaRdfc2019Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> void
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.Name.get -> string!
 DataProofsDotnet.Rdfc.DataIntegrity.EcdsaRdfc2019Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
 DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite
-DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.EddsaRdfc2022Cryptosuite() -> void
-DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.EddsaRdfc2022Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer! canonicalizer) -> void
+DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.EddsaRdfc2022Cryptosuite(DataProofsDotnet.Rdfc.IRdfCanonicalizer? canonicalizer = null) -> void
 DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.CreateProofAsync(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proofOptions, NetCrypto.ISigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.DataIntegrity.DataIntegrityProof!>!
 DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.Name.get -> string!
 DataProofsDotnet.Rdfc.DataIntegrity.EddsaRdfc2022Cryptosuite.VerifyProof(System.Text.Json.JsonElement unsecuredDocument, DataProofsDotnet.DataIntegrity.DataIntegrityProof! proof, DataProofsDotnet.PublicKeyMaterial! publicKey) -> DataProofsDotnet.DataIntegrity.ProofVerificationResult!
@@ -57,7 +54,6 @@ DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer
 DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeJsonLd(System.Text.Json.JsonElement document, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> byte[]!
 DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuads(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> string!
 DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.CanonicalizeNQuadsToMap(string! nQuads, DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm hashAlgorithm = DataProofsDotnet.Rdfc.RdfCanonicalizationHashAlgorithm.Sha256) -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
-DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.RdfcDocumentCanonicalizer() -> void
-DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.RdfcDocumentCanonicalizer(DataProofsDotnet.Rdfc.IDocumentLoader! documentLoader) -> void
+DataProofsDotnet.Rdfc.RdfcDocumentCanonicalizer.RdfcDocumentCanonicalizer(DataProofsDotnet.Rdfc.IDocumentLoader? documentLoader = null) -> void
 static DataProofsDotnet.Rdfc.OfflineDocumentLoader.BundledContextUrls.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 static DataProofsDotnet.Rdfc.OfflineDocumentLoader.Instance.get -> DataProofsDotnet.Rdfc.OfflineDocumentLoader!

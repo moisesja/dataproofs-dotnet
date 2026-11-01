@@ -1,0 +1,8 @@
+{
+  "name": "generate-rdfc-differential",
+  "private": true,
+  "description": "Regenerates tests/fixtures/generated/rdfc-differential.json from rdf-canonize. See that folder's PROVENANCE.md.",
+  "type": "module",
+  "scripts": { "generate": "node generate.mjs" },
+  "dependencies": { "rdf-canonize": "5.0.0" }
+}

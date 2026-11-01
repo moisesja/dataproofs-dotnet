@@ -40,7 +40,7 @@ namespace DataProofsDotnet.Rdfc.Internal;
 /// </remarks>
 internal sealed class ExactIriStoreHandler(ITripleStore store) : StoreHandler(store)
 {
-    private readonly NQuads11Formatter _formatter = new();
+    private readonly DirectLabelNQuadsFormatter _formatter = new();
     private readonly HashSet<string> _statements = new(StringComparer.Ordinal);
 
     /// <summary>Whether any IRI received so far would be respelled in the canonical N-Quads.</summary>

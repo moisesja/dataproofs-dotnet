@@ -14,6 +14,8 @@ namespace DataProofsDotnet.Rdfc;
 /// (<see cref="OfflineDocumentLoader"/>); a caller wanting network retrieval must
 /// construct this type deliberately and pass it to the canonicalizer. Network retrieval
 /// during signature verification is an SSRF/availability hazard — the opt-in is the point.
+/// Setting <see cref="DataProofsDotnet.DataIntegrity.ProofVerificationOptions.KnownContexts"/> narrows
+/// it: the pipeline refuses a document's unlisted context before anything is loaded.
 /// </para>
 /// <para>
 /// The cache is a plain dictionary (no caching package is referenced — PRD §2.2 forbids

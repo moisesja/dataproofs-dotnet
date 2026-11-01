@@ -107,9 +107,25 @@ foreach (var (suiteName, keyType, label) in cases)
     ]);
 
     DocumentVerificationResult resolverResult = await pipeline.VerifyAsync(
-        secured, resolver, new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.AssertionMethod });
+        secured, resolver, new ProofVerificationOptions
+        {
+            ExpectedProofPurpose = ProofPurposes.AssertionMethod,
+            // VC Data Integrity 1.0 §4.6: a proof binds the RDF statements, not the JSON that compacted
+            // them, so accept only documents whose @context values are known. Checked first, so an
+            // unknown context is never loaded.
+            KnownContexts = ["https://www.w3.org/ns/credentials/v2", "https://www.w3.org/ns/credentials/examples/v2"],
+        });
     Console.WriteLine($"  resolver-path verified: {resolverResult.Verified}");
     Check(resolverResult.Verified, $"{label} verifies on the resolver path");
+
+    DocumentVerificationResult unknownContext = await pipeline.VerifyAsync(
+        secured, resolver, new ProofVerificationOptions
+        {
+            ExpectedProofPurpose = ProofPurposes.AssertionMethod,
+            KnownContexts = ["https://www.w3.org/ns/credentials/v2"],
+        });
+    Check(!unknownContext.Verified && unknownContext.Problems.Count == 1 && unknownContext.ProofResults.Count == 0,
+        $"{label}: a @context value outside the known list fails context validation before any proof is verified");
 
     // Raw-key-path verification (signature only).
     PublicKeyMaterial rawKey = PublicKeyMaterial.FromMultikey(publicKeyMultibase);
@@ -179,6 +195,38 @@ Check(
         && injectedResult.ProofResults[0].Problems.Any(p => p.Code == ProofProblemCodes.DataLossDetectionError),
     "an injected node the canonical form would drop is DATA_LOSS_DETECTION_ERROR");
 Console.WriteLine("  injected malformed-IRI node: DATA_LOSS_DETECTION_ERROR");
+Console.WriteLine();
+
+// --- A string's base direction is signed, not refused (issue #40). ---
+//     The JSON-LD default conversion to RDF drops @direction, so "ltr" and "rtl" would sign the same
+//     bytes. The canonicalizer runs with JSON-LD 1.1 rdfDirection: i18n-datatype instead, the
+//     representation the reference Data Integrity implementations sign with: the direction goes into
+//     the literal's datatype IRI, and flipping it breaks the proof.
+Console.WriteLine("--- Base direction is signed ---");
+JsonElement DirectionalCredential(string direction) => JsonSerializer.Deserialize<JsonElement>(
+    $$"""
+    {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      "type": ["VerifiableCredential"],
+      "issuer": "did:example:issuer",
+      "name": { "@value": "شهادة", "@language": "ar", "@direction": "{{direction}}" },
+      "credentialSubject": { "id": "did:example:subject" }
+    }
+    """);
+
+string directionalNQuads = Encoding.UTF8.GetString(canonicalizer.CanonicalizeJsonLd(DirectionalCredential("rtl")));
+Console.WriteLine($"  canonical literal: {directionalNQuads.Split('\n').First(line => line.Contains("i18n#"))}");
+Check(directionalNQuads.Contains("^^<https://www.w3.org/ns/i18n#ar_rtl>"), "the direction is carried in the i18n datatype");
+
+JsonElement directionalSecured = await pipeline.AddProofAsync(DirectionalCredential("rtl"), lossOptions, lossSigner);
+Check(pipeline.Verify(directionalSecured, lossKeyMaterial).Verified, "a direction-bearing credential signs and verifies");
+
+var flipped = System.Text.Json.Nodes.JsonObject.Create(directionalSecured)!;
+flipped["name"]!["@direction"] = "ltr";
+DocumentVerificationResult flippedResult = pipeline.Verify(
+    JsonSerializer.SerializeToElement(flipped, DataProofsJsonOptions.Default), lossKeyMaterial);
+Console.WriteLine($"  flipped direction verified: {flippedResult.Verified} (expected False)");
+Check(!flippedResult.Verified, "flipping @direction breaks the proof");
 Console.WriteLine();
 
 // --- The canonicalizer is itself a first-class, reusable component. Show its three forms ---

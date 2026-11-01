@@ -22,16 +22,14 @@ public sealed class EcdsaRdfc2019Cryptosuite : ICryptosuite
 
     private readonly Engine _engine;
 
-    /// <summary>Creates the suite over the offline-default RDFC canonicalizer (FR-10).</summary>
-    public EcdsaRdfc2019Cryptosuite()
-        : this(new RdfcDocumentCanonicalizer())
+    /// <summary>
+    /// Creates the suite over <paramref name="canonicalizer"/>, or over the offline-default RDFC
+    /// canonicalizer (FR-10) when it is omitted or <see langword="null"/>. One public constructor,
+    /// so reflection-based activation has a single candidate (PR #39).
+    /// </summary>
+    public EcdsaRdfc2019Cryptosuite(IRdfCanonicalizer? canonicalizer = null)
     {
-    }
-
-    /// <summary>Creates the suite over the given RDFC canonicalizer.</summary>
-    public EcdsaRdfc2019Cryptosuite(IRdfCanonicalizer canonicalizer)
-    {
-        _engine = new Engine(canonicalizer);
+        _engine = new Engine(canonicalizer ?? new RdfcDocumentCanonicalizer());
     }
 
     /// <inheritdoc />
