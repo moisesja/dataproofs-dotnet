@@ -69,6 +69,15 @@ jobs:
         run: dotnet test tests/DataProofsDotnet.Core.Tests/DataProofsDotnet.Core.Tests.csproj --configuration Release --filter "FullyQualifiedName~DataProofsDotnet.Core.Tests.W3c|FullyQualifiedName~DataProofsDotnet.Core.Tests.Constructed"
       - name: ac-1 Rdfc (RDFC suites + bbs-2023 lifecycle)
         run: dotnet test tests/DataProofsDotnet.Rdfc.Tests/DataProofsDotnet.Rdfc.Tests.csproj --configuration Release --filter "FullyQualifiedName~RdfcSuiteVectorTests|FullyQualifiedName~Bbs2023"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tasks/check-bbs-interop/package-lock.json
+      - name: Install pinned cross-stack BBS verifier
+        run: npm ci --ignore-scripts --prefix tasks/check-bbs-interop
+      - name: ac-1 current .NET BBS disclosures verify in JavaScript
+        run: npm test --prefix tasks/check-bbs-interop
 
   ac-2:
     name: ac-2 RDFC-1.0 canonicalizer conformance

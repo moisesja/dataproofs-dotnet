@@ -54,9 +54,12 @@
 - **Why (PR #42):** the W3C `rdf-canon` suite does not exercise the blank-node ties where dotNetRDF
   3.5.1 deviates from RDFC-1.0 (dotnetrdf/dotnetrdf#917), so it cannot protect the local copy of its
   canonicalizer. This corpus can: `Corpus_WouldCatchTheUpstreamDefect` proves it fails upstream's class.
-- **Independent check at generation time:** a separate RDFC-1.0 implementation written from the
-  specification's algorithm text agreed with `rdf-canonize` on 26,000 of 26,000 datasets drawn from
-  the first nine families, and on every SHA-256 case in this file.
+- **Evidence boundary:** the earlier PR description reported a separate 26,000-case experiment,
+  but its implementation is not committed here and is not part of the reproducible conformance
+  evidence. This corpus is a reproducible comparison with the named oracle, not a proof of full
+  specification conformance. Normative Unicode-order tests cover a known difference: this library
+  sorts N-Quads by Unicode code point, while `rdf-canonize` 5.0.0 sorts UTF-16 code units. The corpus
+  does not contain the competing character ranges that expose that difference.
 - **Known oracle limit:** input labels here avoid the `c14n` prefix, because `rdf-canonize` does not
   replace an input label that already starts with it.
 - **Regenerating:** `cd tasks/generate-rdfc-differential && npm install && npm run generate`. The seed

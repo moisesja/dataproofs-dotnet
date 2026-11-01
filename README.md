@@ -66,10 +66,19 @@ proofs, as it does not verify theirs. The canonical form is byte-identical with 
 jsonld.js drops a context-level default `@direction` from a `credentials/v2` credential, so write the
 direction on the value object.
 
-RDFC output matches the specification and `rdf-canonize` byte for byte, which dotNetRDF's own canonicalizer
-does not for documents with tied blank nodes (dotnetrdf/dotnetrdf#917). So this library runs a local fixed
-copy of it. Proofs over those documents made by 1.5.0 or earlier stop verifying; the CHANGELOG explains
-which. See FR-9 in the PRD for the full rule.
+RDFC uses a local corrected copy of dotNetRDF's canonicalizer for tied blank nodes
+(dotnetrdf/dotnetrdf#917), with work/depth guards and Unicode code-point ordering. The committed
+1,870-case corpus matches `rdf-canonize` 5.0.0; that implementation's UTF-16 ordering nevertheless
+differs from the standard when supplementary characters compete with U+E000–U+FFFF characters.
+This library follows the standard in that case, so those proofs do not cross-verify with that version.
+The CHANGELOG explains the affected old proofs and issuer-driven reissuance requirements.
+
+`ProofVerificationOptions.KnownContexts` is a URI allowlist, not content authentication. Use it with
+approved immutable offline contexts or a loader that checks approved hashes of context content and
+its dependencies. Validate any stricter context-order/nesting profile separately. See the
+[BBS service admission example](samples/DataProofsDotnet.Samples.BbsSelectiveDisclosure/README.md)
+for concrete request/shape/proof/concurrency limits; the library's canonicalizer work budget does not
+cover JSON-LD expansion or native BBS verification.
 
 ## Native AOT and trimming
 

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Release classification:** the four RDFC constructor changes below remove actual parameterless
+constructors. Ordinary `new X()` calls remain valid, but `where T : new()` consumers must change
+source. Under the current `RELEASING.md` source-level policy this combined release requires a major
+version unless that API change is redesigned before release. Binary recompilation alone is not the
+complete migration. No version or release tag is assigned by this PR.
+
 ### Added
 
 - **Legacy suites can verify the constructed variant only.** A legacy proof does not say whether
@@ -22,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DATA_LOSS_DETECTION_ERROR`, as in the RDFC Data Integrity suites. This lifts the dual-variant
   limitation listed under 1.5.0 for verifiers that opt in.
 
-- **`ProofVerificationOptions.KnownContexts`: context validation per VC Data Integrity 1.0 §4.6.**
+- **`ProofVerificationOptions.KnownContexts`: context URI allowlisting.**
   A proof over RDF binds the statements, not the JSON that compacted them, so a holder can present
   a verified document under a `@context` that reads its terms differently (`boards` as `sails`); it
   verified here and on the reference implementation alike. The specification's answer is that
@@ -31,13 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   must hold only listed IRIs; an unlisted value, an inline context object or a `null` fails the
   document with a document-level `PROOF_VERIFICATION_ERROR`. Unset, nothing is checked, as before.
   The check runs before the proofs, because the suites load contexts while they verify: a context a
-  document names loads only if listed, so a holder cannot choose a URL the verifier fetches. Listing a
+  document names loads only if listed. This does not authenticate its contents. Listing a
   context also trusts what it references, whose imports, scoped contexts and redirects load with it. A
   refused document has no per-proof results, so read `Verified`, not `ProofResults`. §2.4.1 orders the
   check after the proofs but allows a different ordering that gives the same protections. A nested `@context` follows the root's rule rather than failing
   outright as §4.6 step 3 reads, because the JCS suites copy `@context` into each proof and a
-  presentation embeds credentials with their own; §2.4.1 allows equivalent protections, and a listed
-  context nested gives a holder nothing that adding it at the root does not. The list is a set, so
+  presentation embeds credentials with their own. The option alone does not provide all §4.6
+  protections: use approved immutable contexts or approved hashes (including dependencies), and
+  separately enforce any exact-context sequence/nesting policy. A first-fetch network cache does
+  not establish approved semantics. The list is a set, so
   order is not compared. Every key named `@context` counts, including one inside a JSON literal,
   because telling a literal apart takes processing the contexts: a term's type can make one, and
   `@value` is a keyword only outside a container map. So a literal holding that key, as a JSON Schema
@@ -129,11 +137,12 @@ parameter types find no constructor until the third parameter is named; callers 
 fill defaults (see Changed). This is accepted under this
 repository's policy (`RELEASING.md`: binary compatibility is not a release constraint; downstream is
 rebuilt) and recorded here because it is a real migration step. The public .NET API change is
-source-additive, so this is a minor release.
+source-additive for these legacy constructors alone; the separate RDFC constructor changes above
+require the combined release classification stated at the top of this entry.
 
 ### Fixed
 
-- **RDFC-1.0 canonical forms now match the specification, so RDFC proofs interoperate.** This changes
+- **RDFC canonicalization corrects tied-node labels and follows Unicode code-point ordering.** This changes
   the signed bytes of some documents; see below. dotNetRDF 3.5.1's `RdfCanonicalizer` labels tied blank
   nodes in the wrong order ([dotnetrdf/dotnetrdf#917](https://github.com/dotnetrdf/dotnetrdf/issues/917)).
   It never removes uniquely-hashed nodes from its work list, and its check for nodes that already have a
@@ -152,14 +161,16 @@ source-additive, so this is a minor release.
 
   `RdfcDocumentCanonicalizer` now runs on `Rdfc10Canonicalizer`, an internal copy of dotNetRDF's class
   with the defects fixed, until an upstream release does. `tests/fixtures/generated/rdfc-differential.json`
-  pins 1,530 datasets byte for byte against `rdf-canonize` 5.0.0, and `RdfCanonicalizationDeviationTests`
+  pins 1,870 datasets byte for byte against `rdf-canonize` 5.0.0, and `RdfCanonicalizationDeviationTests`
   reports when dotNetRDF is fixed and the copy can go. No public API changes.
 
   **Wire change.** A document with blank nodes that tie at the first degree can now canonicalize to
   different bytes, so an RDFC proof made by 1.5.0 or earlier over such a document no longer verifies
   here. Those proofs did not verify on the reference implementation either, and conforming issuers'
-  proofs of those documents now verify here. Documents with no such tie are unchanged. zcap-dotnet and credentials-dotnet should re-sign any
-  stored RDFC proof whose verification now fails.
+  proofs of those documents now verify here. The Unicode ordering correction below can also change bytes without any tied blank nodes. Inventory affected stored proofs before upgrading. Only the original issuer or another explicitly
+  authorized signer can reissue them; a verifier cannot repair third-party signatures. Coordinate
+  issuer/holder/verifier upgrades, retain the original artifacts for audit, and request reissuance
+  rather than silently falling back to the defective canonical form.
 
   The same work fixed five more defects in that class, found by adversarial review. Each was in 1.5.0
   except the last, which was introduced and fixed here:
@@ -219,26 +230,33 @@ source-additive, so this is a minor release.
   so a proof issued with another could never be derived from. An invalid private key now also throws
   `ProofGenerationException`, where it used to throw `ArgumentException`.
 
-  A JSON pointer must now select whole statements of the document. One that selects part of a value,
-  such as `…/@type`, `…/@language`, `…/@value` on a language-tagged or typed literal, or a member inside
-  a JSON literal, or that loses a nested `@context` on the way, or that names an `@id` only skolemization
-  adds, is refused with `ProofGenerationException`, at issuance for mandatory pointers and at derivation
-  for selective ones. These used to leak `KeyNotFoundException` or `ArgumentException`, derive a proof
-  that could not verify, or leave a mandatory claim unenforced. `…/@value` on a value object holding
-  nothing else selects the same statement and still works. The check compares statements, so a pointer
-  past a nested `@context` that reads as another statement of the document selects that one, and a
-  pointer to `@context` selects no statement.
+  **Mandatory selection preserves the selected claim.** Creation and derivation reject nested
+  document `@context` members before transformation, enforcing the selection algorithm's root-only
+  precondition. This is conservative even for literal JSON data containing that key; scoped context
+  definitions at the root remain supported. A subset check alone was insufficient: losing a nested
+  context could rewrite a mandatory predicate into another statement already present in the document.
+  Selection now densifies only arrays constructed while walking pointers, preserving real nulls in
+  copied JSON literals. Previously, a mandatory `[null,1]` literal could become its signed sibling
+  `[1]`, and a disclosure omitting the intended literal still verified. Real-BBS tests cover both
+  failures and selective/mandatory literal preservation.
 
-  A document with no `@context` of its own, secured with one in the proof options, now derives a proof
-  that verifies: the derived proof keeps that context, since the document has none to lend.
+  **Derived proofs retain the base proof context.** A document's root context can change under
+  RDF-preserving recompaction while its proof still needs its own context for signed extensions.
+  Derivation copies the base proof and replaces `proofValue`; clearing that context returned a proof
+  that could not verify. Contexts absent in reference fixtures remain absent; present ones are kept.
+
+  **Blank-node labels are consumed as complete N-Quads tokens.** Labels such as `_:foo-bar`,
+  `_:foo_bar` and `_:é` now issue, derive and verify; the prior ASCII-only token scanner truncated
+  them and returned unusable disclosures.
 
 - **bbs-2023 proofs over 4,096 characters work.** NetCid's default decode limit refused any longer
   `proofValue`, since 1.5.0, so a base proof with many mandatory pointers could not be derived from, and
   a derived proof with 87 or more undisclosed statements could not be verified. The limit is now
   1 MiB characters, about 22,000 undisclosed statements, and issuance and derivation refuse to produce
   anything longer, so a returned proof can always be parsed. Verification cost grows with the proof,
-  genuine or not, to about 10 seconds at the limit as measured here, so a host that accepts proofs from
-  strangers should cap request size.
+  genuine or not, to about 10 seconds at the limit as measured here, so the wire ceiling is not a service work budget. The BbsSelectiveDisclosure sample now demonstrates
+  a 32 KiB body / 16 KiB proof / bounded JSON-shape profile with two concurrent verifications and
+  no waiting queue. Tune admission to measured workload; hard deadlines require worker isolation.
 
 ### Known limitations
 
@@ -246,10 +264,11 @@ source-additive, so this is a minor release.
   8,000-item array takes about 13 seconds, and canonicalizing expands at least twice, so a 46 KB document
   can keep a verifier busy for 27 seconds. This happens before the canonicalizer's work budget applies.
   Nothing caps it yet; a service that verifies untrusted documents should limit their size.
-- **RDFC-1.0 sort order follows the reference implementation.** The specification sorts N-Quads by code
-  point; `rdf-canonize` and this library sort by UTF-16 code unit, which differs only between characters
-  above U+FFFF and those from U+E000 to U+FFFF. This library matches `rdf-canonize`, because that is what
-  proofs in the field are signed with.
+- **Unicode interop boundary.** This version follows RDFC-1.0 code-point ordering, including
+  first-degree hashing and BBS statement ordering. `rdf-canonize` 5.0.0 and earlier library versions
+  use UTF-16 ordering. When supplementary characters compete with U+E000–U+FFFF characters, bytes
+  can differ even without blank nodes. Old proofs over those datasets require issuer-driven
+  reissuance; cross-verification with that oracle version is not claimed for those inputs.
 - **bbs-2023 cannot disclose mandatory statements alone, nor secure a document whose every statement
   is mandatory.** The spec allows both (zero disclosed BBS messages, zero signed messages); NetCrypto
   1.7.1's BBS provider needs at least one revealed index and at least one message. Both are refused

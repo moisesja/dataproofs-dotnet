@@ -103,6 +103,19 @@ try
     ProofVerificationResult verified = VerifyReveal(suite, reveal, derivedProof, issuerPublicKey);
     Console.WriteLine($"  VERIFIER derived proof verified: {verified.Verified}");
     Check(verified.Verified, "the derived proof verifies against the issuer's BBS public key");
+    // A service admits a bounded small-document profile before JSON-LD expansion or native BBS.
+    // See README.md in this sample for request, concurrency and operational limits.
+    var wire = JsonSerializer.SerializeToUtf8Bytes(reveal, DataProofsJsonOptions.Default);
+    Check(VerificationAdmission.TryVerify(wire, issuerPublicKey, out var admitted) && admitted!.Verified,
+        "the bounded verifier profile accepts this small credential");
+    Check(!VerificationAdmission.TryVerify(new byte[VerificationAdmission.MaxBodyBytes + 1], issuerPublicKey, out _),
+        "oversized requests are refused before parsing");
+    var longProof = Mutate(reveal, node => node["proof"]!["proofValue"] = new string('u', VerificationAdmission.MaxProofCharacters + 1));
+    Check(!VerificationAdmission.TryVerify(JsonSerializer.SerializeToUtf8Bytes(longProof, DataProofsJsonOptions.Default), issuerPublicKey, out _),
+        "oversized proofs are refused before native verification");
+    var longArray = Mutate(reveal, node => node["credentialSubject"]!["name"] = new JsonArray(Enumerable.Range(0, 129).Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()));
+    Check(!VerificationAdmission.TryVerify(JsonSerializer.SerializeToUtf8Bytes(longArray, DataProofsJsonOptions.Default), issuerPublicKey, out _),
+        "long arrays are refused before JSON-LD expansion");
     Check(!reveal.GetRawText().Contains("urn:bnid", StringComparison.Ordinal), "the reveal carries blank nodes, not skolem ids: a reference verifier can read it");
 
     // Derive a SECOND presentation revealing favoriteColor instead — different disclosure, same base.
@@ -111,6 +124,19 @@ try
     Check(VerifyReveal(suite, reveal2, derived2, issuerPublicKey).Verified, "a second selective disclosure from the same base verifies");
     Check(reveal2.GetProperty("credentialSubject").TryGetProperty("favoriteColor", out _), "second reveal discloses favoriteColor");
     Console.WriteLine("  a second, different disclosure derived from the SAME base proof also verifies");
+
+    // Development-only cross-stack check: export public artifacts, never private signing material.
+    if (args is ["--interop-output", var outputPath])
+    {
+        var export = new JsonObject
+        {
+            ["reveals"] = new JsonArray(JsonNode.Parse(reveal.GetRawText()), JsonNode.Parse(reveal2.GetRawText())),
+            ["publicKeyMultibase"] = bbsKey.MultibasePublicKey,
+            ["verificationMethod"] = baseOptions.VerificationMethod,
+            ["controller"] = $"did:key:{bbsKey.MultibasePublicKey}",
+        };
+        File.WriteAllText(outputPath, export.ToJsonString(DataProofsJsonOptions.Default));
+    }
 
     // --- Negatives (results, not exceptions) ---
     // Wrong verification key fails closed.
