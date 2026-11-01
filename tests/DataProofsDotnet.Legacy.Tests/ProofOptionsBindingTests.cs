@@ -253,6 +253,85 @@ public class ProofOptionsBindingTests
         pipeline.Verify(attacked, publicKey).ProofResults.Should().ContainSingle().Which.Verified.Should().BeFalse();
     }
 
+    private const string NestedProofTerms = BothProofTypes
+        + ",\"authentication\":{\"@id\":\"" + Sec + "authenticationMethod\",\"@type\":\"@id\"}"
+        + ",\"child\":\"https://example.org/child\",\"parent\":{\"@reverse\":\"https://example.org/child\"}";
+
+    private const string NestedLegacyProof =
+        "{\"type\":\"Ed25519Signature2020\",\"created\":\"2026-10-30T00:00:00Z\","
+        + "\"verificationMethod\":\"did:example:issuer#key-1\",\"proofPurpose\":\"authentication\"}";
+
+    private const string NestedModernProof =
+        "{\"type\":\"DataIntegrityProof\",\"cryptosuite\":\"eddsa-rdfc-2022\",\"created\":\"2026-10-30T00:00:00Z\","
+        + "\"verificationMethod\":\"did:example:issuer#key-1\",\"proofPurpose\":\"authentication\"}";
+
+    // Moves a signed nested node to the outer proof, with the outer proof under @reverse. The dataset,
+    // so the signature, does not change, and no signing or context edit is involved.
+    private static JsonElement PromoteChild(JsonElement secured) => Fx.Mutate(secured, node =>
+    {
+        var outer = (JsonObject)node["proof"]!;
+        var child = (JsonObject)outer["child"]!.DeepClone();
+        child["proofValue"] = outer["proofValue"]!.DeepClone();
+        outer.Remove("proofValue");
+        outer.Remove("@context");
+        outer.Remove("child");
+        child["parent"] = outer.DeepClone();
+        node["proof"] = child;
+    });
+
+    private static DataIntegrityProof WithChild(DataIntegrityProof options, string child) => options with
+    {
+        AdditionalProperties = new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["child"] = Parse(child) },
+    };
+
+    private static DataIntegrityProof ModernOptions() => new()
+    {
+        Cryptosuite = EddsaRdfc2022Cryptosuite.CryptosuiteName,
+        Created = "2026-10-30T00:00:00Z",
+        VerificationMethod = "did:example:issuer#key-1",
+        ProofPurpose = ProofPurposes.AssertionMethod,
+    };
+
+    public static TheoryData<bool, bool> NestedProofShapes() => new()
+    {
+        { true, false },
+        { false, true },
+        { true, true },
+        { false, false },
+    };
+
+    [Theory, MemberData(nameof(NestedProofShapes))]
+    public async Task ASignedNestedNodeCannotBePromotedToTheProof(bool modernOutside, bool modernInside)
+    {
+        var (pipeline, signer, publicKey) = BothEd25519Suites();
+        var outer = modernOutside ? ModernOptions() : Options(Ed25519Signature2020Cryptosuite.ProofType);
+        var secured = await pipeline.AddProofAsync(
+            Inline(NestedProofTerms), WithChild(outer, modernInside ? NestedModernProof : NestedLegacyProof), signer);
+        var asAssertion = new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.AssertionMethod };
+        var asAuthentication = new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.Authentication };
+        pipeline.Verify(secured, publicKey, asAssertion).Verified.Should().BeTrue();
+        pipeline.Verify(secured, publicKey, asAuthentication).Verified.Should().BeFalse();
+
+        pipeline.Verify(PromoteChild(secured), publicKey, asAuthentication).Verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ACustomPurposeHasOneSpelling()
+    {
+        const string iri = "https://example.org/approve";
+        var (pipeline, signer, publicKey, type, _) = Setup(Ed25519Signature2020Cryptosuite.ProofType);
+        var document = Inline(",\"approve\":\"" + iri + "\"");
+        var secured = await pipeline.AddProofAsync(document, Options(type) with { ProofPurpose = "approve" }, signer);
+        pipeline.Verify(secured, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = "approve" }).Verified.Should().BeTrue();
+        pipeline.Verify(secured, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = iri }).Verified.Should().BeFalse();
+
+        var respelled = Fx.Mutate(secured, node => ((JsonObject)node["proof"]!)["proofPurpose"] = iri);
+
+        pipeline.Verify(respelled, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = iri }).Verified.Should().BeFalse();
+        var act = () => pipeline.AddProofAsync(document, Options(type) with { ProofPurpose = iri }, signer);
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*proofPurpose*");
+    }
+
     [Fact]
     public async Task AnApplicationsOwnPurposeRoundTrips()
     {

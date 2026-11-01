@@ -40,11 +40,11 @@ internal static class ProofOptionsBinding
     // scoped context. Four of them are not the name: authentication is authenticationMethod.
     private static readonly Dictionary<string, string> RegisteredPurposes = new(StringComparer.Ordinal)
     {
-        [ProofPurposes.AssertionMethod] = Security + "assertionMethod",
-        [ProofPurposes.Authentication] = Security + "authenticationMethod",
-        [ProofPurposes.CapabilityInvocation] = Security + "capabilityInvocationMethod",
-        [ProofPurposes.CapabilityDelegation] = Security + "capabilityDelegationMethod",
-        [ProofPurposes.KeyAgreement] = Security + "keyAgreementMethod",
+        [Security + "assertionMethod"] = ProofPurposes.AssertionMethod,
+        [Security + "authenticationMethod"] = ProofPurposes.Authentication,
+        [Security + "capabilityInvocationMethod"] = ProofPurposes.CapabilityInvocation,
+        [Security + "capabilityDelegationMethod"] = ProofPurposes.CapabilityDelegation,
+        [Security + "keyAgreementMethod"] = ProofPurposes.KeyAgreement,
     };
 
     private enum TermKind
@@ -80,8 +80,23 @@ internal static class ProofOptionsBinding
             }
         }
 
+        // The proof is the one node nothing points at, which only the signed statements decide. The
+        // presented JSON must not choose it: @reverse can turn a signed nested node into the outer
+        // object without changing the dataset, and that node would then answer for the proof.
+        var pointedAt = statements
+            .Where(statement => statement.Object.Kind != TermKind.Literal)
+            .Select(statement => statement.Object)
+            .ToHashSet();
+        var roots = statements.Select(statement => statement.Subject).Where(subject => !pointedAt.Contains(subject)).Distinct().ToList();
+        if (roots.Count != 1)
+        {
+            return "The proof configuration's canonical form does not have one proof node.";
+        }
+
+        var root = roots[0];
         var typeStatements = statements
-            .Where(statement => statement.Predicate == RdfType
+            .Where(statement => statement.Subject == root
+                && statement.Predicate == RdfType
                 && statement.Object.Kind == TermKind.Iri
                 && EndsInName(statement.Object.Value, proof.Type))
             .ToList();
@@ -90,7 +105,6 @@ internal static class ProofOptionsBinding
             return MemberMismatch("type");
         }
 
-        var root = typeStatements[0].Subject;
         if (root.Kind == TermKind.Iri ? root.Value != proof.Id : proof.Id is not null)
         {
             return MemberMismatch("id");
@@ -140,10 +154,9 @@ internal static class ProofOptionsBinding
         => signed.TrueForAll(term => term.Kind != TermKind.BlankNode)
             && signed.Select(term => term.Value).ToHashSet(StringComparer.Ordinal).SetEquals(members);
 
-    // Under a @vocab a purpose is a plain string. As an IRI, a registered purpose and its IRI have one
-    // spelling each, so the purpose a caller reads is the one the issuer wrote. Any other names a term
-    // of the issuer's context, which has no table here, so the signed IRI must end in that name: an
-    // application's own purpose works, and a value that is itself a path cannot alias a longer IRI's tail.
+    // Under a @vocab a purpose is a plain string, and otherwise an IRI with one name. The pipeline and
+    // a resolver compare a purpose as a string, so two spellings of one signed IRI would each pass a
+    // policy written for that spelling alone.
     private static bool PurposeAgrees(List<Term> signed, string? purpose)
     {
         if (purpose is null)
@@ -154,12 +167,23 @@ internal static class ProofOptionsBinding
         return signed switch
         {
             [{ Kind: TermKind.Literal, Value: var literal }] => literal == purpose,
-            [{ Kind: TermKind.Iri, Value: var iri }] when RegisteredPurposes.TryGetValue(purpose, out var registered) => iri == registered,
-            [{ Kind: TermKind.Iri, Value: var iri }] when RegisteredPurposes.ContainsValue(iri) => false,
-            [{ Kind: TermKind.Iri, Value: var iri }] => iri == purpose
-                || (purpose.Length > 0 && purpose.IndexOfAny(['/', '#', ':']) < 0 && EndsInName(iri, purpose)),
+            [{ Kind: TermKind.Iri, Value: var iri }] => PurposeName(iri) == purpose,
             _ => false,
         };
+    }
+
+    // The one spelling of a signed purpose IRI: its registered name, or else the name it ends in,
+    // which is how a term of the issuer's context reads. An IRI with no such name, or whose name is a
+    // registered purpose it is not, is spelled whole.
+    private static string PurposeName(string iri)
+    {
+        if (RegisteredPurposes.TryGetValue(iri, out var registered))
+        {
+            return registered;
+        }
+
+        var name = iri[(iri.LastIndexOfAny(['/', '#']) + 1)..];
+        return name.Length > 0 && !name.Contains(':') && !RegisteredPurposes.ContainsValue(name) ? name : iri;
     }
 
     // subject predicate object [graph] . — anything else fails closed rather than being guessed at.

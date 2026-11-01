@@ -427,6 +427,113 @@ public class ProofOptionsBindingTests
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*domain*");
     }
 
+    private const string NestedProofTerms =
+        ",\"authentication\":{\"@id\":\"" + Sec + "authenticationMethod\",\"@type\":\"@id\"}"
+        + ",\"child\":\"https://example.org/child\",\"parent\":{\"@reverse\":\"https://example.org/child\"}"
+        + ",\"a\":\"https://example.org/a\",\"b\":\"https://example.org/b\"";
+
+    private static JsonElement DocumentWithNestedProofTerms() => Parse("{\"@context\":{" + ProofTerms + NestedProofTerms + "},\"a\":\"1\",\"b\":\"2\"}");
+
+    private static IDictionary<string, JsonElement> NestedProof(string suite) => new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+    {
+        ["child"] = Parse(
+            "{\"type\":\"DataIntegrityProof\",\"cryptosuite\":\"" + suite + "\",\"created\":\"2026-10-30T00:00:00Z\","
+            + "\"verificationMethod\":\"did:example:issuer#key-1\",\"proofPurpose\":\"authentication\"}"),
+    };
+
+    // Moves a signed nested node to the outer proof, with the outer proof under @reverse. The dataset,
+    // so the signature, does not change, and no signing or context edit is involved.
+    private static JsonElement PromoteChild(JsonElement secured) => Fx.Mutate(secured, node =>
+    {
+        var outer = (JsonObject)node["proof"]!;
+        var child = (JsonObject)outer["child"]!.DeepClone();
+        child["proofValue"] = outer["proofValue"]!.DeepClone();
+        outer.Remove("proofValue");
+        outer.Remove("@context");
+        outer.Remove("child");
+        child["parent"] = outer.DeepClone();
+        node["proof"] = child;
+    });
+
+    [Theory, MemberData(nameof(RdfcSuites))]
+    public async Task Rdfc_ASignedNestedNodeCannotBePromotedToTheProof(string suite)
+    {
+        var (key, publicKey) = RdfcKey(suite);
+        var options = new DataIntegrityProof
+        {
+            Cryptosuite = suite,
+            Created = "2026-10-30T00:00:00Z",
+            VerificationMethod = "did:example:issuer#key-1",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+            AdditionalProperties = NestedProof(suite),
+        };
+        var secured = await Pipeline.AddProofAsync(DocumentWithNestedProofTerms(), options, Fx.Signer(key));
+        Pipeline.Verify(secured, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.AssertionMethod })
+            .Verified.Should().BeTrue();
+
+        Pipeline.Verify(PromoteChild(secured), publicKey, new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.Authentication })
+            .Verified.Should().BeFalse();
+    }
+
+    [BbsFact]
+    public async Task Bbs_ASignedNestedNodeCannotBePromotedToTheProof()
+    {
+        var (_, _, publicKey) = BbsKeys();
+        var options = BbsOptions() with { AdditionalProperties = NestedProof(Bbs2023Cryptosuite.CryptosuiteName) };
+        var reveal = await DeriveBbs(DocumentWithNestedProofTerms(), options, ["/a"], ["/b"]);
+        Pipeline.Verify(reveal, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.AssertionMethod })
+            .Verified.Should().BeTrue();
+
+        Pipeline.Verify(PromoteChild(reveal), publicKey, new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.Authentication })
+            .Verified.Should().BeFalse();
+    }
+
+    private const string CustomPurposeIri = "https://example.org/approve";
+
+    private static JsonElement DocumentWithCustomPurpose() => Parse(
+        "{\"@context\":{" + ProofTerms + ",\"approve\":\"" + CustomPurposeIri + "\",\"a\":\"https://example.org/a\","
+        + "\"b\":\"https://example.org/b\"},\"a\":\"1\",\"b\":\"2\"}");
+
+    private static void ACustomPurposeHasOneSpelling(JsonElement secured, PublicKeyMaterial publicKey)
+    {
+        Pipeline.Verify(secured, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = "approve" }).Verified.Should().BeTrue();
+        Pipeline.Verify(secured, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = CustomPurposeIri }).Verified.Should().BeFalse();
+
+        var respelled = OnProof(secured, proof => proof["proofPurpose"] = CustomPurposeIri);
+
+        Pipeline.Verify(respelled, publicKey, new ProofVerificationOptions { ExpectedProofPurpose = CustomPurposeIri }).Verified.Should().BeFalse();
+    }
+
+    [Theory, MemberData(nameof(RdfcSuites))]
+    public async Task Rdfc_ACustomPurposeHasOneSpelling(string suite)
+    {
+        var (key, publicKey) = RdfcKey(suite);
+        var options = new DataIntegrityProof
+        {
+            Cryptosuite = suite,
+            Created = "2026-10-30T00:00:00Z",
+            VerificationMethod = "did:example:issuer#key-1",
+            ProofPurpose = "approve",
+        };
+
+        ACustomPurposeHasOneSpelling(await Pipeline.AddProofAsync(DocumentWithCustomPurpose(), options, Fx.Signer(key)), publicKey);
+
+        var act = () => Pipeline.AddProofAsync(DocumentWithCustomPurpose(), options with { ProofPurpose = CustomPurposeIri }, Fx.Signer(key));
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*proofPurpose*");
+    }
+
+    [BbsFact]
+    public async Task Bbs_ACustomPurposeHasOneSpelling()
+    {
+        var (privateKey, hmacKey, publicKey) = BbsKeys();
+        var options = BbsOptions() with { ProofPurpose = "approve" };
+
+        ACustomPurposeHasOneSpelling(await DeriveBbs(DocumentWithCustomPurpose(), options, ["/a"], ["/b"]), publicKey);
+
+        var act = () => Bbs.CreateBaseProofAsync(DocumentWithCustomPurpose(), options with { ProofPurpose = CustomPurposeIri }, privateKey, hmacKey, ["/a"]);
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*proofPurpose*");
+    }
+
     [Fact]
     public async Task AProofIsNotIssuedWhenItsTypeIsNotAnRdfType()
     {

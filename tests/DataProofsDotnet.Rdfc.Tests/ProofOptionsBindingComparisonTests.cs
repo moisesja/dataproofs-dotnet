@@ -157,7 +157,36 @@ public class ProofOptionsBindingComparisonTests
 
     [Fact]
     public void TwoProofsInTheDefaultGraphAreRefused()
-        => Mismatch(Proof(), $"_:c14n1 {RdfType} <{Sec}DataIntegrityProof> .").Should().Contain("type");
+        => Mismatch(Proof(), $"_:c14n1 {RdfType} <{Sec}DataIntegrityProof> .").Should().Contain("proof node");
+
+    [Theory]
+    [InlineData("_:c14n1")]
+    [InlineData("<urn:child>")]
+    public void ANodeTheProofPointsAtIsNotTheProof(string child)
+    {
+        string[] nested =
+        [
+            $"{Root} <https://example.org/child> {child} .",
+            $"{child} {RdfType} <{Sec}Ed25519Signature2020> .",
+            $"{child} <{Sec}proofPurpose> <{Sec}authenticationMethod> .",
+        ];
+
+        Mismatch(Proof(), nested).Should().BeNull();
+        Mismatch(Proof() with { Type = "Ed25519Signature2020", ProofPurpose = ProofPurposes.Authentication }, nested).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void NothingPointsAtTheProofInACycle()
+        => Mismatch(Proof(), $"{Root} <https://example.org/child> _:c14n1 .", $"_:c14n1 <https://example.org/parent> {Root} .")
+            .Should().Contain("proof node");
+
+    [Fact]
+    public void ANodeOutsideTheProofIsRefused()
+        => Mismatch(Proof(), "_:c14n1 <https://example.org/p> \"v\" .").Should().Contain("proof node");
+
+    [Fact]
+    public void ANamedGraphCannotPointAtTheProof()
+        => Mismatch(Proof(), $"_:c14n1 <https://example.org/child> {Root} _:c14n2 .").Should().BeNull();
 
     [Fact]
     public void AnEmbeddedProofInANamedGraphIsNotTheProof()
@@ -194,6 +223,8 @@ public class ProofOptionsBindingComparisonTests
     [InlineData(Sec + "authenticationMethod", Sec + "authenticationMethod")]
     [InlineData(Sec + "assertionMethod", Sec + "assertionMethod")]
     [InlineData("assertionMethodX", Sec + "assertionMethod")]
+    [InlineData("https://example.org/approve", "https://example.org/approve")]
+    [InlineData("urn:zcap-dotnet:revocation:v1#capabilityRevocation", "urn:zcap-dotnet:revocation:v1#capabilityRevocation")]
     [InlineData("Method", Sec + "assertionMethod")]
     [InlineData("b/c", "https://example.org/a/b/c")]
     [InlineData("a#b", "https://example.org/a#b#a#b")]
@@ -210,8 +241,8 @@ public class ProofOptionsBindingComparisonTests
     [Theory]
     [InlineData("capabilityRevocation", "urn:zcap-dotnet:revocation:v1#capabilityRevocation")]
     [InlineData("myPurpose", "https://example.org/purposes/myPurpose")]
-    [InlineData("https://example.org/purposes#mine", "https://example.org/purposes#mine")]
-    public void AnApplicationsOwnPurposeEndsInItsName(string purpose, string iri)
+    [InlineData("approve", "https://example.org/approve")]
+    public void AnApplicationsOwnPurposeIsTheNameItsIriEndsIn(string purpose, string iri)
     {
         var statements = Signed().Where(statement => !statement.Contains(Sec + "proofPurpose", StringComparison.Ordinal))
             .Append($"{Root} <{Sec}proofPurpose> <{iri}> .");
@@ -223,6 +254,21 @@ public class ProofOptionsBindingComparisonTests
     [Fact]
     public void ASignedPurposeWithNoMemberIsRefused()
         => Mismatch(Proof() with { ProofPurpose = null }).Should().Contain("proofPurpose");
+
+    // Names that cannot stand for the IRI: nothing, a colon, or a registered purpose this IRI is not.
+    [Theory]
+    [InlineData("urn:example:purpose")]
+    [InlineData("https://example.org/purposes/")]
+    [InlineData("https://example.org/x:y")]
+    [InlineData("https://example.org/purposes#authentication")]
+    [InlineData(Sec + "authentication")]
+    public void APurposeWithNoNameOfItsOwnIsSpelledWhole(string iri)
+    {
+        var statements = Signed().Where(statement => !statement.Contains(Sec + "proofPurpose", StringComparison.Ordinal))
+            .Append($"{Root} <{Sec}proofPurpose> <{iri}> .");
+
+        Exactly(Proof() with { ProofPurpose = iri }, statements).Should().BeNull();
+    }
 
     [Fact]
     public void AProofTypedUnderAVocabReadsItsMembersThere()
