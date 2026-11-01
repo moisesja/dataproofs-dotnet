@@ -315,6 +315,52 @@ public class ProofOptionsBindingTests
         pipeline.Verify(PromoteChild(secured), publicKey, asAuthentication).Verified.Should().BeFalse();
     }
 
+    // A proof this library no longer issues, so it is pinned here as another stack would have signed
+    // it: two @type terms and statements under each type's vocabulary, with assertionMethod under one
+    // and authentication under the other, then respelled with no key. Fx.SeedKey(0x21), Ed25519.
+    private const string TwoTypesRespelled =
+        """
+        {"@context":{"type":"@type","otherType":"@type","DataIntegrityProof":"https://a.example/DataIntegrityProof",
+        "Ed25519Signature2020":"https://b.example/Ed25519Signature2020","cryptosuite":"https://a.example/cryptosuite",
+        "created":"https://b.example/created","verificationMethod":"https://b.example/verificationMethod",
+        "proofPurpose":"https://b.example/proofPurpose","oldSuite":"https://a.example/cryptosuite",
+        "oldCreated":"https://a.example/created","oldMethod":"https://a.example/verificationMethod",
+        "oldPurpose":"https://a.example/proofPurpose","legacyCreated":"https://b.example/created",
+        "legacyMethod":"https://b.example/verificationMethod","legacyPurpose":"https://b.example/proofPurpose",
+        "claim":"https://example.org/claim"},"claim":"hello",
+        "proof":{"type":"Ed25519Signature2020","created":"2026-10-30T00:00:00Z",
+        "verificationMethod":"did:example:issuer#key-1","proofPurpose":"authentication",
+        "proofValue":"z5NXfGsn2rzjdkQHvxUjT4cyqLF6QsveRbSrTWFVMRpkriVULN2X67Dp957YupHm6U5das8aECkdW2HiK9QbiWihc",
+        "otherType":"https://a.example/DataIntegrityProof","oldCreated":"2026-10-30T00:00:00Z",
+        "oldMethod":"did:example:issuer#key-1","oldPurpose":"assertionMethod","oldSuite":"eddsa-rdfc-2022"}}
+        """;
+
+    [Fact]
+    public void ASecondSignedTypeCannotChooseTheVocabularyMembersAreReadFrom()
+    {
+        var (pipeline, _, publicKey) = BothEd25519Suites();
+
+        pipeline.Verify(Parse(TwoTypesRespelled), publicKey, new ProofVerificationOptions { ExpectedProofPurpose = ProofPurposes.Authentication })
+            .Verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AProofWithTwoTypesIsNotIssued()
+    {
+        var (pipeline, signer, _) = BothEd25519Suites();
+        var options = ModernOptions() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["otherType"] = Parse("\"Ed25519Signature2020\""),
+            },
+        };
+
+        var act = () => pipeline.AddProofAsync(Inline(BothProofTypes + ",\"otherType\":\"@type\""), options, signer);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*type*");
+    }
+
     [Fact]
     public async Task ACustomPurposeHasOneSpelling()
     {

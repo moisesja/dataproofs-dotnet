@@ -93,14 +93,11 @@ internal static class ProofOptionsBinding
             return "The proof configuration's canonical form does not have one proof node.";
         }
 
+        // One type, for the same reason: with two, the presented type would choose which vocabulary
+        // of signed statements the members are read from.
         var root = roots[0];
-        var typeStatements = statements
-            .Where(statement => statement.Subject == root
-                && statement.Predicate == RdfType
-                && statement.Object.Kind == TermKind.Iri
-                && EndsInName(statement.Object.Value, proof.Type))
-            .ToList();
-        if (typeStatements.Count != 1)
+        var types = statements.Where(statement => statement.Subject == root && statement.Predicate == RdfType).ToList();
+        if (types is not [{ Object: { Kind: TermKind.Iri, Value: var type } }] || !EndsInName(type, proof.Type))
         {
             return MemberMismatch("type");
         }
@@ -110,7 +107,7 @@ internal static class ProofOptionsBinding
             return MemberMismatch("id");
         }
 
-        var vocabulary = typeStatements[0].Object.Value[..^proof.Type.Length];
+        var vocabulary = type[..^proof.Type.Length];
         var signed = statements.Where(statement => statement.Subject == root).ToLookup(statement => statement.Predicate, statement => statement.Object);
         List<Term> SignedValues(string member, string predicate)
             => [.. signed[predicate].Concat(signed[vocabulary + member]).Distinct()];

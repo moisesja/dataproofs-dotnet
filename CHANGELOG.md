@@ -35,16 +35,19 @@ used to verify, listed under Security.
   - a signed node nested in the proof moved to the outer proof with `@reverse`, which leaves the dataset
     unchanged, so that its purpose answered for the proof's. The node could be of another proof type:
     `eddsa-rdfc-2022` and the legacy RDFC `Ed25519Signature2020` build the same signing input.
+  - a proof signed with two types and statements under each type's vocabulary, presented as the other
+    type, so that the purpose signed there answered for the proof's. This takes an issuer whose context
+    defines a second term for `@type`, and no published context does.
 
   A proof now verifies only if the members the library reads are what was signed. The suites read the
   canonical N-Quads they hash and compare them with `id`, `type`, `cryptosuite`, `created`, `expires`,
   `verificationMethod`, `proofPurpose`, `challenge`, `domain`, `nonce` and `previousProof` in both
   directions, so a member renamed away and a member the issuer never signed both fail with
   `PROOF_VERIFICATION_ERROR`. The proof node they compare is the one default-graph node nothing points
-  at, which only the signed data decides, not the presented JSON. A signed purpose IRI has one accepted
-  spelling: its registered name, else the name the IRI ends in, else the whole IRI. The same check runs
-  at creation, which throws `ProofGenerationException`
-  rather than issue a proof that could not verify. This affects `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`,
+  at, and it must have exactly one type, so the signed data decides both, not the presented JSON. A
+  signed purpose IRI has one accepted spelling: its registered name, else the name the IRI ends in, else
+  the whole IRI. The same check runs at creation, which throws `ProofGenerationException` rather than
+  issue a proof that could not verify. This affects `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`,
   `bbs-2023` and the RDFC variant of `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019`. The JCS
   suites sign the JSON itself and were not affected. No public API changes, and no signed bytes change.
   Versions up to 1.5.0 have no mitigation in the library: upgrade.
@@ -55,6 +58,7 @@ used to verify, listed under Security.
   but the library cannot confirm what they say, so they are refused:
   - a context mapping a modeled member to any other predicate;
   - a proof with no `rdf:type` statement, as under a bare `@vocab` that leaves `type` unaliased;
+  - a proof with more than one, as under a second term for `@type`;
   - a compact IRI under a custom prefix in `id`, `verificationMethod` or `previousProof`, whose JSON
     spelling is not the signed IRI;
   - a `proofPurpose` in any spelling but that one, so `approve` is accepted for

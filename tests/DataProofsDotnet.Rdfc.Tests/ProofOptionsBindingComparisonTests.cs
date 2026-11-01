@@ -156,6 +156,22 @@ public class ProofOptionsBindingComparisonTests
     public void AProofTypedUnderTwoVocabulariesIsRefused()
         => Mismatch(Proof(), $"{Root} {RdfType} <https://example.org/vocab#DataIntegrityProof> .").Should().Contain("type");
 
+    // Which of the two is presented would choose the vocabulary, so neither may be.
+    [Theory]
+    [InlineData("<https://example.org/vocab#Ed25519Signature2020>")]
+    [InlineData("\"Ed25519Signature2020\"")]
+    public void ASecondTypeIsRefusedWhicheverIsPresented(string second)
+    {
+        Mismatch(Proof(), $"{Root} {RdfType} {second} .").Should().Contain("type");
+        Mismatch(Proof() with { Type = "Ed25519Signature2020" }, $"{Root} {RdfType} {second} .").Should().Contain("type");
+    }
+
+    [Theory]
+    [InlineData("\"https://w3id.org/security#DataIntegrityProof\"")]
+    [InlineData("_:c14n1")]
+    public void ATypeThatIsNotAnIriIsRefused(string type)
+        => Exactly(Proof(), Signed().Skip(1).Prepend($"{Root} {RdfType} {type} .")).Should().Contain("type");
+
     [Theory]
     [InlineData("https://example.org/vocab#")]
     [InlineData("https://example.org/vocab/")]
