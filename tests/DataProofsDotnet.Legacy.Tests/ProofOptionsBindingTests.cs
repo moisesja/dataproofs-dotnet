@@ -179,6 +179,17 @@ public class ProofOptionsBindingTests
     }
 
     [Fact]
+    public async Task AProofIsNotIssuedWhenItsMemberWouldNotBindAtVerification()
+    {
+        var (pipeline, signer, _, type, _) = Setup(Ed25519Signature2020Cryptosuite.ProofType);
+
+        var act = () => pipeline.AddProofAsync(
+            Inline(",\"domain\":\"https://example.org/elsewhere\""), Options(type) with { Domain = "a.example" }, signer);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*domain*");
+    }
+
+    [Fact]
     public async Task AnApplicationsOwnPurposeRoundTrips()
     {
         var (pipeline, signer, publicKey, type, _) = Setup(Ed25519Signature2020Cryptosuite.ProofType);

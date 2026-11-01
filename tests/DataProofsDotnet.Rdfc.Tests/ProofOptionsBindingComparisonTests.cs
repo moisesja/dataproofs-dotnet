@@ -216,6 +216,11 @@ public class ProofOptionsBindingComparisonTests
         Exactly(Proof() with { ProofPurpose = purpose }, statements).Should().BeNull();
     }
 
+    // The pipeline requires a purpose, but a suite can be called directly.
+    [Fact]
+    public void ASignedPurposeWithNoMemberIsRefused()
+        => Mismatch(Proof() with { ProofPurpose = null }).Should().Contain("proofPurpose");
+
     [Fact]
     public void AProofTypedUnderAVocabReadsItsMembersThere()
     {

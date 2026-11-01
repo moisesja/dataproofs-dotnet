@@ -414,6 +414,19 @@ public class ProofOptionsBindingTests
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*domain*");
     }
 
+    [BbsFact]
+    public async Task Bbs_AProofIsNotIssuedWhenItsMemberWouldNotBindAtVerification()
+    {
+        var (privateKey, hmacKey, _) = BbsKeys();
+        var document = Parse(
+            "{\"@context\":{" + ProofTerms + ",\"domain\":\"https://example.org/elsewhere\",\"a\":\"https://example.org/a\","
+            + "\"b\":\"https://example.org/b\"},\"a\":\"1\",\"b\":\"2\"}");
+
+        var act = () => Bbs.CreateBaseProofAsync(document, BbsOptions(domain: "a.example"), privateKey, hmacKey, ["/a"]);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*domain*");
+    }
+
     [Fact]
     public async Task AProofIsNotIssuedWhenItsTypeIsNotAnRdfType()
     {
