@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-11-01
+## [2.0.0] - 2026-11-02
 
 **This is a major release.** The four RDFC constructor changes under Changed remove actual
 parameterless constructors: ordinary `new X()` calls remain valid, but `where T : new()` consumers must
