@@ -352,8 +352,15 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             // equals the header committed by the proof and BBS verification fails — this is what
             // enforces mandatory disclosure. The header is recomputed here, NOT taken from the
             // holder-controlled derived proofValue.
-            var proofHash = HashProofConfig(proofConfig);
-            var bbsHeader = Concat(proofHash, HashMandatory(disclosed.Mandatory));
+            var canonicalProofConfig = CanonicalizeProofConfig(proofConfig);
+
+            // The pipeline decided on the proof's JSON; the header covers these bytes.
+            if (ProofOptionsBinding.Mismatch(canonicalProofConfig, proofConfig) is { } mismatch)
+            {
+                return ProofVerificationResult.Failure(ProofProblemCodes.ProofVerificationError, mismatch, proof);
+            }
+
+            var bbsHeader = Concat(Hash.Sha256(canonicalProofConfig), HashMandatory(disclosed.Mandatory));
 
             // The revealed non-mandatory N-Quads are the disclosed BBS messages, at the selective
             // indexes of the issuer's non-mandatory message list.
@@ -796,12 +803,23 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         };
     }
 
+    // At creation and derivation: never issue a proof the verifier would refuse.
     private byte[] HashProofConfig(DataIntegrityProof proofConfig)
     {
-        byte[] canonical;
+        var canonical = CanonicalizeProofConfig(proofConfig);
+        if (ProofOptionsBinding.Mismatch(canonical, proofConfig) is { } mismatch)
+        {
+            throw new ProofGenerationException(mismatch);
+        }
+
+        return Hash.Sha256(canonical);
+    }
+
+    private byte[] CanonicalizeProofConfig(DataIntegrityProof proofConfig)
+    {
         try
         {
-            canonical = _canonicalizer.CanonicalizeJsonLd(
+            return _canonicalizer.CanonicalizeJsonLd(
                 JsonSerializer.SerializeToElement(proofConfig, RdfcJson.ProofTypeInfo),
                 RdfCanonicalizationHashAlgorithm.Sha256);
         }
@@ -813,8 +831,6 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         {
             throw new ProofGenerationException("The proof configuration could not be RDFC-canonicalized.", ex);
         }
-
-        return Hash.Sha256(canonical);
     }
 
     private static byte[] HashMandatory(IReadOnlyList<string> mandatoryNQuads)

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Legacy.Internal;
 using DataProofsDotnet.Rdfc;
+using DataProofsDotnet.Rdfc.Internal;
 using NetCid;
 using NetCrypto;
 
@@ -200,10 +201,11 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         }
 
         byte[] signingInput;
+        string? mismatch = null;
         try
         {
             signingInput = _canonicalization == LegacyCanonicalization.Rdfc
-                ? BuildRdfcSigningInput(unsecuredDocument, WithDocumentContext(proofConfig, unsecuredDocument), signer.KeyType)
+                ? BuildRdfcSigningInput(unsecuredDocument, WithDocumentContext(proofConfig, unsecuredDocument), signer.KeyType, out mismatch)
                 : BuildJcsSigningInput(unsecuredDocument, proofConfig);
         }
         catch (JcsFormatException ex)
@@ -229,6 +231,12 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             // the signer below must retain its own exception contract (PR #35 review).
             throw new ProofGenerationException(
                 "The document or proof configuration could not be prepared for signing.", ex);
+        }
+
+        // Never issue a proof the verifier would refuse.
+        if (mismatch is not null)
+        {
+            throw new ProofGenerationException(mismatch);
         }
 
         var rawSignature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
@@ -392,11 +400,12 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         }
 
         byte[] signingInput;
+        string? mismatch = null;
         try
         {
             signingInput = variant == LegacyCanonicalization.Rdfc
                 ? BuildRdfcSigningInput(
-                    unsecuredDocument, WithDocumentContext(proofConfig, unsecuredDocument), publicKey.KeyType)
+                    unsecuredDocument, WithDocumentContext(proofConfig, unsecuredDocument), publicKey.KeyType, out mismatch)
                 : BuildJcsSigningInput(unsecuredDocument, proofConfig);
         }
         catch (Exception ex) when (ex is JcsFormatException or RdfCanonicalizationException)
@@ -406,7 +415,9 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             return false;
         }
 
-        return VerifySignature(publicKey, signingInput, signature);
+        // The pipeline decided on the proof's JSON; the signature covers the RDF. If the JCS variant
+        // runs next it checks other bytes, which a proof rewritten for RDFC does not match.
+        return mismatch is null && VerifySignature(publicKey, signingInput, signature);
     }
 
     /// <summary>
@@ -475,16 +486,18 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
     /// <summary>
     /// Builds the RDFC signing input: <c>SHA-256(RDFC(proofOptions)) ‖ SHA-256(RDFC(document))</c>
     /// — proof-options hash FIRST. <paramref name="proofOptions"/> must already carry the
-    /// document's <c>@context</c> for JSON-LD processing.
+    /// document's <c>@context</c> for JSON-LD processing. <paramref name="mismatch"/> says how
+    /// the proof options differ from their own canonical form, if they do.
     /// </summary>
     private byte[] BuildRdfcSigningInput(
-        JsonElement unsecuredDocument, DataIntegrityProof proofOptions, KeyType keyType)
+        JsonElement unsecuredDocument, DataIntegrityProof proofOptions, KeyType keyType, out string? mismatch)
     {
         var canonicalProofOptions = _rdfCanonicalizer!.CanonicalizeJsonLd(
             JsonSerializer.SerializeToElement(proofOptions, LegacyJson.ProofTypeInfo),
             RdfCanonicalizationHashAlgorithm.Sha256);
         var canonicalDocument = _rdfCanonicalizer.CanonicalizeJsonLd(
             unsecuredDocument, RdfCanonicalizationHashAlgorithm.Sha256);
+        mismatch = ProofOptionsBinding.Mismatch(canonicalProofOptions, proofOptions);
 
         // The legacy 2019/2020 suites are P-256/Ed25519 only — SHA-256 for both the RDFC
         // internal blank-node hash and the message digest. Concat is proofOptions ‖ document.

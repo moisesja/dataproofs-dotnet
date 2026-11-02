@@ -35,4 +35,9 @@
     <InternalsVisibleTo Include="DataProofsDotnet.Legacy.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- One source for the RDFC suites' check, so this variant cannot drift from them -->
+    <Compile Include="../DataProofsDotnet.Rdfc/Internal/ProofOptionsBinding.cs" Link="Internal/ProofOptionsBinding.cs" />
+  </ItemGroup>
+
 </Project>
