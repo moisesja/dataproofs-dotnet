@@ -1355,6 +1355,22 @@ public sealed class Issue47TypeMetadataProcessingTests
     }
 
     [Fact]
+    public async Task Malformed_display_elements_are_skipped_without_counting_against_the_entry_bound()
+    {
+        // Pass 4: display elements that are not objects are not understood and never reject (-21), however many there
+        // are; they are skipped without being built, so they are not charged.
+        var junk = string.Join(",", Enumerable.Repeat("1", 20_000));
+        var document = Encoding.UTF8.GetBytes(
+            "{\"vct\":\"" + Vct + "\",\"display\":[" + junk + ",{\"locale\":\"en\",\"name\":\"n\",\"rendering\":{\"svg_templates\":[" + junk
+            + "]}}],\"claims\":[{\"path\":[\"a\"],\"display\":[" + junk + "]}]}");
+
+        var result = await Verify(await SimpleCredential(), Options((Vct, document)));
+
+        ShouldPass(result);
+        result.ProcessedTypeMetadata!.Display.Should().ContainSingle().Which.Rendering!.SvgTemplates.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Error_messages_repeat_a_bounded_part_of_a_document_value()
     {
         // Pass 3: a path error echoed the whole path, escaped: 6,290,870 characters for a 1 MiB document.

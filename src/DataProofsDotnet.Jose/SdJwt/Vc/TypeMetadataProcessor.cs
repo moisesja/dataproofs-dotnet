@@ -21,8 +21,10 @@ internal static class TypeMetadataProcessor
     /// components, and display, claim display and SVG template entries. The octet and depth bounds limit a document's
     /// size, not how many of these it holds, and each costs a few hundred bytes once typed, so a 1 MiB document of
     /// two-octet path components cost about 100 MB (adversarial pass 3). A rich real type (dozens of claims, each with
-    /// display in every EU language) holds a few thousand. Counted from the parsed lengths before anything is built;
-    /// a chain past the bound fails with <c>VC_TYPE_METADATA_INVALID</c>, since processing that is required and cannot
+    /// display in every EU language) holds a few thousand. Claims and path components, which must all be well formed,
+    /// are counted from the parsed array lengths before any is read; display and template entries as each object is
+    /// read, since an element that is not an object is skipped unbuilt and a malformed display never rejects (-21). A
+    /// chain past the bound fails with <c>VC_TYPE_METADATA_INVALID</c>, since processing that is required and cannot
     /// complete rejects (-27 §5.7).
     /// </summary>
     internal const int EntryBudget = 10_000;
@@ -420,12 +422,16 @@ internal static class TypeMetadataProcessor
     /// <returns>The entries, or <c>null</c> when they exceed <see cref="EntryBudget"/>.</returns>
     private static List<TypeDisplayMetadata>? ParseTypeDisplay(JsonElement array, Entries entries)
     {
-        if (!entries.Spend(array.GetArrayLength()))
-            return null;
+        // Charged per entry kept, not per element: an element that is not an object is skipped without being built,
+        // so a malformed display costs no more than its octets and still never rejects (-21).
         var result = new List<TypeDisplayMetadata>();
         foreach (var entry in array.EnumerateArray())
         {
-            if (entry.ValueKind != JsonValueKind.Object || ReadString(entry, "locale") is not { } locale || ReadString(entry, "name") is not { } name)
+            if (entry.ValueKind != JsonValueKind.Object)
+                continue;
+            if (!entries.Spend(1))
+                return null;
+            if (ReadString(entry, "locale") is not { } locale || ReadString(entry, "name") is not { } name)
                 continue;
             TypeRenderingMetadata? rendering = null;
             if (entry.TryGetProperty("rendering", out var renderingElement) && renderingElement.ValueKind == JsonValueKind.Object)
@@ -454,11 +460,13 @@ internal static class TypeMetadataProcessor
         var templates = new List<SvgTemplateMetadata>();
         if (rendering.TryGetProperty("svg_templates", out var svgTemplates) && svgTemplates.ValueKind == JsonValueKind.Array)
         {
-            if (!entries.Spend(svgTemplates.GetArrayLength()))
-                return null;
             foreach (var template in svgTemplates.EnumerateArray())
             {
-                if (template.ValueKind != JsonValueKind.Object || ReadString(template, "uri") is not { } uri)
+                if (template.ValueKind != JsonValueKind.Object)
+                    continue;
+                if (!entries.Spend(1))
+                    return null;
+                if (ReadString(template, "uri") is not { } uri)
                     continue;
                 var properties = template.TryGetProperty("properties", out var p) && p.ValueKind == JsonValueKind.Object ? p : default;
                 templates.Add(new SvgTemplateMetadata(
@@ -481,12 +489,14 @@ internal static class TypeMetadataProcessor
     /// <returns>The entries, or <c>null</c> when they exceed <see cref="EntryBudget"/>.</returns>
     private static List<ClaimDisplayMetadata>? ParseClaimDisplay(JsonElement array, Entries entries)
     {
-        if (!entries.Spend(array.GetArrayLength()))
-            return null;
         var result = new List<ClaimDisplayMetadata>();
         foreach (var entry in array.EnumerateArray())
         {
-            if (entry.ValueKind != JsonValueKind.Object || ReadString(entry, "locale") is not { } locale || ReadString(entry, "label") is not { } label)
+            if (entry.ValueKind != JsonValueKind.Object)
+                continue;
+            if (!entries.Spend(1))
+                return null;
+            if (ReadString(entry, "locale") is not { } locale || ReadString(entry, "label") is not { } label)
                 continue;
             result.Add(new ClaimDisplayMetadata(locale, label, ReadString(entry, "description"), ReadDir(entry)));
         }
