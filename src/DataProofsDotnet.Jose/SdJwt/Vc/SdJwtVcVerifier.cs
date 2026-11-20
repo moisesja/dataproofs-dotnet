@@ -23,10 +23,11 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// here judges both, as <see cref="SdJwtVerifier"/> does, at <see cref="SdJwtVerificationOptions.CurrentTime"/> with
 /// <see cref="SdJwtVerificationOptions.ClockSkew"/>, after the signature (and, under <c>x5c</c>, the certificate hook)
 /// and before the Key Binding JWT, the profile rules and any Type Metadata retrieval: <c>SD_JWT_EXPIRED</c>, <c>SD_JWT_NOT_YET_VALID</c>, and <c>SD_JWT_EXP_INVALID</c>
-/// or <c>SD_JWT_NBF_INVALID</c> for a present value that is not a NumericDate. Both claims are optional. The value
-/// judged is the top-level member the Issuer signed in the clear: a Disclosure cannot add one beside it (RFC 9901 §7.1
-/// step 3.c.ii.3) or where there is none (the positional rule, <c>VC_DISALLOWED_DISCLOSURE</c>), and a nested member
-/// such as <c>credentialSubject.exp</c> is an ordinary claim.
+/// or <c>SD_JWT_NBF_INVALID</c> for a present value that is not a NumericDate. Both claims are optional. A credential
+/// that verifies had the top-level member the Issuer signed in the clear judged, and no other: a Disclosure cannot add
+/// one beside it (RFC 9901 §7.1 step 3.c.ii.3) or where there is none (the positional rule,
+/// <c>VC_DISALLOWED_DISCLOSURE</c>, after the window has refused a past one), so a disclosed value can only make it
+/// fail. A nested member such as <c>credentialSubject.exp</c> is an ordinary claim.
 /// </para>
 /// <para>
 /// Not done here, and left to the caller: checking <c>status</c> (§2.4 says a Verifier SHOULD), and the

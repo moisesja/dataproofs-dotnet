@@ -215,10 +215,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     share, after the Disclosures are processed and before the Key Binding JWT, the SD-JWT VC profile rules and any Type
     Metadata retrieval, so an expired credential never makes a resolver fetch. The generic verifier enforces it too,
     because RFC 9901 §7.1 does: it reads the processed payload, so an `exp` an Issuer made selectively disclosable is
-    checked when disclosed (RFC 9901 §9.7 says Issuers must not do this). For an SD-JWT VC the value judged is always
-    the one the Issuer signed in the clear at the top level: a Disclosure cannot add an `exp` beside it (the name clash
-    is `DISCLOSURE_INVALID`) or where there is none (`VC_DISALLOWED_DISCLOSURE`, or `SD_JWT_EXPIRED` first when its value
-    has passed). A nested claim such as `credentialSubject.exp` is an ordinary claim and is not judged.
+    checked when disclosed (RFC 9901 §9.7 says Issuers must not do this). An SD-JWT VC that verifies has had the value
+    the Issuer signed in the clear at the top level judged, and no other: a Disclosure cannot add an `exp` beside it
+    (the name clash is `DISCLOSURE_INVALID`) or where there is none (`VC_DISALLOWED_DISCLOSURE`, or `SD_JWT_EXPIRED`
+    first when its value has passed), so a disclosed value can only make a presentation fail. A nested claim such as `credentialSubject.exp` is an ordinary claim and is not judged.
   - *The Key Binding JWT's own `nbf` and `exp`*, when present, are judged the same way (RFC 9901 §7.3 step 5.h: "a valid
     JWT in all other respects, per [RFC7519]"), with `KB_JWT_NOT_YET_VALID`, `KB_JWT_EXPIRED` (the code the `iat` age
     bound already used), `KB_JWT_NBF_INVALID` and `KB_JWT_EXP_INVALID`. They never stand in for the Issuer's. This
