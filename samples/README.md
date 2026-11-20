@@ -49,6 +49,7 @@ A non-zero exit from any sample marks the run as failed.
 | `Samples.JwtAndJwk` | JWT claims validation (exp/nbf/iat/iss/aud/sub + clock skew, structured results); JWK ↔ Multikey conversion; RFC 7638 thumbprints / `kid`. |
 | `Samples.SdJwt` | SD-JWT issuance with flat / structured / recursive / array-element disclosures and decoy digests; holder presentation; KB-JWT. |
 | `Samples.SdJwtVc` | The SD-JWT VC profile (draft-27) end to end: `vct` and `aka_vcts` rules, the `dc+sd-jwt` media type (the former `vc+sd-jwt` is rejected), must-not-disclose claims and their subclaims (a nested claim that only shares the name is ordinary), offline Type Metadata resolution, and Type Metadata processing: integrity, the `extends` chain, issuance and verification against merged claim metadata, typed display and rendering metadata, and a resolver fault told apart from a verdict. |
+| `Samples.X509CertificateChain` | `x5c` (RFC 7515 §4.1.6, SD-JWT VC -27 §2.5 Inline X.509 Certificates): a chain on the `JwsSigner`, carried in the protected header of a compact JWS, an SD-JWT and an SD-JWT VC; verification with the end-entity key and a caller hook that validates the chain to the verifier's own anchor with the platform `X509Chain` (the library validates no chain); an attacker's root sent in `x5c` is refused; `X5C_UNTRUSTED` and `X5C_MALFORMED`. |
 | `Samples.CoseCwt` | COSE_Sign1 for every v1 algorithm (detached payload, external AAD, tag control) and a CWT round trip with exp/nbf validation. |
 | `Samples.VcJoseCose` | Enveloping a VCDM 2.0 credential — the JOSE half (`vc+jwt`) and the COSE half (`application/vc+cose`). |
 | `Samples.DependencyInjection` | Composing the pipeline, suites, the enveloping families, and a caller-supplied resolver through `AddDataProofs`. The only sample that uses the DI package. |
@@ -62,7 +63,7 @@ A non-zero exit from any sample marks the run as failed.
 5. **`Samples.ProofSetsAndChains`** — multiple proofs on one document.
 6. **`Samples.BbsSelectiveDisclosure`** — selective disclosure with BBS.
 7. **`Samples.Jws`** → **`Samples.Jwe`** → **`Samples.JwtAndJwk`** — the JOSE enveloping family.
-8. **`Samples.SdJwt`** → **`Samples.SdJwtVc`** — selective disclosure in JSON and its VC profile.
+8. **`Samples.SdJwt`** → **`Samples.SdJwtVc`** → **`Samples.X509CertificateChain`** — selective disclosure in JSON, its VC profile, and issuers identified by an X.509 chain.
 9. **`Samples.CoseCwt`** → **`Samples.VcJoseCose`** — the CBOR side and the VC-JOSE-COSE binding.
 10. **`Samples.KeyStoreSigning`** — every family from one non-exporting key store (AC-8).
 11. **`Samples.DependencyInjection`** — assemble all of the above through `AddDataProofs`.
