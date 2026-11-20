@@ -1158,6 +1158,26 @@ public sealed class Issue47TypeMetadataProcessingTests
 
     // ------------------------------------------------------------------ PR #55 review (comment 7030160237)
 
+    /// <summary>
+    /// The fewest bytes <paramref name="action"/> allocates on this thread in <paramref name="runs"/> runs, after one
+    /// warm-up run. An allocation test then compares an absolute bound with the code's own allocation, not with a few
+    /// hundred bytes of runtime noise (a ratio of two such measurements once failed CI at 1,040 versus 8,200 bytes): the
+    /// noise lands in some runs, not in all of them, and the defects these tests guard against allocate megabytes in
+    /// every run.
+    /// </summary>
+    private static long LeastAllocation(Action action, int runs = 5)
+    {
+        action();
+        var least = long.MaxValue;
+        for (var i = 0; i < runs; i++)
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            action();
+            least = Math.Min(least, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+        return least;
+    }
+
     /// <summary>The bytes the validator allocates on this thread for <paramref name="count"/> paths <c>["a", i]</c> over a <paramref name="count"/>-element array.</summary>
     private static long IndexedPathAllocations(int count, bool mandatory)
     {
@@ -1170,10 +1190,10 @@ public sealed class Issue47TypeMetadataProcessingTests
             .Select(i => new ClaimMetadata([ClaimPathComponent.ForKey("a"), ClaimPathComponent.ForIndex(i)], [], mandatory, ClaimSelectiveDisclosure.Allowed, null))
             .ToList();
 
-        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: true).Should().BeNull();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: true).Should().BeNull();
-        return GC.GetAllocatedBytesForCurrentThread() - before;
+        string? outcome = "not run";
+        var allocated = LeastAllocation(() => outcome = ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: true));
+        outcome.Should().BeNull();
+        return allocated;
     }
 
     [Theory]
@@ -1182,13 +1202,15 @@ public sealed class Issue47TypeMetadataProcessingTests
     public void Indexed_paths_cost_work_linear_in_the_claims_at_issuance(bool mandatory)
     {
         // Review finding 1: the complete-payload pass copied the whole array for every ["a", i], so 10,000 such claims
-        // over a 10,000-element array allocated 2.66 GB. Four times the claims over four times the array must cost about
-        // four times as much, not sixteen.
-        var small = IndexedPathAllocations(1_000, mandatory);
-        var large = IndexedPathAllocations(4_000, mandatory);
+        // over a 10,000-element array allocated 2.66 GB, and 4,000 over 4,000 about 270 MB: a copy per claim, quadratic.
+        // A linear validation allocates a few bytes per claim at most, about 1 KB in all today. The bound, 64 bytes per
+        // claim plus 64 KiB, is three orders of magnitude below the quadratic cost and two above today's, so neither a
+        // regression nor runtime noise can land on the wrong side of it. (It replaced a 1,000-versus-4,000 ratio, which
+        // a single stray allocation of a few kilobytes in the 4,000 run could break.)
+        const int count = 4_000;
+        var allocated = IndexedPathAllocations(count, mandatory);
 
-        large.Should().BeLessThan(small * 6, $"allocation grew from {small} to {large} bytes");
-        large.Should().BeLessThan(4_000L * 2_000, "a few hundred bytes per indexed claim at most");
+        allocated.Should().BeLessThan(count * 64L + 64 * 1024, $"{count} indexed claims allocated {allocated} bytes");
     }
 
     [Fact]
@@ -1486,12 +1508,13 @@ public sealed class Issue47TypeMetadataProcessingTests
         var good = Expression("sha512", Document);
         var many = string.Join(" ", Enumerable.Repeat(Wrong("sha512"), 8_000)) + " " + good;
 
-        TypeMetadataIntegrity.Check(many, Document).Should().Be(TypeMetadataIntegrity.Outcome.Match);
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        TypeMetadataIntegrity.Check(many, Document).Should().Be(TypeMetadataIntegrity.Outcome.Match);
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        // Splitting allocated a string per expression, over 1 MB for these 8,000; the check now allocates the document
+        // hash and nothing per expression. The bound, 64 KiB, sits far from both.
+        var outcome = TypeMetadataIntegrity.Outcome.Mismatch;
+        var allocated = LeastAllocation(() => outcome = TypeMetadataIntegrity.Check(many, Document));
 
-        allocated.Should().BeLessThan(4_096, $"the value is {many.Length} characters");
+        outcome.Should().Be(TypeMetadataIntegrity.Outcome.Match);
+        allocated.Should().BeLessThan(64 * 1024, $"the value is {many.Length} characters");
         TypeMetadataIntegrity.Check(many.Replace(good, Wrong("sha512")), Document).Should().Be(TypeMetadataIntegrity.Outcome.Mismatch);
     }
 
@@ -1526,12 +1549,13 @@ public sealed class Issue47TypeMetadataProcessingTests
                 [ClaimPathComponent.ForKey("a"), ClaimPathComponent.AllElements, ClaimPathComponent.ForKey("k" + i)], [], false, ClaimSelectiveDisclosure.Allowed, null))
             .ToList();
 
-        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false).Should().BeNull();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false).Should().BeNull();
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        // A list per step and claim allocated 16 MB here; two reused lists allocate one 1,000-element selection, about
+        // 32 KB with growth. The bound, 256 KiB, sits far from both.
+        string? outcome = "not run";
+        var allocated = LeastAllocation(() => outcome = ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false));
 
-        allocated.Should().BeLessThan(256 * 1024);
+        outcome.Should().BeNull();
+        allocated.Should().BeLessThan(256 * 1024, $"490 claims over 1,000 objects allocated {allocated} bytes");
     }
 
     [Fact]
