@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`System.Formats.Cbor` lifted 10.0.8 → 10.0.15**
+  ([GHSA-vmv3-wvjp-wqpj](https://github.com/advisories/GHSA-vmv3-wvjp-wqpj), CVE-2026-118747, a .NET
+  denial of service: colliding CBOR map keys can hash-flood its map-key uniqueness checks; affected
+  `>= 10.0.0, < 10.0.15`, published 2026-11-10). `DataProofsDotnet.Cose` (COSE_Sign1, CWT) and
+  `DataProofsDotnet.Rdfc` (the bbs-2023 `proofValue`) reference it directly, and
+  `DataProofsDotnet.Legacy` and `DataProofsDotnet.Extensions.DependencyInjection` carry it through
+  them. Every published version of Cose and Rdfc, 0.1.0-preview.1 through 2.0.0, declares 10.0.8, so a
+  consumer of any of the four that treats warnings as errors fails restore with `NU1902` ([#50](https://github.com/moisesja/dataproofs-dotnet/issues/50)). The packages now
+  declare `System.Formats.Cbor` `>= 10.0.15`. No code in this library changes, nor its public API or
+  the bytes it emits, and the COSE and bbs-2023 suites, vectors included, pass unchanged on 10.0.15.
+  Upgrade to this release. Until then, a direct
+  `<PackageReference Include="System.Formats.Cbor" Version="10.0.15" />` in the consuming project
+  lifts the transitive version and clears the audit for all four packages.
+
 ## [2.0.0] - 2026-11-02
 
 **This is a major release.** The four RDFC constructor changes under Changed remove actual

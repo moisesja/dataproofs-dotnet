@@ -16,8 +16,11 @@
          GHSA-pgww-w46g-26qg (mXSS, < 1.5.0) audit failure. Remove when dotNetRdf.Core's own
          floor reaches 1.5.0+. -->
     <PackageVersion Include="AngleSharp" Version="1.6.0" />
-    <!-- CBOR encoding — Cose only; never in a public signature (AC-7). -->
-    <PackageVersion Include="System.Formats.Cbor" Version="10.0.8" />
+    <!-- CBOR encoding — Cose (COSE_Sign1, CWT) and Rdfc (bbs-2023 proofValue); never in a public
+         signature (AC-7). 10.0.8 is covered by GHSA-vmv3-wvjp-wqpj (CVE-2026-118747, CBOR map-key
+         hash flooding, < 10.0.15) and failed the NU1902-as-error audit on every restore from
+         2026-11-10 (issue #50). 10.0.15 is the first patched and newest 10.0.x release. -->
+    <PackageVersion Include="System.Formats.Cbor" Version="10.0.15" />
     <!-- Logging (FR-23: abstractions only, no mandatory logger) -->
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
     <!-- Dependency Injection (Extensions.DependencyInjection package + tests) -->
