@@ -69,52 +69,90 @@ public static class TypeMetadataIntegrity
         return $"{algorithm}-{Convert.ToBase64String(Hash(rank, document))}";
     }
 
-    /// <summary>Checks <paramref name="integrityMetadata"/> against <paramref name="document"/>, as -27 §6 defines it.</summary>
+    /// <summary>
+    /// Checks <paramref name="integrityMetadata"/> against <paramref name="document"/>, as -27 §6 defines it. Two passes
+    /// over the value's characters, without allocating per expression: the first checks the grammar and finds the
+    /// strongest supported algorithm, the second compares each of its digests, decoded into a stack buffer, with the
+    /// one hash of the document. The cost is linear in the value and the document, whatever the number of expressions.
+    /// </summary>
     internal static Outcome Check(string integrityMetadata, ReadOnlySpan<byte> document)
     {
-        var expressions = new List<(int Rank, byte[] Digest)>();
-        foreach (var token in integrityMetadata.Split([' ', '\t', '\n', '\r', '\f'], StringSplitOptions.RemoveEmptyEntries))
+        Span<byte> digest = stackalloc byte[64];
+        var strongest = 0;
+        var tokens = 0;
+        for (var position = 0; NextToken(integrityMetadata, ref position, out var token);)
         {
-            var question = token.IndexOf('?');
-            var expression = question < 0 ? token : token[..question];
-            var dash = expression.IndexOf('-');
-            if (dash <= 0)
+            tokens++;
+            if (!Split(token, out var rank, out var value))
                 return Outcome.Malformed;
-
-            var algorithm = expression[..dash];
-            var value = expression[(dash + 1)..];
-            if (!algorithm.All(char.IsAsciiLetterOrDigit))
-                return Outcome.Malformed;
-
-            // An algorithm this consumer does not support is ignored with whatever follows it (SRI §3.3.3), so a
-            // future name such as sha3-256 neither fails nor satisfies the check.
-            var rank = Rank(algorithm);
             if (rank == 0)
-                continue;
-
-            if (!IsBase64Value(value) || Decode(value) is not { } digest || digest.Length != DigestLength(rank))
+                continue; // An algorithm this consumer does not support is ignored with whatever follows it (SRI §3.3.3).
+            if (!TryDecodeCanonical(value, DigestLength(rank), digest))
                 return Outcome.Malformed;
-            expressions.Add((rank, digest));
+            strongest = Math.Max(strongest, rank);
         }
 
-        if (expressions.Count == 0)
-            return integrityMetadata.Trim().Length == 0 ? Outcome.Malformed : Outcome.Unsupported;
+        if (tokens == 0)
+            return Outcome.Malformed;
+        if (strongest == 0)
+            return Outcome.Unsupported;
 
-        var strongest = expressions.Max(e => e.Rank);
         var computed = Hash(strongest, document);
-        return expressions.Any(e => e.Rank == strongest && e.Digest.AsSpan().SequenceEqual(computed))
-            ? Outcome.Match
-            : Outcome.Mismatch;
+        for (var position = 0; NextToken(integrityMetadata, ref position, out var token);)
+        {
+            Split(token, out var rank, out var value);
+            if (rank == strongest && TryDecodeCanonical(value, DigestLength(rank), digest) && digest[..computed.Length].SequenceEqual(computed))
+                return Outcome.Match;
+        }
+        return Outcome.Mismatch;
+    }
+
+    /// <summary>The next token separated by ASCII whitespace (SRI splits on spaces; the ABNF allows any WSP).</summary>
+    private static bool NextToken(string value, ref int position, out ReadOnlySpan<char> token)
+    {
+        while (position < value.Length && IsSpace(value[position]))
+            position++;
+        var start = position;
+        while (position < value.Length && !IsSpace(value[position]))
+            position++;
+        token = value.AsSpan(start, position - start);
+        return token.Length > 0;
+    }
+
+    private static bool IsSpace(char c) => c is ' ' or '\t' or '\n' or '\r' or '\f';
+
+    /// <summary>
+    /// Splits <c>alg-value[?options]</c>: <c>false</c> when there is no <c>alg</c> or it is not alphanumeric. The rank is
+    /// 0 for an algorithm this consumer does not support.
+    /// </summary>
+    private static bool Split(ReadOnlySpan<char> token, out int rank, out ReadOnlySpan<char> value)
+    {
+        var question = token.IndexOf('?');
+        var expression = question < 0 ? token : token[..question];
+        var dash = expression.IndexOf('-');
+        rank = 0;
+        value = default;
+        if (dash <= 0)
+            return false;
+        var algorithm = expression[..dash];
+        foreach (var c in algorithm)
+        {
+            if (!char.IsAsciiLetterOrDigit(c))
+                return false;
+        }
+        rank = Rank(algorithm);
+        value = expression[(dash + 1)..];
+        return true;
     }
 
     /// <summary>The strength order of the supported algorithms, 0 for any other (ASCII case-insensitive).</summary>
-    private static int Rank(string algorithm) => algorithm.ToLowerInvariant() switch
-    {
-        Sha256 => 1,
-        Sha384 => 2,
-        Sha512 => 3,
-        _ => 0,
-    };
+    private static int Rank(ReadOnlySpan<char> algorithm)
+        => algorithm.Equals(Sha256, StringComparison.OrdinalIgnoreCase) ? 1
+            : algorithm.Equals(Sha384, StringComparison.OrdinalIgnoreCase) ? 2
+            : algorithm.Equals(Sha512, StringComparison.OrdinalIgnoreCase) ? 3
+            : 0;
+
+    private static int Rank(string algorithm) => Rank(algorithm.AsSpan());
 
     private static string Name(int rank) => rank switch { 1 => Sha256, 2 => Sha384, _ => Sha512 };
 
@@ -127,26 +165,29 @@ public static class TypeMetadataIntegrity
         _ => NetCrypto.Hash.Sha512(document),
     };
 
-    /// <summary>The CSP2 <c>base64-value</c> production: <c>1*( ALPHA / DIGIT / "+" / "/" )*2( "=" )</c>.</summary>
-    private static bool IsBase64Value(string value)
-    {
-        var body = value.TrimEnd('=');
-        return body.Length > 0
-            && value.Length - body.Length <= 2
-            && body.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/');
-    }
-
     /// <summary>
-    /// Decodes standard base64, padded or not, and only its canonical spelling (RFC 4648 §3.5 lets a decoder refuse
-    /// non-zero pad bits): one digest then has one integrity string, as a cache keyed by it (-27 §5.3.4) assumes.
+    /// Decodes <paramref name="value"/> into <paramref name="destination"/> when it is the canonical standard base64 of
+    /// exactly <paramref name="length"/> octets, padded or not (the CSP2 <c>base64-value</c> production admits both). Any
+    /// other spelling is refused, non-zero pad bits included (RFC 4648 §3.5 lets a decoder refuse them), so one digest
+    /// has one integrity string, as a cache keyed by it (-27 §5.3.4) assumes. Nothing is allocated.
     /// </summary>
-    private static byte[]? Decode(string value)
+    private static bool TryDecodeCanonical(ReadOnlySpan<char> value, int length, Span<byte> destination)
     {
-        var padded = value.Contains('=') ? value : value.PadRight((value.Length + 3) / 4 * 4, '=');
-        var buffer = new byte[padded.Length / 4 * 3];
-        if (!Convert.TryFromBase64String(padded, buffer, out var written))
-            return null;
-        var digest = buffer[..written];
-        return string.Equals(Convert.ToBase64String(digest), padded, StringComparison.Ordinal) ? digest : null;
+        var padded = (length + 2) / 3 * 4;
+        var unpadded = (length * 4 + 2) / 3;
+        if (value.Length != padded && value.Length != unpadded)
+            return false;
+
+        Span<char> canonical = stackalloc char[88];
+        Span<char> input = stackalloc char[88];
+        value.CopyTo(input);
+        for (var i = value.Length; i < padded; i++)
+            input[i] = '=';
+        var candidate = input[..padded];
+
+        return Convert.TryFromBase64Chars(candidate, destination, out var written)
+            && written == length
+            && Convert.TryToBase64Chars(destination[..length], canonical, out var encoded)
+            && canonical[..encoded].SequenceEqual(candidate);
     }
 }

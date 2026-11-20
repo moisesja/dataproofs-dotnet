@@ -1,5 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using DataProofsDotnet.Jose.Json;
 
 namespace DataProofsDotnet.Jose.SdJwt.Vc;
 
@@ -13,7 +16,7 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// </summary>
 public sealed class ProcessedTypeMetadata
 {
-    private readonly IReadOnlyList<JsonObject> _documents;
+    private readonly IReadOnlyList<byte[]> _documents;
 
     internal ProcessedTypeMetadata(
         string vct,
@@ -21,7 +24,7 @@ public sealed class ProcessedTypeMetadata
         string? description,
         IReadOnlyList<TypeDisplayMetadata> display,
         IReadOnlyList<ClaimMetadata> claims,
-        IReadOnlyList<JsonObject> documents)
+        IReadOnlyList<byte[]> documents)
     {
         Vct = vct;
         Name = name;
@@ -53,8 +56,13 @@ public sealed class ProcessedTypeMetadata
     /// </summary>
     public IReadOnlyList<ClaimMetadata> Claims { get; }
 
-    /// <summary>The documents processed, as parsed, the <c>vct</c>'s first and each parent after its child. A clone per access.</summary>
-    public IReadOnlyList<JsonObject> Documents => ReadOnly([.. _documents.Select(d => (JsonObject)d.DeepClone())]);
+    /// <summary>
+    /// The documents processed, the <c>vct</c>'s first and each parent after its child. Only their octets are kept, so
+    /// every access parses each document anew and returns objects the caller owns: read the property once and keep
+    /// the list.
+    /// </summary>
+    public IReadOnlyList<JsonObject> Documents
+        => ReadOnly([.. _documents.Select(d => JsonNode.Parse(d, documentOptions: JoseJson.StrictDocument)!.AsObject())]);
 
     /// <summary>A copy no caller can change, even through a cast.</summary>
     internal static ReadOnlyCollection<T> ReadOnly<T>(IEnumerable<T> items) => new([.. items]);
@@ -240,12 +248,61 @@ public sealed class ClaimPathComponent
     /// <summary>Whether this component is <c>null</c>: every element of the selected arrays.</summary>
     public bool IsAllElements => Key is null && Index is null;
 
-    internal static string Format(IReadOnlyList<ClaimPathComponent> path)
+    /// <summary>
+    /// The path's canonical key, for duplicate detection and the <c>extends</c> merge: equal paths, and only equal paths,
+    /// have equal keys. Each component is length-prefixed (<c>k&lt;length&gt;:&lt;key&gt;</c>, <c>i&lt;index&gt;;</c>, <c>*</c>),
+    /// so no component's text can run into the next, and nothing is escaped: the key is about as long as the path's text.
+    /// </summary>
+    internal static string CanonicalKey(IReadOnlyList<ClaimPathComponent> path)
     {
-        var node = new JsonArray();
+        var key = new StringBuilder();
         foreach (var component in path)
-            node.Add(component.Key is { } key ? (JsonNode)key : component.Index is { } index ? (JsonNode)index : null);
-        return node.ToJsonString();
+        {
+            if (component.Key is { } name)
+                key.Append('k').Append(name.Length).Append(':').Append(name);
+            else if (component.Index is { } index)
+                key.Append('i').Append(index).Append(';');
+            else
+                key.Append('*');
+        }
+        return key.ToString();
+    }
+
+    /// <summary>The most path components, and key characters per component, a description repeats.</summary>
+    private const int DescribeComponents = 4;
+
+    private const int DescribeKeyLength = 32;
+
+    /// <summary>
+    /// The path as JSON for an error message, bounded: at most <see cref="DescribeComponents"/> components and
+    /// <see cref="DescribeKeyLength"/> characters of each key, so a message stays small whatever the document holds.
+    /// </summary>
+    internal static string Describe(IReadOnlyList<ClaimPathComponent> path)
+    {
+        var text = new StringBuilder("[");
+        for (var i = 0; i < path.Count && i < DescribeComponents; i++)
+        {
+            if (i > 0)
+                text.Append(',');
+            var component = path[i];
+            if (component.Key is { } name)
+            {
+                var cut = name.Length <= DescribeKeyLength ? name.Length
+                    : char.IsHighSurrogate(name[DescribeKeyLength - 1]) ? DescribeKeyLength - 1 : DescribeKeyLength;
+                text.Append('"').Append(JsonEncodedText.Encode(name.AsSpan(0, cut)).ToString()).Append(cut < name.Length ? "...\"" : "\"");
+            }
+            else if (component.Index is { } index)
+            {
+                text.Append(index);
+            }
+            else
+            {
+                text.Append("null");
+            }
+        }
+        if (path.Count > DescribeComponents)
+            text.Append($",... ({path.Count} components)");
+        return text.Append(']').ToString();
     }
 }
 

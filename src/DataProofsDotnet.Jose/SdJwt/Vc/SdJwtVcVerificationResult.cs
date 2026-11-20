@@ -15,6 +15,7 @@ public sealed class SdJwtVcVerificationResult
 {
     private readonly JsonObject? _disclosedPayload;
     private readonly JsonObject? _typeMetadata;
+    private readonly byte[]? _typeMetadataOctets;
 
     private SdJwtVcVerificationResult(
         bool isValid,
@@ -24,8 +25,10 @@ public sealed class SdJwtVcVerificationResult
         bool keyBindingVerified,
         IReadOnlyList<string> errors,
         ProcessedTypeMetadata? processedTypeMetadata = null,
-        Exception? typeMetadataResolverFault = null)
+        Exception? typeMetadataResolverFault = null,
+        byte[]? typeMetadataOctets = null)
     {
+        _typeMetadataOctets = typeMetadataOctets;
         IsValid = isValid;
         _disclosedPayload = disclosedPayload;
         Vct = vct;
@@ -62,7 +65,9 @@ public sealed class SdJwtVcVerificationResult
     /// processing, which <see cref="SdJwtVcVerifier.VerifyWithTypeMetadataAsync"/> performs; there this member holds
     /// the <c>vct</c>'s own document as parsed, and <see cref="ProcessedTypeMetadata"/> the processed result.
     /// </remarks>
-    public JsonObject? TypeMetadata => _typeMetadata?.DeepClone() as JsonObject;
+    public JsonObject? TypeMetadata => _typeMetadata is not null
+        ? _typeMetadata.DeepClone() as JsonObject
+        : _typeMetadataOctets is not null ? JsonNode.Parse(_typeMetadataOctets, documentOptions: Json.JoseJson.StrictDocument)!.AsObject() : null;
 
     /// <summary>
     /// The processed Type Metadata (draft-ietf-oauth-sd-jwt-vc-27 §5.7): the <c>extends</c> chain applied, claim
@@ -88,8 +93,8 @@ public sealed class SdJwtVcVerificationResult
         => new(true, disclosedPayload, vct, typeMetadata, keyBindingVerified, []);
 
     internal static SdJwtVcVerificationResult Success(
-        JsonObject disclosedPayload, string vct, JsonObject typeMetadata, ProcessedTypeMetadata processedTypeMetadata, bool keyBindingVerified)
-        => new(true, disclosedPayload, vct, typeMetadata, keyBindingVerified, [], processedTypeMetadata);
+        JsonObject disclosedPayload, string vct, byte[] typeMetadataOctets, ProcessedTypeMetadata processedTypeMetadata, bool keyBindingVerified)
+        => new(true, disclosedPayload, vct, null, keyBindingVerified, [], processedTypeMetadata, typeMetadataOctets: typeMetadataOctets);
 
     internal static SdJwtVcVerificationResult Failure(IReadOnlyList<string> errors)
         => new(false, null, null, null, false, errors);

@@ -86,7 +86,7 @@ internal static class ClaimMetadataValidator
         JsonObject root, ReconstructionTrace trace, ClaimMetadata claim, bool allDisclosuresPresent, bool complete, Budget budget)
     {
         // Formatted only for a finding: a claim that holds costs no string.
-        string Path() => ClaimPathComponent.Format(claim.Path);
+        string Path() => ClaimPathComponent.Describe(claim.Path);
         List<Selected> selection = [new(root, ReconstructionTrace.Origin.Clear)];
         var absent = false;
 
