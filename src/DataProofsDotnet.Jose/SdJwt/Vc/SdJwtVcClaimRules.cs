@@ -51,6 +51,27 @@ internal static class SdJwtVcClaimRules
     }
 
     /// <summary>
+    /// Whether <paramref name="topLevelClaim"/>, the name of a member of the top-level claims set, is one of the
+    /// registered claims that, "including any of their subclaims", MUST NOT be included in Disclosures
+    /// (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3, <see cref="SdJwtVcConstants.MustNotBeSelectivelyDisclosed"/>).
+    /// The list names JWT claims, which are top-level members: a claim deeper in the payload that has one of
+    /// these names is an ordinary claim. Issuance (a <see cref="DisclosureFrame"/>'s top-level names) and
+    /// verification (<see cref="ReservedClaimAt"/>) both decide by this one test.
+    /// </summary>
+    public static bool IsReserved(string topLevelClaim)
+        => SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(topLevelClaim, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The registered must-not-disclose claim that a Disclosure resolved at <paramref name="position"/> is, or sits
+    /// inside (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3): its top-level claim when <see cref="IsReserved"/> holds for
+    /// it, whatever the Disclosure's own name or depth, whether it is an object property or an array element, and
+    /// whether the reserved claim around it is in the clear or itself a Disclosure.
+    /// </summary>
+    /// <returns>The reserved claim's name, or <c>null</c> when the Disclosure sits outside every reserved claim.</returns>
+    public static string? ReservedClaimAt(DisclosurePosition position)
+        => IsReserved(position.TopLevelClaim) ? position.TopLevelClaim : null;
+
+    /// <summary>
     /// Checks the OPTIONAL <c>aka_vcts</c> claim of <paramref name="payload"/> (draft-ietf-oauth-sd-jwt-vc-27
     /// §2.2.2.2): when present, it MUST be a non-empty array of strings (each read by
     /// <see cref="ReadTypeValue"/>), and the array MUST NOT contain the <c>vct</c> value.

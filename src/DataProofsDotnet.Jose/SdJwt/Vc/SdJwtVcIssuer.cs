@@ -53,13 +53,17 @@ public static class SdJwtVcIssuer
                 $"SD-JWT VC claim 'aka_vcts' {akaVctsViolation} ({SdJwtVcConstants.Revision} §2.2.2.2).");
         }
 
-        // No registered must-not-disclose claim may be made selectively disclosable (§2.2.2.3).
-        var disclosable = new HashSet<string>(frame.Entries.Keys, StringComparer.Ordinal);
-        foreach (var reserved in SdJwtVcConstants.MustNotBeSelectivelyDisclosed)
+        // No registered must-not-disclose claim, nor any of its subclaims, may be made selectively disclosable
+        // (§2.2.2.3). This is the verifier's positional rule applied to the frame: every Disclosure a top-level
+        // entry produces (flat, structured, recursive or array element) resolves at or under that entry's claim, so
+        // a reserved top-level name is refused whatever the entry's kind, and a nested entry is never reserved,
+        // whatever its name (credentialSubject.status is an ordinary claim).
+        foreach (var claim in frame.Entries.Keys)
         {
-            if (disclosable.Contains(reserved))
+            if (SdJwtVcClaimRules.IsReserved(claim))
                 throw new MalformedJoseException(
-                    $"SD-JWT VC claim '{reserved}' MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3); remove it from the DisclosureFrame.");
+                    $"SD-JWT VC claim '{claim}' MUST NOT be selectively disclosed, and neither may any of its subclaims "
+                    + $"({SdJwtVcConstants.Revision} §2.2.2.3); remove its entry from the DisclosureFrame.");
         }
 
         // typ is fixed to the SD-JWT VC media type; everything else is the generic SD-JWT pipeline.

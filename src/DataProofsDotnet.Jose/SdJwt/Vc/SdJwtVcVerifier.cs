@@ -73,15 +73,21 @@ public static class SdJwtVcVerifier
         if (!inner.IsValid || inner.DisclosedPayload is not { } disclosed)
             return SdJwtVcVerificationResult.Failure(inner.Errors.Count > 0 ? inner.Errors : ["VERIFICATION_FAILED"]);
 
-        // 3. No registered must-not-disclose claim may have been selectively disclosed (§2.2.2.3):
-        //    if any presented Disclosure names one, the profile is violated.
-        foreach (var disclosure in components.Disclosures)
+        // 3. No registered must-not-disclose claim, nor any of its subclaims, may have been selectively disclosed
+        //    (§2.2.2.3). The rule is positional: it refuses a Disclosure that resolved to a top-level member with a
+        //    reserved name, or anywhere inside one (a member of status or cnf under any name, an element of
+        //    aka_vcts, and so on down). A Disclosure elsewhere that only shares a reserved name, such as
+        //    credentialSubject.status, is an ordinary claim. The reconstructor reports where each presented
+        //    Disclosure resolved, one position per Disclosure, so none is judged by its name alone.
+        foreach (var position in inner.DisclosurePositions)
         {
-            if (disclosure.ClaimName is { } name && SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(name, StringComparer.Ordinal))
-            {
-                return SdJwtVcVerificationResult.Failure(
-                    $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{name}' MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3).");
-            }
+            if (SdJwtVcClaimRules.ReservedClaimAt(position) is not { } reserved)
+                continue;
+
+            return SdJwtVcVerificationResult.Failure(position.Path.Count == 1
+                ? $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{reserved}' MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3)."
+                : $"VC_DISALLOWED_DISCLOSURE: a Disclosure at '{position}' is inside SD-JWT VC claim '{reserved}', whose subclaims "
+                  + $"MUST NOT be selectively disclosed either ({SdJwtVcConstants.Revision} §2.2.2.3).");
         }
 
         // 4. vct REQUIRED, a non-empty string, present in the (cleared) disclosed payload (§2.2.2.1).
@@ -93,8 +99,7 @@ public static class SdJwtVcVerifier
         }
 
         // 5. aka_vcts OPTIONAL; when present, a non-empty array of strings without the vct value (§2.2.2.2).
-        //    Step 3 refuses a Disclosure that names aka_vcts; it does not yet see one that hides an element
-        //    of the array, which the sub-claim rule of §2.2.2.3 also forbids.
+        //    Step 3 has already refused a Disclosure of aka_vcts or of any of its elements.
         if (SdJwtVcClaimRules.AkaVctsViolation(disclosed, vct) is { } akaVctsViolation)
         {
             return SdJwtVcVerificationResult.Failure(
