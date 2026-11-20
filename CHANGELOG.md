@@ -157,16 +157,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
   the issue #48 adversarial pass; it is a separate commit in that PR.
 
-- **SD-JWT: `_sd_alg` is a control claim only at the top level.** The reconstructor skipped an `_sd_alg`
-  member at every depth, so a nested one vanished from the processed payload unread, with any digests
-  under it out of reach of the step 4 check. RFC 9901 §4.1.1 puts `_sd_alg` at the top level only, and
-  §7.1 step 3.f removes only that one, so a nested `_sd_alg` is now processed and kept like any other
-  member. *This library's own output:* `SdJwtIssuer` copies a nested `_sd_alg` from a caller's claims set
-  as given; such an SD-JWT verifies as before and now keeps the member. Separately, a Disclosure named
-  `_sd_alg` beside the top-level `_sd_alg` is now refused as a name clash (§7.1 step 3.c.ii.3: "If the
-  claim name already exists at the level of the _sd key, the SD-JWT MUST be rejected"); it used to
-  replace `_sd_alg` in the processed payload. Found by the issue #48 adversarial passes; separate
-  commits in that PR.
+- **SD-JWT: an `_sd_alg` below the top level is refused, verifying and issuing.** RFC 9901 §4.1.1:
+  `_sd_alg` "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used in any object nested
+  within the payload." The reconstructor skipped an `_sd_alg` member at every depth, so a nested one
+  vanished from the processed payload unread, with any digests under it out of reach of the step 4 check,
+  and the SD-JWT verified. `SdJwtVerifier` and `SdJwtVcVerifier` now fail with `DISCLOSURE_INVALID` when
+  a nested object carries `_sd_alg` in the clear, inside a disclosed value, or through a Disclosure named
+  `_sd_alg`; and a Disclosure named `_sd_alg` beside the top-level one is a name clash (§7.1 step
+  3.c.ii.3: "If the claim name already exists at the level of the _sd key, the SD-JWT MUST be rejected"),
+  where it used to replace `_sd_alg` in the processed payload. Every newly refused input is invalid under
+  RFC 9901.
+  - *This library's own output, which this narrows:* in every release from 0.1.0-preview.1 to 2.0.0
+    `SdJwtIssuer` (and `SdJwtVcIssuer` through it) wrote `_sd_alg` at the top level only, and copied a
+    caller's claims as given. So its output carries a nested `_sd_alg` only when the caller's claims set
+    held a member named `_sd_alg` below the top level, in the clear, inside a value that a `DisclosureFrame`
+    entry discloses, or as the target of a nested frame entry; or a top-level `_sd_alg` that the frame
+    discloses. Every release verified those, dropping the member. They are now refused. Default issuance,
+    and every frame over claims without such a member, never produced the shape and is unaffected.
+  - *What to do:* rename the claim. A verifier that holds such credentials needs them reissued.
+
+- **SD-JWT: `SdJwtIssuer` does not sign what its own verifier refuses.** Before signing, it parses back the
+  payload bytes and the encoded Disclosures and reconstructs them as `SdJwtVerifier` does with every
+  Disclosure presented, and throws `MalformedJoseException` if that fails. Besides the nested `_sd_alg`
+  above, it now refuses, where it used to sign an SD-JWT its verifier then refused: a claims set that
+  serializes with a duplicate member name (RFC 7519 §4), a frame entry on a claim named `_sd` or `...`
+  (RFC 9901 §4.2.5.1), a caller-built `_sd` that does not reconstruct, and a claims set nested deeper
+  than the reconstruction bound of 64 (depth 63 and beyond). The check reads the serialized form, so a
+  .NET object inside a `JsonValue` is covered. It adds one parse and one reconstruction per issuance.
+  Found by the PR #54 review and the issue #48 adversarial passes; a separate commit in that PR.
 
 ## [2.0.0] - 2026-11-02
 
