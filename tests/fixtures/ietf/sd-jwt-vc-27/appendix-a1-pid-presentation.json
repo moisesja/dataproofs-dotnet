@@ -1,0 +1,44 @@
+{
+  "description": "PID credential example, presentation: SD-JWT+KB disclosing only nationalities and age_equal_or_over.18 (Figure 26; requires the recursive age_equal_or_over Disclosure plus its '18' sub-claim Disclosure), the Key Binding JWT payload (Figure 27, literal) and header (decoded from the presentation), and the processed SD-JWT payload (Figure 28).",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Appendix A.1, Figures 26-28",
+  "presentation": "eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImRjK3NkLWp3dCJ9.eyJfc2QiOiBbIjJyMDA5ZHp2SHVWcldyUlhUNWtKTW1IbnFFSEhuV2UwTUxWWnc4UEFUQjgiLCAiM05kREpZUndCcWFFSXlYQ0hjbjRhNVlLSmFnUGdJUDBXa2c5QW9yZ0FLZyIsICI1Zm42SWlYalVQbUdRNG1ZSHhEZHQ2RWp2QlE3Z1J2R2NkRW5TQ0VOOEVrIiwgIjZCek1CazdGR2l2b2dibGRPNzVmM05Md2pGbGlDcWI3bm4xR2hnQ29rclEiLCAiOTBDVDhBYUJQYm41WDhuUlhrZXNqdTFpMEJxaFdxWjN3cUQ0akYtcURHayIsICI5bkV3VXJkZVo2a2NSYkVqNTJRSDNuT1Itb2llMF9wOXRNTklBRXVGdk1VIiwgIkhUaDZacjJKOGFpcXBhOTYzY0xrdUtlUURmOU8wMEZ6T0hoeWpHcFZmVGciLCAiSkNwMksyTmhILUxFNUwwajdNRTBMTngtVC1weDlRRnRhbVNzeG1DVUN4VSIsICJMb01HcmhsRG1fYlVXVVgxZ2RoUnhUc3k0ZDR6eXdHemxTVm9jUlNZMDFNIiwgIlVnVWpxNXdoelFld081OWZWTmowZjBtcXlWOFlQWFU1NHNwNGtMZWN3UWsiLCAiWTBILUUzaHpLRVVuQXlyaV94OXRUOWstajRpNjVhbzloa2VFSE5leG9zSSIsICJlekNBbWFUd0kyblBqXzFJaUIzS1pmaUVPUkxlUndoWnNNTURNWklKOGtBIiwgImkwSF8tV0FId2ZFanQ4dHFRSDc0dU9DV3ZxdVkzRnd1WC1reDRlMlJKSDgiLCAicjFHckg0NnlEVjYyc2V6SW1FanhhNmNKU1pNVDIxMmpyT1NIaWVjOXl0TSIsICJyVmozUkxzN0s4emROeTd6WHoxQ3IzOVk2cm9nOHVsTm96azRGN05DdUMwIiwgInQ1a3AwSGZ4TVMxZUhOQ0dSenJLOUdpNW9UWnJlZzVVZTlsTFFJdUx2QjQiXSwgImlzcyI6ICJodHRwczovL3BpZC1pc3N1ZXIuYWVuZGdhcmQuZXhhbXBsZSIsICJpYXQiOiAxNjgzMDAwMDAwLCAiZXhwIjogMTg4MzAwMDAwMCwgInZjdCI6ICJ1cm46ZXhhbXBsZTpldWRpOnBpZDphZW5kZ2FyZDoxIiwgIl9zZF9hbGciOiAic2hhLTI1NiIsICJjbmYiOiB7Imp3ayI6IHsia3R5IjogIkVDIiwgImNydiI6ICJQLTI1NiIsICJ4IjogIlRDQUVSMTladnUzT0hGNGo0VzR2ZlNWb0hJUDFJTGlsRGxzN3ZDZUdlbWMiLCAieSI6ICJaeGppV1diWk1RR0hWV0tWUTRoYlNJaXJzVmZ1ZWNDRTZ0NGpUOUYySFpRIn19fQ.dW3o9kdN6zHVtKvM1N_Ig_MOeege3s0OvcEQGHApc6TvD86I9QTkAcwdF57MchYjfwAdR_50cxXEHnw8flgsYA~WyJlSzVvNXBIZmd1cFBwbHRqMXFoQUp3IiwgImFnZV9lcXVhbF9vcl9vdmVyIiwgeyJfc2QiOiBbIjF0RWl5elBSWU9Lc2Y3U3NZR01nUFpLc09UMWxRWlJ4SFhBMHI1X0J3a2siLCAiQ1ZLbmx5NVA5MHlKczNFd3R4UWlPdFVjemFYQ1lOQTRJY3pSYW9ock1EZyIsICJhNDQtZzJHcjhfM0FtSncyWFo4a0kxeTBRel96ZTlpT2NXMlczUkxwWEdnIiwgImdrdnkwRnV2QkJ2ajBoczJaTnd4Y3FPbGY4bXUyLWtDRTctTmIyUXh1QlUiLCAiaHJZNEhubUY1YjVKd0M5ZVR6YUZDVWNlSVFBYUlkaHJxVVhRTkNXYmZaSSIsICJ5NlNGclZGUnlxNTBJYlJKdmlUWnFxalFXejB0TGl1Q21NZU8wS3FhekdJIl19XQ~WyJPQktsVFZsdkxnLUFkd3FZR2JQOFpBIiwgIjE4IiwgdHJ1ZV0~WyJsa2x4RjVqTVlsR1RQVW92TU5JdkNBIiwgIm5hdGlvbmFsaXRpZXMiLCBbIlx1MDBjNm5kZ2FyZCJdXQ~eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImtiK2p3dCJ9.eyJub25jZSI6ICIxMjM0NTY3ODkwIiwgImF1ZCI6ICJodHRwczovL2V4YW1wbGUuY29tL3ZlcmlmaWVyIiwgImlhdCI6IDE3OTQ4MjU4NDQsICJzZF9oYXNoIjogInBWOG1ZdWNIQWFGRUJiS1BvZC1LWGgyUEpDejd4bWdRMWkzRVJwNXpYOHcifQ.dOjZIPmhNN7RYANeV32qKd6GTsD1hZG4hNJ7r_PmmNUJPrVxxlG_2kxH84MR5v8tlM3SBt7_qNMcMby5oetP5w",
+  "disclosed_claims": [
+    "age_equal_or_over (recursive parent)",
+    "age_equal_or_over.18",
+    "nationalities"
+  ],
+  "kb_jwt": {
+    "compact": "eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImtiK2p3dCJ9.eyJub25jZSI6ICIxMjM0NTY3ODkwIiwgImF1ZCI6ICJodHRwczovL2V4YW1wbGUuY29tL3ZlcmlmaWVyIiwgImlhdCI6IDE3OTQ4MjU4NDQsICJzZF9oYXNoIjogInBWOG1ZdWNIQWFGRUJiS1BvZC1LWGgyUEpDejd4bWdRMWkzRVJwNXpYOHcifQ.dOjZIPmhNN7RYANeV32qKd6GTsD1hZG4hNJ7r_PmmNUJPrVxxlG_2kxH84MR5v8tlM3SBt7_qNMcMby5oetP5w",
+    "header": {
+      "alg": "ES256",
+      "typ": "kb+jwt"
+    },
+    "payload": {
+      "nonce": "1234567890",
+      "aud": "https://example.com/verifier",
+      "iat": 1794825844,
+      "sd_hash": "pV8mYucHAaFEBbKPod-KXh2PJCz7xmgQ1i3ERp5zX8w"
+    },
+    "sd_hash": "pV8mYucHAaFEBbKPod-KXh2PJCz7xmgQ1i3ERp5zX8w"
+  },
+  "processed_sd_jwt_payload": {
+    "iss": "https://pid-issuer.aendgard.example",
+    "iat": 1683000000,
+    "exp": 1883000000,
+    "vct": "urn:example:eudi:pid:aendgard:1",
+    "cnf": {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "TCAER19Zvu3OHF4j4W4vfSVoHIP1ILilDls7vCeGemc",
+        "y": "ZxjiWWbZMQGHVWKVQ4hbSIirsVfuecCE6t4jT9F2HZQ"
+      }
+    },
+    "age_equal_or_over": {
+      "18": true
+    },
+    "nationalities": [
+      "Ændgard"
+    ]
+  }
+}

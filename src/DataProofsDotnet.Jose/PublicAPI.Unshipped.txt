@@ -246,6 +246,7 @@ DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Vct.get -> string?
 DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier
 DataProofsDotnet.Jose.VcJose
 const DataProofsDotnet.Jose.SdJwt.KeyBindingJwt.Type = "kb+jwt" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.AkaVctsClaim = "aka_vcts" -> string!
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MediaType = "dc+sd-jwt" -> string!
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.StatusClaim = "status" -> string!
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.TransitionalMediaType = "vc+sd-jwt" -> string!

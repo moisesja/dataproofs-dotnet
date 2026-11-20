@@ -23,6 +23,6 @@
 
 ## Not vendored (and why)
 
-- **§4.2.6 recursive nationalities example:** the spec abbreviates the digests/Disclosures (`PmnlrRj... = ["16_mAd0GiwaZokU26_0i0h","DE"]`) and never prints the full base64url Disclosure strings, so exact fixtures cannot be extracted. Recursive-disclosure coverage comes from §6.3, Appendix A.2 and the sd-jwt-vc-16 Appendix B.1 fixtures instead.
-- **Appendix A.3 (SD-JWT VC) and A.4 (W3C VCDM 2.0):** A.3 duplicates the SD-JWT VC material vendored from draft-ietf-oauth-sd-jwt-vc-16 (see `../sd-jwt-vc-16/`); A.4 is a large W3C VCDM illustration outside the current SD-JWT test scope. Both are non-normative illustrations.
+- **§4.2.6 recursive nationalities example:** the spec abbreviates the digests/Disclosures (`PmnlrRj... = ["16_mAd0GiwaZokU26_0i0h","DE"]`) and never prints the full base64url Disclosure strings, so exact fixtures cannot be extracted. Recursive-disclosure coverage comes from §6.3, Appendix A.2 and the sd-jwt-vc-27 Appendix A.1 fixtures instead (Appendix B.1 in -16).
+- **Appendix A.3 (SD-JWT VC) and A.4 (W3C VCDM 2.0):** A.3 duplicates the SD-JWT VC material vendored from draft-ietf-oauth-sd-jwt-vc-27 (see `../sd-jwt-vc-27/`; vendored from -16 until 2026-11-19); A.4 is a large W3C VCDM illustration outside the current SD-JWT test scope. Both are non-normative illustrations.
 - **Section 8 (JWS JSON serialization):** the RFC defines the format but its examples are not complete worked vectors with stated digests; compact-serialization coverage above exercises the same Disclosure/digest pipeline.
