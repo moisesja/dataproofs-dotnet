@@ -23,14 +23,16 @@ public static class SdJwtVcIssuer
     /// makes is that claim or one of its subclaims. Each violation is a documented failure
     /// (<see cref="MalformedJoseException"/>) — the disallowed claim shape the profile rejects. A nested entry
     /// that only shares a reserved name, such as <c>DiscloseObjectProperties("credentialSubject", "status")</c>,
-    /// is an ordinary claim and is issued.
+    /// is an ordinary claim and is issued. A reserved claim in <paramref name="claims"/> must also be plain JSON:
+    /// an <c>_sd</c> key or a <c>...</c> array placeholder the caller built inside one is refused, as the verifier
+    /// would refuse it.
     /// </summary>
     /// <param name="claims">The input claims set (a JSON object). Not mutated.</param>
     /// <param name="frame">Which claims are selectively disclosable (must not target registered claims or their subclaims).</param>
     /// <param name="signer">The Issuer's NetCrypto-backed JWS signer.</param>
     /// <param name="options">Issuance options (hash algorithm, decoys, holder cnf key).</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
-    /// <exception cref="MalformedJoseException">When <c>vct</c> is missing/blank, <c>aka_vcts</c> is malformed, or the frame discloses a disallowed claim.</exception>
+    /// <exception cref="MalformedJoseException">When <c>vct</c> is missing/blank, <c>aka_vcts</c> is malformed, the frame discloses a disallowed claim, or a reserved claim carries selective-disclosure structure.</exception>
     public static Task<SdJwtIssuer.Result> IssueAsync(
         JsonObject claims,
         DisclosureFrame frame,

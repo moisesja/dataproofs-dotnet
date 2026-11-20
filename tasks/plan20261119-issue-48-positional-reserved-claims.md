@@ -53,22 +53,44 @@ Align with PR #52: -27 section numbers, `aka_vcts` reserved.
      about placement (decoys, array placeholders, recursion), which is the class of bug this issue is.
    - *Record only the top-level claim name*: enough for #48, but #47 needs the full path to match Type Metadata
      `path` values; the full path costs one list push and pop per level.
-3. **The rule: a Disclosure is refused when the first component of its path is a reserved name.** A top-level
-   Disclosure's path is its own name; anything resolved inside a reserved claim, whether that claim is in the clear
-   or itself a (refused) Disclosure, has the reserved name first. A Disclosure whose path starts anywhere else is
-   allowed, whatever its own name. One function, `SdJwtVcClaimRules.ReservedClaimAt`, decides this, and the issuer
-   calls the same `SdJwtVcClaimRules.IsReserved` for the frame.
+3. **The rule, part 1: a presented Disclosure is refused when the first component of its path is a reserved
+   name.** A top-level Disclosure's path is its own name; anything resolved inside a reserved claim, whether that
+   claim is in the clear or itself a (refused) Disclosure, has the reserved name first. A Disclosure whose path
+   starts anywhere else is allowed, whatever its own name. `SdJwtVcClaimRules.DisallowedDisclosure` holds both parts
+   of the rule, and the issuer calls the same `SdJwtVcClaimRules.IsReserved` for the frame.
 4. **Issuance: the frame check stays a check of the frame's top-level names, now stated as the positional rule.**
    Every Disclosure a frame entry produces (flat, structured, recursive, array element) sits at or under that entry's
    top-level claim, so the top-level names are exactly the first path components the verifier will see. 2.0.0
    already behaved this way, so issuance changes in message and documentation only; the tests pin both directions.
    Alternative: issue, then run the reconstructor over the result and apply the verifier's check. Lost: it signs
    before it refuses (a key-store signature for nothing), for a result the frame already determines.
-5. **Not refused: an `_sd` digest or `...` placeholder inside a reserved claim with no Disclosure presented for it.**
-   A digest without a Disclosure is indistinguishable from a decoy, and RFC 9901 §4.2.5 lets an Issuer add decoys to
-   any `_sd` array or array; -27 forbids Disclosures, not digests. Refusing them would reject spec-valid input. The
-   issue's rule is about presented Disclosures.
-6. **Failure messages.** A top-level reserved Disclosure keeps the 2.0.0 text (`SD-JWT VC claim 'x' MUST NOT be
+5. **The rule, part 2 (this decision moved): a reserved claim whose signed value carries an `_sd` key or a `...`
+   array placeholder anywhere inside it is refused, whether or not its Disclosure is attached.** The first draft of
+   this plan did not refuse a digest with no Disclosure presented, because it cannot be told from a decoy and
+   RFC 9901 §4.2.5 lets an Issuer add decoys anywhere. The PR #52 review (issue comment 7027343504) showed what that
+   costs: withholding an array-element Disclosure inside the signed `aka_vcts` turned a value the format check
+   refuses (`["urn:example:visible","urn:example:main"]` with `vct` `urn:example:main`) into one it accepts, under
+   the same signature. The same holds for any reserved claim (`status.status_list` dropped from `status`). The
+   parent directed the rule onto the signed payload, and the tie-breaker is the one the evidence supports: fail
+   closed. The cost is one shape that may be conformant, decoys inside a reserved claim; `SdJwtVcIssuer` never
+   produces it (it adds decoys only to objects a frame entry processes). Positions stay as part 1 because they give
+   the precise path in the message when the Disclosure is attached, and they are the only check that sees a
+   Disclosure referenced from the top-level `_sd`, whose name its digest hides.
+   Alternative considered: refuse only digests and placeholders that a presented Disclosure does not match (the
+   withheld ones). Lost: a decoy and a withheld Disclosure look the same, so it is the same check.
+6. **Issuance applies part 2 to the claims set.** A caller can build an `_sd` key or a `...` placeholder into a
+   reserved claim of the claims set, and `SdJwtIssuer` signs it as given (adversarial finding A9a); the verifier
+   would refuse the credential, so `SdJwtVcIssuer` refuses it first with `MalformedJoseException`. Not covered: a
+   caller-built top-level `_sd` (finding A9e), whose digests hide their names, so neither side can judge them; the
+   generic issuer also overwrites a caller's `_sd` silently when the frame makes digests at the same level. That is
+   a generic `SdJwtIssuer` input rule, outside this issue: listed as a follow-up.
+7. **RFC 9901 §7.1 step 4 in the reconstructor, in its own commit.** "If any digest value is encountered more than
+   once in the Issuer-signed JWT payload (directly or recursively via other Disclosures), the SD-JWT MUST be
+   rejected." The reconstructor refused a repeat only within one `_sd` array or when a Disclosure resolved it twice
+   (adversarial finding X1). It is in the code this PR changes, it is a few lines, and the brief's default is to fix
+   such defects in the PR; the commit stands alone so it can be dropped without touching the rest. Every newly
+   refused input is invalid under RFC 9901, and the library's own issuer never repeats a digest.
+8. **Failure messages.** A top-level reserved Disclosure keeps the 2.0.0 text (`SD-JWT VC claim 'x' MUST NOT be
    selectively disclosed (… §2.2.2.3)`). One inside a reserved claim says so and gives the path, so the reason is
    visible: `a Disclosure at 'status.status_list.idx' is inside SD-JWT VC claim 'status', whose subclaims MUST NOT be
    selectively disclosed either`. Path components are claim names from the signed payload or from Disclosures that
@@ -76,14 +98,18 @@ Align with PR #52: -27 section numbers, `aka_vcts` reserved.
 
 ## Items
 
-- [ ] Reconstructor records each resolved Disclosure's claim path (`DisclosurePosition`, `ClaimPathComponent`).
-- [ ] `SdJwtVerifier` passes the positions on through `SdJwtVerificationResult` (internal).
-- [ ] `SdJwtVcClaimRules.IsReserved` / `ReservedClaimAt`; `SdJwtVcVerifier` step 3 uses positions.
-- [ ] `SdJwtVcIssuer` frame check uses `IsReserved`; message and docs say "and its subclaims".
-- [ ] Tests: the issue's table rows (and every other reserved name) nested under `credentialSubject` issue, present
-      and verify; a reserved claim and every way of getting inside one is refused, on issuance and verification;
-      reconstructor positions; regression tests fail on `origin/main` and on #52's head.
-- [ ] PRD FR-17 and AC-3 step 5, `SdJwtVcConstants` docs, sample, CHANGELOG.
+- [x] Reconstructor records each resolved Disclosure's claim path (`DisclosurePosition`, `ClaimPathComponent`).
+- [x] `SdJwtVerifier` passes the positions on through `SdJwtVerificationResult` (internal).
+- [x] `SdJwtVcClaimRules.IsReserved` / `DisallowedDisclosure` / `ReservedClaimWithDisclosureStructure`;
+      `SdJwtVcVerifier` step 3 uses them.
+- [x] `SdJwtVcIssuer` frame check uses `IsReserved`, and the claims set gets the structure check; message and docs
+      say "and its subclaims".
+- [x] Signed-payload structure check (decision 5, after the PR #52 review), with withheld and decoy tests.
+- [x] RFC 9901 §7.1 step 4 (decision 7), own commit, own tests.
+- [x] Tests: the issue's table rows (and every other reserved name) nested under `credentialSubject` issue, present
+      and verify; a reserved claim and every way of getting inside one is refused, attached and withheld, on issuance
+      and verification; reconstructor positions; regression tests fail on `origin/main` and on #52's head.
+- [x] PRD FR-16, FR-17 and AC-3 step 5, `SdJwtVcConstants` docs, sample, CHANGELOG.
 - [ ] Build `/warnaserror`, full test run, `ac-7`, `ac-9`.
 - [ ] Adversarial pass (30 min).
 - [ ] PR, CI green.

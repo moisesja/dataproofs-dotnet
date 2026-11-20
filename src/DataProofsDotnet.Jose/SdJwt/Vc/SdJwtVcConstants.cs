@@ -59,7 +59,9 @@ public static class SdJwtVcConstants
     /// everything inside it: a member of <c>status</c> or <c>cnf</c> at any depth, an element of
     /// <c>aka_vcts</c>. A <see cref="DisclosureFrame"/> entry on one of them, of any kind, is a
     /// disallowed claim shape the Issuer rejects, and a presented Disclosure that resolves to one or
-    /// inside one is a Verifier failure (<c>VC_DISALLOWED_DISCLOSURE</c>). A claim deeper in the payload
+    /// inside one is a Verifier failure (<c>VC_DISALLOWED_DISCLOSURE</c>), as is an <c>_sd</c> key or a
+    /// <c>...</c> placeholder inside one in the signed payload, whether its Disclosure is presented or
+    /// withheld. A claim deeper in the payload
     /// that only shares a name, such as <c>credentialSubject.status</c>, is an ordinary claim and may be
     /// selectively disclosed.
     /// </summary>

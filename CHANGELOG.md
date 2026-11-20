@@ -97,33 +97,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-level claims set. `SdJwtVcVerifier` compared each presented Disclosure's claim name with the list
   wherever the Disclosure sat. It now uses the claim path at which the RFC 9901 reconstruction resolved
   the Disclosure, and refuses it when that path starts at a reserved claim: the claim itself, or anything
-  inside it. Two behaviour changes follow, one each way:
+  inside it. Because a holder can withhold a Disclosure, it also checks the signed payload: a reserved
+  claim whose signed value carries an `_sd` key or a `{"...": digest}` array placeholder anywhere inside
+  it is refused whether or not the Disclosure is attached. Otherwise withholding one changes a registered
+  claim under the same signature, for example an element dropped from `aka_vcts` that would have failed
+  the `aka_vcts` format check, or `status.status_list` dropped from `status`. The behaviour changes
+  follow, one each way:
   - *Now accepted:* a Disclosure of a nested claim that only shares a reserved name, such as
     `credentialSubject.status`, `credentialSubject.exp` or `credentialSubject.iss` made disclosable with
     `DisclosureFrame.DiscloseObjectProperties("credentialSubject", "status")`. `SdJwtVcIssuer` issued
     these in every release, and `SdJwtVcVerifier` refused its own output with `VC_DISALLOWED_DISCLOSURE`.
     They now verify. Nothing to do.
-  - *Now refused, which narrows what the verifier accepts:* a Disclosure inside a reserved claim under a
-    name that is not on the list, such as a member of `status` or `cnf` at any depth, or an element of
-    `aka_vcts` or of an array inside `status`, whether the reserved claim around it is in the clear or is
-    itself a Disclosure. 2.0.0 verified these. -16 did not say whether a reserved claim's subclaims could
-    be disclosed; -19 added "including any of their subclaims", so under the pinned -27 such a credential
-    is invalid. The failure is `VC_DISALLOWED_DISCLOSURE`, and its message now gives the Disclosure's path
-    (`a Disclosure at 'status.status_list.idx' is inside SD-JWT VC claim 'status', ...`); the message for a
-    reserved claim disclosed at the top level is unchanged.
+  - *Now refused, which narrows what the verifier accepts:* a credential with selectively disclosable
+    content inside a reserved claim, such as a member of `status` or `cnf` at any depth, or an element of
+    `aka_vcts` or of an array inside `status`, whether its Disclosure is attached or withheld, and whether
+    the reserved claim around it is in the clear or is itself a Disclosure. 2.0.0 verified these. -16 did
+    not say whether a reserved claim's subclaims could be disclosed; -19 added "including any of their
+    subclaims", so under the pinned -27 such a credential is invalid. The failure is
+    `VC_DISALLOWED_DISCLOSURE`. With the Disclosure attached, the message gives its path (`a Disclosure at
+    'status.status_list.idx' is inside SD-JWT VC claim 'status', ...`); with it withheld, it names the
+    claim (`SD-JWT VC claim 'status' carries an '_sd' digest array or a '...' array placeholder, ...`). The
+    message for a reserved claim disclosed at the top level is unchanged.
+  - *Also refused, and possibly valid:* decoy digests inside a reserved claim. RFC 9901 §4.2.5 lets an
+    issuer add decoys to any `_sd` array or array, and -27 forbids Disclosures, not digests, so a
+    credential with only decoys there may be conformant. A verifier cannot tell a decoy from a withheld
+    Disclosure, and the withheld case is the one -27 forbids, so the check fails closed.
   - *This library's own output:* `SdJwtVcIssuer` has refused a `DisclosureFrame` entry of any kind on
     `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` in every release from 0.1.0-preview.1
-    to 2.0.0, and every Disclosure such an entry makes sits at or under that claim, so none of its output
-    is newly refused, apart from the `aka_vcts` element Disclosures under *Changed*. A credential built
-    with the generic `SdJwtIssuer`, `typ: dc+sd-jwt` and a frame entry on a reserved claim is.
+    to 2.0.0, every Disclosure such an entry makes sits at or under that claim, and it adds decoys only to
+    objects a frame entry processes, so none of its output is newly refused, apart from the `aka_vcts`
+    element Disclosures under *Changed* and a claims set in which the caller itself built an `_sd` key or
+    a `...` placeholder inside a reserved claim. A credential built with the generic `SdJwtIssuer`,
+    `typ: dc+sd-jwt` and a frame entry on a reserved claim is newly refused.
   - *What to do:* issuers keep `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and
     `status` wholly in the clear. A verifier that receives credentials with Disclosures inside them needs
     the issuer to reissue them.
 
-  Not changed: `SdJwtVcIssuer` refuses the same frames as before, and its message now adds "and neither
-  may any of its subclaims". A digest inside a reserved claim with no Disclosure presented for it is not
-  refused, because it cannot be told from a decoy (RFC 9901 §4.2.5), and -27 forbids Disclosures, not
-  digests. The generic `SdJwtVerifier` does not apply the rule, which belongs to the SD-JWT VC profile.
+  `SdJwtVcIssuer` refuses the same frames as before, and its message now adds "and neither may any of its
+  subclaims". It now also throws `MalformedJoseException` for a claims set whose reserved claim carries an
+  `_sd` key or a `...` placeholder the caller built, which it used to sign as given. A Disclosure
+  referenced from the top-level `_sd` hides its name behind its digest, so when it is withheld no verifier
+  can tell that it was a reserved claim: keeping those claims in the clear is the issuer's duty. The
+  generic `SdJwtVerifier` does not apply the rule, which belongs to the SD-JWT VC profile.
+
+- **SD-JWT: a digest that appears twice anywhere in the payload is refused** (RFC 9901 §7.1 step 4: "If
+  any digest value is encountered more than once in the Issuer-signed JWT payload (directly or recursively
+  via other Disclosures), the SD-JWT MUST be rejected"). `SdJwtVerifier` and `SdJwtVcVerifier` refused a
+  repeat only within one `_sd` array, or when a presented Disclosure was referenced twice; a decoy or
+  withheld digest that repeated across `_sd` arrays and `...` placeholders was accepted. Such an SD-JWT now
+  fails with `DISCLOSURE_INVALID`, and the message for every repeat is now `An SD-JWT digest appears more
+  than once in the payload, ...`. Every newly refused input is invalid under RFC 9901. *This library's own
+  output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
+  the issue #48 adversarial pass; it is a separate commit in that PR.
 
 ## [2.0.0] - 2026-11-02
 
