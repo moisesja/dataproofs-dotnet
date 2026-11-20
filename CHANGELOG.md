@@ -136,6 +136,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VerifyWithTypeMetadataAsync` and supplies document octets; the credentials it then refuses are ones that
   contradict their own Type Metadata, which this library's earlier issuers never checked, so credentials they
   issued can be among them.
+- **X.509 certificate chains: `x5c` on signing, and the end-entity key on verification** (issue
+  [#46](https://github.com/moisesja/dataproofs-dotnet/issues/46); RFC 7515 §4.1.6; the Inline X.509 Certificates
+  mechanism of draft-ietf-oauth-sd-jwt-vc-27 §2.5). Tracked downstream in moisesja/credentials-dotnet#33.
+  - *Signing.* `JwsSigner.CertificateChain` (an `init` property) takes an `X509CertificateChain`, built with
+    `X509CertificateChain.Create` from DER certificates, end-entity first. Every JWS that signer produces, compact
+    or JSON, and so every JWT, VC-JOSE envelope, SD-JWT and SD-JWT VC, carries it as `x5c` in the **protected**
+    header (standard padded base64, as §4.1.6 requires; -27 §2.5 reads it only there). Setting a chain whose
+    end-entity key is not the signer's key throws `ArgumentException`, so the library never emits an `x5c` that
+    cannot verify. A signer without a chain emits exactly the bytes it did before.
+  - *Verification.* `JwsParser.ParseCompactWithCertificateChain`, `SdJwtVerifier.VerifyWithCertificateChain` and
+    `SdJwtVcVerifier.VerifyWithCertificateChainAsync` (Type Metadata processing optional, through
+    `TypeMetadataProcessingOptions`) take a **mandatory** hook, `Func<X509CertificateChain, bool>`, in place of the
+    `kid` resolver. Calling one of them is what selects the X.509 mechanism: the token cannot (-27 §7.3). The key
+    is always `x5c[0]`'s; the signature is checked with it; only then is the hook called, once, and the result is
+    valid only when it returns `true`. The chain is on `JwsParseResult.CertificateChain`,
+    `SdJwtVerificationResult.IssuerCertificateChain` and `SdJwtVcVerificationResult.IssuerCertificateChain`, and
+    `X509CertificateChain.EndEntityPublicKey` gives the end-entity key as a `Jwk`. A `kid` beside `x5c` selects
+    nothing and is not reported (`SignerKid` is empty, `SignerKidIsProtected` is `false`). Failures have stable
+    codes at the start of the message: `X5C_MISSING`, `X5C_MALFORMED`, `X5C_UNSUPPORTED_KEY` and `X5C_UNTRUSTED`
+    (the hook said no); a signature that does not verify under the end-entity key is the existing
+    `JoseCryptoException` / `ISSUER_SIGNATURE_INVALID`. `JwsParser` throws `MalformedJoseException` for
+    `X5C_MALFORMED` and `JoseCryptoException` for the others; the SD-JWT verifiers return them in `Errors`. An
+    exception from the hook propagates, as one from a `kid` resolver does.
+  - *What a well-formed `x5c` is.* A JSON array of 1 to `X509CertificateChain.MaxCertificates` (10) strings, each
+    canonical base64 (no base64url, no whitespace, padding required), each exactly one DER certificate whose
+    `TBSCertificate` fields are in RFC 5280 order, no two identical. The end-entity key must be Ed25519, P-256,
+    P-384 or secp256k1, with the `alg` that key's curve produces; RSA, P-521 and other keys are
+    `X5C_UNSUPPORTED_KEY`. EC points are checked on their curve; Ed25519 keys are checked for length, and a key
+    that is no curve point fails at the signature check, before the hook runs. DER is read with the in-box
+    `System.Formats.Asn1`, which performs no cryptography: no package was added.
+  - **What the library does not check: the chain.** It performs no RFC 5280 path validation. It verifies no
+    certificate signature and checks no validity period, basic constraints, key usage, name chaining or order,
+    revocation, policy, name constraint or critical extension, and it holds no trust anchor. RFC 7515 §4.1.6
+    requires the recipient to validate the chain, and -27 §2.5 requires it to be validated "against a trust
+    anchor permitted for the Issuer according to policy (a certificate in the x5c header parameter is not a trust
+    anchor merely because it is included there)". That is the hook's job. NetCrypto, through which this library's
+    cryptography must go (PRD §2.2), has no X.509 support and no RSA, and the platform's chain engine would
+    bypass it. The new sample `Samples.X509CertificateChain` shows a hook built on `X509Chain` in
+    `CustomRootTrust` mode, the verifier's anchors in `CustomTrustStore` and the `x5c` certificates only in
+    `ExtraStore`. Under this mechanism the Issuer is the end-entity certificate's subject, and an `iss` claim is
+    not authenticated by it (-27 §2.5): bind it yourself, for example through a Subject Alternative Name, or
+    ignore it.
+
+  Nothing changes for existing callers. `JwsParser.Parse`/`ParseCompact`, `SdJwtVerifier.Verify`,
+  `SdJwtVcVerifier.VerifyAsync`/`VerifyWithTypeMetadataAsync` and `VcJose.VerifyCredential` never read `x5c`,
+  so a token whose `x5c` is malformed still verifies through them as before, and no accepted input is now
+  refused. No member was removed or changed. Not provided: `x5c` verification for detached-payload compact JWS
+  and for the JWS JSON serializations (which never read `x5c`, protected or not), an asynchronous hook, and the
+  COSE counterpart, `x5chain` (RFC 9360).
 
 ### Fixed
 
