@@ -97,7 +97,10 @@ internal static class SdJwtVcClaimRules
     /// §2.2.2.2): when present, it MUST be a non-empty array of strings (each read by
     /// <see cref="ReadTypeValue"/>), and the array MUST NOT contain the <c>vct</c> value.
     /// </summary>
-    /// <param name="payload">The claims set (issuance) or the processed payload (verification).</param>
+    /// <param name="payload">
+    /// The claims set (issuance) or the issuer-signed payload (verification), never the processed payload: what
+    /// the holder presents must not change what is checked.
+    /// </param>
     /// <param name="vct">The credential's <c>vct</c> value, already read by <see cref="ReadTypeValue"/>.</param>
     /// <returns><c>null</c> when <c>aka_vcts</c> is absent or well formed; otherwise the reason it is not.</returns>
     public static string? AkaVctsViolation(JsonObject payload, string vct)

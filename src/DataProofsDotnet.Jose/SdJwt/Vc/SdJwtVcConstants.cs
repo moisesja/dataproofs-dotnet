@@ -57,9 +57,11 @@ public static class SdJwtVcConstants
     /// <c>vct</c>, <c>vct#integrity</c>, <c>aka_vcts</c>, <c>status</c>. Marking any of these in a
     /// <see cref="DisclosureFrame"/> is a disallowed claim shape the Issuer rejects, and finding
     /// any of them disclosed in a presentation is a Verifier failure. The Verifier checks <c>aka_vcts</c> by
-    /// position: the top-level claim and every element of it must be signed in the clear, while a claim of the
-    /// same name nested in another claim is ordinary. It checks the other names by refusing any Disclosure that
-    /// carries one, at any depth.
+    /// position: it refuses a top-level <c>aka_vcts</c> that reaches the payload through a Disclosure, and a
+    /// signed top-level value holding any disclosure site, whether or not its Disclosure is presented; a claim of
+    /// the same name nested in another claim is ordinary. A whole-claim Disclosure the holder withholds cannot be
+    /// told from a decoy digest, so such a credential verifies without <c>aka_vcts</c>. The Verifier checks the
+    /// other names by refusing any Disclosure that carries one, at any depth.
     /// </summary>
     public static readonly IReadOnlyList<string> MustNotBeSelectivelyDisclosed =
         ["iss", "nbf", "exp", "cnf", VctClaim, VctIntegrityClaim, AkaVctsClaim, StatusClaim];
