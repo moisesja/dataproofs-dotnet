@@ -395,6 +395,8 @@ public sealed class JwsX5cTests
             { "a leading space", $"[\" {b64}\"]" },
             { "a trailing space", $"[\"{b64} \"]" },
             { "an inner space", $"[\"{b64[..8]} {b64[8..]}\"]" },
+            { "four inner spaces (a multiple of four long)", $"[\"{b64[..8]}    {b64[8..]}\"]" },
+            { "CRLF line breaks twice", $"[\"{b64[..64]}\\r\\n{b64[64..128]}\\r\\n{b64[128..]}\"]" },
             { "non-zero pad bits", $"[\"{nonCanonical}\"]" },
             { "PEM armour", $"[\"-----BEGIN CERTIFICATE-----{b64}-----END CERTIFICATE-----\"]" },
             { "base64 of a non-certificate", $"[\"{Convert.ToBase64String("not a certificate"u8.ToArray())}\"]" },
