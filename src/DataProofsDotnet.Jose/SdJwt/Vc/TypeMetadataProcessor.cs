@@ -22,8 +22,9 @@ internal static class TypeMetadataProcessor
     /// size, not how many of these it holds, and each costs a few hundred bytes once typed, so a 1 MiB document of
     /// two-octet path components cost about 100 MB (adversarial pass 3). A rich real type (dozens of claims, each with
     /// display in every EU language) holds a few thousand. Claims and path components, which must all be well formed,
-    /// are counted from the parsed array lengths before any is read; display and template entries as each object is
-    /// read, since an element that is not an object is skipped unbuilt and a malformed display never rejects (-21). A
+    /// are counted from the parsed array lengths before any is read; display and template entries one by one, after
+    /// their required string members are checked and before they are built, since an entry without them is skipped
+    /// unbuilt and a malformed display never rejects (-21, -27 §5.6). A
     /// chain past the bound fails with <c>VC_TYPE_METADATA_INVALID</c>, since processing that is required and cannot
     /// complete rejects (-27 §5.7).
     /// </summary>
@@ -300,6 +301,10 @@ internal static class TypeMetadataProcessor
         {
             if (claimsElement.ValueKind != JsonValueKind.Array)
                 return (null, ClaimMetadataInvalid(reference, "'claims' must be an array of objects"));
+            // Charged up front, before any element is checked, and that is safe: every element must be a well-formed
+            // claim metadata object (§5.6), so an element that would not be kept fails the document anyway, and the
+            // charge only decides which refusal is reported. Charging first means nothing is built for a chain that
+            // is over the bound.
             if (!entries.Spend(claimsElement.GetArrayLength()))
                 return (null, TooManyEntries(reference));
 
@@ -352,6 +357,7 @@ internal static class TypeMetadataProcessor
         // §5.6.1: "a non-empty array of strings, null values, or non-negative integers".
         if (!claim.TryGetProperty("path", out var pathElement) || pathElement.ValueKind != JsonValueKind.Array || pathElement.GetArrayLength() == 0)
             return (null, "a claim metadata object's 'path' must be a non-empty array");
+        // Up front for the same reason as the claims: every component must be valid or the document fails (§5.6.1).
         if (!entries.Spend(pathElement.GetArrayLength()))
             return (null, TooManyEntriesMarker);
 
@@ -422,17 +428,18 @@ internal static class TypeMetadataProcessor
     /// <returns>The entries, or <c>null</c> when they exceed <see cref="EntryBudget"/>.</returns>
     private static List<TypeDisplayMetadata>? ParseTypeDisplay(JsonElement array, Entries entries)
     {
-        // Charged per entry kept, not per element: an element that is not an object is skipped without being built,
-        // so a malformed display costs no more than its octets and still never rejects (-21).
+        // Charged per entry kept, after its required members are checked and before it is built: an element that is not an
+        // object, or lacks a string locale and name, is skipped unbuilt and uncharged (its rendering is not read either),
+        // so a malformed display costs no more than its octets and never rejects (-21, -27 §5.6).
         var result = new List<TypeDisplayMetadata>();
         foreach (var entry in array.EnumerateArray())
         {
-            if (entry.ValueKind != JsonValueKind.Object)
+            if (!HasStrings(entry, "locale", "name"))
                 continue;
             if (!entries.Spend(1))
                 return null;
             if (ReadString(entry, "locale") is not { } locale || ReadString(entry, "name") is not { } name)
-                continue;
+                continue; // Unreachable: the document passed the transcodable-JSON check, so every string reads.
             TypeRenderingMetadata? rendering = null;
             if (entry.TryGetProperty("rendering", out var renderingElement) && renderingElement.ValueKind == JsonValueKind.Object)
             {
@@ -462,12 +469,13 @@ internal static class TypeMetadataProcessor
         {
             foreach (var template in svgTemplates.EnumerateArray())
             {
-                if (template.ValueKind != JsonValueKind.Object)
+                // Checked, then charged, then built, as for a display entry.
+                if (!HasStrings(template, "uri"))
                     continue;
                 if (!entries.Spend(1))
                     return null;
                 if (ReadString(template, "uri") is not { } uri)
-                    continue;
+                    continue; // Unreachable, as above.
                 var properties = template.TryGetProperty("properties", out var p) && p.ValueKind == JsonValueKind.Object ? p : default;
                 templates.Add(new SvgTemplateMetadata(
                     uri,
@@ -489,21 +497,35 @@ internal static class TypeMetadataProcessor
     /// <returns>The entries, or <c>null</c> when they exceed <see cref="EntryBudget"/>.</returns>
     private static List<ClaimDisplayMetadata>? ParseClaimDisplay(JsonElement array, Entries entries)
     {
+        // Checked, then charged, then built, as for a type display entry.
         var result = new List<ClaimDisplayMetadata>();
         foreach (var entry in array.EnumerateArray())
         {
-            if (entry.ValueKind != JsonValueKind.Object)
+            if (!HasStrings(entry, "locale", "label"))
                 continue;
             if (!entries.Spend(1))
                 return null;
             if (ReadString(entry, "locale") is not { } locale || ReadString(entry, "label") is not { } label)
-                continue;
+                continue; // Unreachable, as above.
             result.Add(new ClaimDisplayMetadata(locale, label, ReadString(entry, "description"), ReadDir(entry)));
         }
         return result;
     }
 
     private static string? ReadDir(JsonElement entry) => OneOf(entry, "dir", "ltr", "rtl", "auto");
+
+    /// <summary>Whether <paramref name="obj"/> is an object whose <paramref name="names"/> are all JSON strings, read without allocating.</summary>
+    private static bool HasStrings(JsonElement obj, params string[] names)
+    {
+        if (obj.ValueKind != JsonValueKind.Object)
+            return false;
+        foreach (var name in names)
+        {
+            if (!obj.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String)
+                return false;
+        }
+        return true;
+    }
 
     /// <summary>Member <paramref name="name"/> when it is one of <paramref name="allowed"/>, compared without reading a longer string.</summary>
     private static string? OneOf(JsonElement obj, string name, params string[] allowed)

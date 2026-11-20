@@ -171,12 +171,12 @@ The data-loss audit only decides whether to refuse, so it changes no bytes, and 
   - **Per chain.** At most `MaxExtendsDepth` hops (default 8), so at most 9 documents.
   - **Entries.** At most 10,000 per chain: claim metadata objects, path components, and type display, claim display and SVG template entries. Past the bound the chain fails with `VC_TYPE_METADATA_INVALID`.
     - Claims and path components, which must all be well formed, are charged from the parsed array lengths before any is read.
-    - Display and template entries are charged as each object is read. An element that is not an object is skipped without being built and is not charged, so a malformed display still never rejects.
+    - Display and template entries are charged one by one, after their required string members are checked (`locale` and `name`, `locale` and `label`, `uri`) and before they are built. An element that is not such an object is skipped without being built and is not charged, so a malformed display still never rejects.
     - Every document in the chain counts, including entries a child overrides.
     - A realistic rich type fits: 300 claims with display in 24 locales is about 8,100 entries.
   - **Validation work.** At most 1,000,000 units, each charged before its work is done:
     - an index or null component applied to an element costs 1 unit;
-    - a key component applied to an object costs 1 + ⌊key length / 32⌋, because the member lookup and the Disclosure lookup both hash the whole key;
+    - a key component applied to an object costs 1 + ⌊key length / 32⌋, because the member lookup and the Disclosure lookup both hash the whole key; the key part is charged only once the element is known to be an object that will be searched;
     - every element selected costs 1.
 
     Past the bound the credential fails with `VC_CLAIM_METADATA_INVALID`.

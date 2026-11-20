@@ -121,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     claim is also mandatory; and an issuer that adds decoys to arrays shifts the positions -27 counts.
   - *Resource bounds, beyond the two options.* An `extends` chain may hold at most 10,000 claim, path, display and
     template entries, counted in every document of the chain; past that it fails with `VC_TYPE_METADATA_INVALID`.
-    A display element that is not an object is skipped, not counted.
+    A display or template element without its required string members (`locale` and `name`, `locale` and `label`,
+    `uri`) is skipped and not counted, so a malformed display still never rejects.
     Validation against one credential may spend at most 1,000,000 units of work, charged before the work. A path
     step costs one unit; a key lookup costs one unit per 32 characters of its key. Past that it fails with
     `VC_CLAIM_METADATA_INVALID`. Both are fixed limits: a rich real type holds a few thousand entries. The result
