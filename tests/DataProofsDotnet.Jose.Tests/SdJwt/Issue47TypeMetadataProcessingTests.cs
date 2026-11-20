@@ -985,25 +985,24 @@ public sealed class Issue47TypeMetadataProcessingTests
     }
 
     [Fact]
-    public async Task A_large_claims_array_is_processed_in_linear_time()
+    public async Task A_large_claims_array_is_processed_within_the_entry_bound_and_refused_past_it()
     {
-        // Before the fix, the duplicate-path check and the merge compared every pair of paths: 8,000 claims took 2.5 s and
-        // 53,000 (1 MiB, the default limit) took 113 s. Two documents, so the merge runs over every entry as well.
-        const int count = 50_000;
-        static byte[] Claims(string vct, string? extends, int offset)
+        // Adversarial pass 1: the duplicate-path check and the merge compared every pair of paths (53,000 claims, 1 MiB:
+        // 113 s). Paths are keyed since, and pass 3 bounded the entries a chain may hold. Two documents, so the merge runs
+        // over every entry: 4,900 claims of one component each, 9,800 entries in all, are processed; one more claim is refused.
+        static byte[] Claims(string vct, string? extends, int offset, int count)
             => Encoding.UTF8.GetBytes(
                 $"{{\"vct\":\"{vct}\"" + (extends is null ? "" : $",\"extends\":\"{extends}\"") + ",\"claims\":["
                 + string.Join(",", Enumerable.Range(offset, count).Select(i => $"{{\"path\":[\"k{i}\"]}}")) + "]}");
-        var options = Options((Vct, Claims(Vct, "urn:parent", count / 2)), ("urn:parent", Claims("urn:parent", null, 0)));
         var presentation = await SimpleCredential();
 
-        var watch = Stopwatch.StartNew();
-        var result = await Verify(presentation, options);
-        watch.Stop();
-
+        var result = await Verify(presentation, Options((Vct, Claims(Vct, "urn:parent", 1_000, 2_450)), ("urn:parent", Claims("urn:parent", null, 0, 2_450))));
         ShouldPass(result);
-        result.ProcessedTypeMetadata!.Claims.Should().HaveCount(count + count / 2);
-        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "before the fix this took over four minutes");
+        result.ProcessedTypeMetadata!.Claims.Should().HaveCount(3_450, "1,000 of the child's paths are new and 1,450 combine with the parent's");
+
+        var over = await Verify(presentation, Options((Vct, Claims(Vct, "urn:parent", 1_000, 2_450)), ("urn:parent", Claims("urn:parent", null, 0, 2_551))));
+        ShouldFail(over, "VC_TYPE_METADATA_INVALID");
+        over.Errors.Single().Should().Contain($"more than {TypeMetadataProcessor.EntryBudget} claim, path, display and template entries");
     }
 
     private sealed class FlippingResolver(byte[] a, byte[] b) : ITypeMetadataDocumentResolver, IDisposable
@@ -1135,8 +1134,8 @@ public sealed class Issue47TypeMetadataProcessingTests
     public async Task Claim_metadata_evaluation_is_bounded()
     {
         // Adversarial pass 2: the work is claims times the elements each path reaches; a 27,000-leaf credential against
-        // 27,000 claims took 22 s. Here 5,000 elements: each claim ["a", null, "kN"] takes about 10,000 path steps (the
-        // array's 5,000 elements selected, then each tried for its key), so 90 claims pass and 300 are refused at the
+        // 27,000 claims took 22 s. Here 5,000 elements: each claim ["a", null, "kN"] takes about 10,000 units of work (the
+        // array's 5,000 elements selected, then each tried for its short key at one unit), so 90 claims pass and 300 are refused at the
         // bound. Deterministic: the refusal is asserted, not a duration.
         var elements = new JsonArray();
         for (var i = 0; i < 5_000; i++)
@@ -1154,7 +1153,7 @@ public sealed class Issue47TypeMetadataProcessingTests
         var refused = await Verify(presentation, Options((Vct, Document(300))));
 
         ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
-        refused.Errors.Single().Should().Contain("takes more than 1000000 path steps");
+        refused.Errors.Single().Should().Contain("takes more than 1000000 units of work");
     }
 
     // ------------------------------------------------------------------ PR #55 review (comment 7030160237)
@@ -1193,21 +1192,29 @@ public sealed class Issue47TypeMetadataProcessingTests
     }
 
     [Fact]
-    public async Task The_reviewers_indexed_issuance_is_issued_and_verifies()
+    public async Task The_reviewers_indexed_issuance_is_issued_within_the_entry_bound_and_refused_past_it()
     {
-        var elements = new JsonArray();
-        var claims = new JsonArray();
-        for (var i = 0; i < 10_000; i++)
+        // The review's case, 10,000 claims ["a", i] over a 10,000-element array, holds 30,000 entries and is refused by
+        // the entry bound (pass 3) before anything is built; 3,000 such claims (9,000 entries) are issued and verify.
+        static (JsonObject Claims, TypeMetadataProcessingOptions Options) Case(int count)
         {
-            elements.Add((JsonNode)i);
-            claims.Add((JsonNode)ClaimEntry(Path("a", i), mandatory: i % 2 == 0));
+            var elements = new JsonArray();
+            var claims = new JsonArray();
+            for (var i = 0; i < count; i++)
+            {
+                elements.Add((JsonNode)i);
+                claims.Add((JsonNode)ClaimEntry(Path("a", i), mandatory: i % 2 == 0));
+            }
+            return (new JsonObject { ["vct"] = Vct, ["a"] = elements }, Options((Vct, Bytes(SimpleDocument(claims)))));
         }
-        var metadata = Bytes(SimpleDocument(claims));
-        var options = Options((Vct, metadata));
 
-        var issued = await SdJwtVcIssuer.IssueWithTypeMetadataAsync(new JsonObject { ["vct"] = Vct, ["a"] = elements }, new DisclosureFrame(), Issuer.Signer, options);
+        var (fits, fitsOptions) = Case(3_000);
+        var issued = await SdJwtVcIssuer.IssueWithTypeMetadataAsync(fits, new DisclosureFrame(), Issuer.Signer, fitsOptions);
+        ShouldPass(await Verify(issued.Issuance, fitsOptions));
 
-        ShouldPass(await Verify(issued.Issuance, options));
+        var (review, reviewOptions) = Case(10_000);
+        var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(review, new DisclosureFrame(), Issuer.Signer, reviewOptions);
+        (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_TYPE_METADATA_INVALID:");
     }
 
     private static JsonObject DecoyNumbered(int n) => Placeholder(Disclosure.ForArrayElement("salt-decoy-" + n, "never disclosed " + n));
@@ -1259,6 +1266,200 @@ public sealed class Issue47TypeMetadataProcessingTests
             new JsonObject { ["vct"] = Vct, ["a"] = rows }, new DisclosureFrame(), Issuer.Signer, Options((Vct, metadata)));
 
         await act.Should().NotThrowAsync();
+    }
+
+    // ------------------------------------------------------------------ PR #55 review 2 (review 5987613088)
+
+    private static JsonObject ManyObjects(int count)
+    {
+        var elements = new JsonArray();
+        for (var i = 0; i < count; i++)
+            elements.Add((JsonNode)new JsonObject { ["x"] = 0 });
+        return new JsonObject { ["vct"] = Vct, ["a"] = elements };
+    }
+
+    private static byte[] OneKeyPath(string key) => Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("a", null, key)))));
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_long_path_key_over_a_wildcard_is_charged_for_its_length(bool issuance)
+    {
+        // Review 2: each key lookup hashes the whole key, so one optional claim ["a", null, K] with a 900,000-character K
+        // over 80,000 objects took 14.2 s while 160,003 steps were charged. A lookup now costs a step per 32 characters,
+        // charged before it runs: 2,000 objects with a 900,000-character key need about 56 million, refused at the
+        // bound. The same claim with a short key costs about 6,000 and passes. Deterministic: a refusal, not a duration.
+        var claims = ManyObjects(2_000);
+        var longKey = OneKeyPath(new string('z', 900_000));
+        var shortKey = OneKeyPath("zzzzzzzzzz");
+
+        if (issuance)
+        {
+            await SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, shortKey)));
+            var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, longKey)));
+            (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_CLAIM_METADATA_INVALID:");
+            return;
+        }
+
+        var presentation = (await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer)).Issuance;
+        ShouldPass(await Verify(presentation, Options((Vct, shortKey))));
+        var refused = await Verify(presentation, Options((Vct, longKey)));
+        ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
+        refused.Errors.Single().Should().Contain("units of work");
+    }
+
+    [Fact]
+    public void A_key_lookup_is_charged_before_it_runs()
+    {
+        // One lookup whose key alone exceeds the bound is refused without being performed.
+        var trace = new ReconstructionTrace();
+        var root = SdJwtReconstructor.Reconstruct(new JsonObject { ["vct"] = Vct, ["a"] = 1 }, [], SdAlg, trace);
+        var key = new string('k', 32 * ClaimMetadataValidator.WorkBudget + 32);
+        var claim = new ClaimMetadata([ClaimPathComponent.ForKey(key)], [], false, ClaimSelectiveDisclosure.Allowed, null);
+
+        ClaimMetadataValidator.Validate(root, trace, [claim], allDisclosuresPresent: false).Should().StartWith("VC_CLAIM_METADATA_INVALID:");
+    }
+
+    // ------------------------------------------------------------------ adversarial pass 3 (resource exhaustion)
+
+    [Fact]
+    public async Task A_document_of_dense_path_components_is_refused_before_it_is_built()
+    {
+        // Pass 3: one claim with 524,000 two-octet index components (a 1 MiB document) allocated about 100 MB and the
+        // result kept 55 MB alive. The entry bound refuses it from the array's parsed length, before any component is read.
+        var document = Encoding.UTF8.GetBytes(
+            "{\"vct\":\"" + Vct + "\",\"claims\":[{\"path\":[\"d\"" + string.Concat(Enumerable.Repeat(",0", 500_000)) + "]}]}");
+        document.Length.Should().BeLessThan(TypeMetadataProcessingOptions.DefaultMaxDocumentSize);
+
+        var result = await Verify(await SimpleCredential(), Options((Vct, document)));
+
+        ShouldFail(result, "VC_TYPE_METADATA_INVALID");
+        result.Errors.Single().Should().Contain($"more than {TypeMetadataProcessor.EntryBudget}");
+    }
+
+    public static TheoryData<string, string> HugeDisplayArrays => new()
+    {
+        { "type display", "\"display\":[" + string.Join(",", Enumerable.Repeat("{\"locale\":\"en\",\"name\":\"n\"}", 10_001)) + "]" },
+        { "svg templates", "\"display\":[{\"locale\":\"en\",\"name\":\"n\",\"rendering\":{\"svg_templates\":["
+            + string.Join(",", Enumerable.Repeat("{\"uri\":\"u\"}", 10_001)) + "]}}]" },
+        { "claim display", "\"claims\":[{\"path\":[\"a\"],\"display\":[" + string.Join(",", Enumerable.Repeat("{\"locale\":\"en\",\"label\":\"l\"}", 10_001)) + "]}]" },
+    };
+
+    [Theory]
+    [MemberData(nameof(HugeDisplayArrays))]
+    public async Task Display_and_template_arrays_count_against_the_entry_bound(string what, string member)
+    {
+        _ = what;
+        var document = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\"," + member + "}");
+        ShouldFail(await Verify(await SimpleCredential(), Options((Vct, document))), "VC_TYPE_METADATA_INVALID");
+    }
+
+    [Fact]
+    public async Task Malformed_display_elements_are_skipped_without_counting_against_the_entry_bound()
+    {
+        // Pass 4: display elements that are not objects are not understood and never reject (-21), however many there
+        // are; they are skipped without being built, so they are not charged.
+        var junk = string.Join(",", Enumerable.Repeat("1", 20_000));
+        var document = Encoding.UTF8.GetBytes(
+            "{\"vct\":\"" + Vct + "\",\"display\":[" + junk + ",{\"locale\":\"en\",\"name\":\"n\",\"rendering\":{\"svg_templates\":[" + junk
+            + "]}}],\"claims\":[{\"path\":[\"a\"],\"display\":[" + junk + "]}]}");
+
+        var result = await Verify(await SimpleCredential(), Options((Vct, document)));
+
+        ShouldPass(result);
+        result.ProcessedTypeMetadata!.Display.Should().ContainSingle().Which.Rendering!.SvgTemplates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Error_messages_repeat_a_bounded_part_of_a_document_value()
+    {
+        // Pass 3: a path error echoed the whole path, escaped: 6,290,870 characters for a 1 MiB document.
+        var longKey = new string('<', 500_000);
+        var pathError = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\",\"claims\":[{\"path\":[0,\"" + longKey + "\"]}]}");
+        var mismatch = Encoding.UTF8.GetBytes("{\"vct\":\"" + new string('v', 500_000) + "\"}");
+        var duplicate = Encoding.UTF8.GetBytes(
+            "{\"vct\":\"" + Vct + "\",\"claims\":[{\"path\":[\"" + longKey + "\"]},{\"path\":[\"" + longKey + "\"]}]}");
+        var badSd = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\",\"claims\":[{\"path\":[" + string.Join(",", Enumerable.Repeat("\"" + longKey[..1_000] + "\"", 100)) + "],\"sd\":1}]}");
+        var presentation = await SimpleCredential();
+
+        foreach (var (document, code) in new[]
+        {
+            (pathError, "VC_CLAIM_PATH_INVALID"), (mismatch, "VC_TYPE_METADATA_VCT_MISMATCH"),
+            (duplicate, "VC_CLAIM_METADATA_INVALID"), (badSd, "VC_CLAIM_METADATA_INVALID"),
+        })
+        {
+            var result = await Verify(presentation, Options((Vct, document)));
+            ShouldFail(result, code);
+            result.Errors.Single().Length.Should().BeLessThan(2_000, code);
+        }
+    }
+
+    [Fact]
+    public void An_integrity_value_with_many_expressions_is_checked_without_allocating_per_expression()
+    {
+        // Pass 3: splitting and decoding each expression allocated about 28 times a 1 MiB value.
+        var good = Expression("sha512", Document);
+        var many = string.Join(" ", Enumerable.Repeat(Wrong("sha512"), 8_000)) + " " + good;
+
+        TypeMetadataIntegrity.Check(many, Document).Should().Be(TypeMetadataIntegrity.Outcome.Match);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        TypeMetadataIntegrity.Check(many, Document).Should().Be(TypeMetadataIntegrity.Outcome.Match);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        allocated.Should().BeLessThan(4_096, $"the value is {many.Length} characters");
+        TypeMetadataIntegrity.Check(many.Replace(good, Wrong("sha512")), Document).Should().Be(TypeMetadataIntegrity.Outcome.Mismatch);
+    }
+
+    [Fact]
+    public async Task The_result_keeps_octets_and_hands_out_documents_the_caller_owns()
+    {
+        var metadata = Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("given_name")))));
+        var result = await Verify(await SimpleCredential(), Options((Vct, metadata)));
+        ShouldPass(result);
+
+        var first = result.ProcessedTypeMetadata!.Documents;
+        first[0]["vct"] = "changed";
+        result.TypeMetadata!["vct"] = "changed";
+
+        result.ProcessedTypeMetadata.Documents[0]["vct"]!.GetValue<string>().Should().Be(Vct);
+        result.TypeMetadata!["vct"]!.GetValue<string>().Should().Be(Vct);
+        Encoding.UTF8.GetBytes(result.ProcessedTypeMetadata.Documents[0].ToJsonString()).Should().Equal(metadata);
+    }
+
+    [Fact]
+    public void A_wildcard_over_many_claims_reuses_its_selection_lists()
+    {
+        // Pass 3, F3: 490 claims ["a", null, "kN"] over 1,000 objects (about 981,000 units, under the work bound)
+        // allocated 20 MB, a new list per step and claim. The two lists are reused, so the memory is one selection.
+        var elements = new JsonArray();
+        for (var i = 0; i < 1_000; i++)
+            elements.Add((JsonNode)new JsonObject { ["x"] = 0 });
+        var trace = new ReconstructionTrace();
+        var root = SdJwtReconstructor.Reconstruct(new JsonObject { ["vct"] = Vct, ["a"] = elements }, [], SdAlg, trace);
+        var claims = Enumerable.Range(0, 490)
+            .Select(i => new ClaimMetadata(
+                [ClaimPathComponent.ForKey("a"), ClaimPathComponent.AllElements, ClaimPathComponent.ForKey("k" + i)], [], false, ClaimSelectiveDisclosure.Allowed, null))
+            .ToList();
+
+        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false).Should().BeNull();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false).Should().BeNull();
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        allocated.Should().BeLessThan(256 * 1024);
+    }
+
+    [Fact]
+    public void A_path_description_is_bounded_and_the_canonical_key_is_not_escaped()
+    {
+        var key = new string('<', 10_000);
+        var path = Enumerable.Repeat(ClaimPathComponent.ForKey(key), 50).Append(ClaimPathComponent.AllElements).Append(ClaimPathComponent.ForIndex(3)).ToList();
+
+        ClaimPathComponent.Describe(path).Length.Should().BeLessThan(4 * 32 * 6 + 200);
+        ClaimPathComponent.CanonicalKey(path).Length.Should().Be(50 * (key.Length + "k10000:".Length) + "*".Length + "i3;".Length);
+        ClaimPathComponent.CanonicalKey([ClaimPathComponent.ForKey("0")]).Should().NotBe(ClaimPathComponent.CanonicalKey([ClaimPathComponent.ForIndex(0)]));
+        ClaimPathComponent.CanonicalKey([ClaimPathComponent.ForKey("a"), ClaimPathComponent.ForKey("b")])
+            .Should().NotBe(ClaimPathComponent.CanonicalKey([ClaimPathComponent.ForKey("a1:b")]));
     }
 
     [Fact]
