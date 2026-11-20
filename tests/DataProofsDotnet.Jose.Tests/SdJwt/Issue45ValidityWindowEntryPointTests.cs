@@ -113,6 +113,35 @@ public sealed class Issue45ValidityWindowEntryPointTests
         return jwt + "~";
     }
 
+    /// <summary>The raw <see cref="ITypeMetadataResolver"/> of <see cref="SdJwtVcVerifier.VerifyAsync"/>, counting its calls.</summary>
+    private sealed class CountingRawResolver : ITypeMetadataResolver
+    {
+        public int Calls { get; private set; }
+
+        public Task<JsonObject?> ResolveAsync(string vct, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult<JsonObject?>(new JsonObject { ["vct"] = vct });
+        }
+    }
+
+    [Theory]
+    [InlineData("exp passed")]
+    [InlineData("nbf ahead")]
+    [InlineData("inside the window")]
+    public async Task VerifyAsync_consults_its_raw_Type_Metadata_resolver_only_inside_the_window(string @case)
+    {
+        var (claims, code) = Cases[@case];
+        var resolver = new CountingRawResolver();
+
+        var result = await SdJwtVcVerifier.VerifyAsync(await Present(claims), _ => IssuerPublicJwk, Options, resolver);
+
+        result.IsValid.Should().Be(code is null);
+        resolver.Calls.Should().Be(code is null ? 1 : 0);
+        if (code is not null)
+            result.Errors.Should().ContainSingle().Which.Should().StartWith(code + ":");
+    }
+
     [Theory]
     [MemberData(nameof(Matrix))]
     public async Task Every_entry_point_enforces_the_window(string entryPoint, string @case)
