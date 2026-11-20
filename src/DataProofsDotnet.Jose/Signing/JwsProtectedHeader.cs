@@ -36,6 +36,15 @@ internal sealed class JwsProtectedHeader
     [JsonPropertyName("typ")]
     public string? Typ { get; set; }
 
+    /// <summary>
+    /// The <c>x5c</c> value to emit when signing (RFC 7515 §4.1.6): standard base64 DER certificates, end-entity
+    /// first. Signing-side only and ignored by the serializer, so a decoded header keeps its <c>x5c</c>, whatever its
+    /// shape, in <see cref="AdditionalMembers"/> exactly as before issue #46, and the parse paths that do not use the
+    /// X.509 mechanism accept the same headers they always did.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<string>? X5c { get; set; }
+
     [JsonExtensionData]
     public IDictionary<string, JsonElement>? AdditionalMembers { get; set; }
 
@@ -46,6 +55,11 @@ internal sealed class JwsProtectedHeader
         // Drop the empty-string kid sentinel so headers built without a kid serialize without one.
         if (node.TryGetPropertyValue("kid", out var kidNode) && kidNode?.GetValue<string>() is "")
             node.Remove("kid");
+        if (X5c is not null)
+        {
+            // The explicit JsonNode casts select the non-generic JsonArray constructor: the generic paths reflect.
+            node["x5c"] = new JsonArray(X5c.Select(certificate => (JsonNode?)JsonValue.Create(certificate)).ToArray());
+        }
         var bytes = DeterministicJsonWriter.WriteUtf8(node);
         return Base64Url.Encode(bytes);
     }

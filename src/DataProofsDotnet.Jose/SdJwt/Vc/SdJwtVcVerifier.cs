@@ -18,7 +18,8 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// <remarks>
 /// Not done here, and left to the caller: checking <c>status</c> (§2.4 says a Verifier SHOULD), and the
 /// Issuer key discovery and validation policy of §2.5, which the <c>resolveIssuerPublicJwk</c> callback
-/// stands for. Nor does Type Metadata establish trust or authorization (§7.7, §7.8): a type that extends a
+/// stands for, or, for the Inline X.509 Certificates mechanism, the chain validation hook of
+/// <see cref="VerifyWithCertificateChainAsync"/>. The caller chooses the mechanism by the method it calls. Nor does Type Metadata establish trust or authorization (§7.7, §7.8): a type that extends a
 /// known type gives its issuer no authority to issue it.
 /// </remarks>
 public static class SdJwtVcVerifier
@@ -47,7 +48,7 @@ public static class SdJwtVcVerifier
         ArgumentException.ThrowIfNullOrEmpty(presentation);
         ArgumentNullException.ThrowIfNull(resolveIssuerPublicJwk);
 
-        var verified = VerifyProfile(presentation, resolveIssuerPublicJwk, options, cryptoProvider);
+        var verified = VerifyProfile(presentation, SdJwtVerifier.IssuerKeySource.ByKid(resolveIssuerPublicJwk), options, cryptoProvider);
         if (verified.Failure is { } failure)
             return failure;
 
@@ -100,10 +101,86 @@ public static class SdJwtVcVerifier
         ArgumentNullException.ThrowIfNull(resolveIssuerPublicJwk);
         ArgumentNullException.ThrowIfNull(typeMetadata);
 
-        var verified = VerifyProfile(presentation, resolveIssuerPublicJwk, options, cryptoProvider);
+        var verified = VerifyProfile(presentation, SdJwtVerifier.IssuerKeySource.ByKid(resolveIssuerPublicJwk), options, cryptoProvider);
         if (verified.Failure is { } failure)
             return failure;
 
+        return await ProcessTypeMetadataAsync(verified, typeMetadata, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Verify a presented SD-JWT VC with the Issuer's key taken from the <c>x5c</c> header parameter of the Issuer-signed
+    /// JWT: the Inline X.509 Certificates mechanism of draft-ietf-oauth-sd-jwt-vc-27 §2.5, chosen by calling this method,
+    /// never by what the presentation carries (§7.3). The Issuer signature is verified with the end-entity certificate's
+    /// key, then <paramref name="validateIssuerCertificateChain"/> must return <c>true</c> for the chain, then every
+    /// profile rule of <see cref="VerifyAsync"/> applies, and, when <paramref name="typeMetadata"/> is supplied, Type
+    /// Metadata is processed as <see cref="VerifyWithTypeMetadataAsync"/> processes it. No <c>kid</c> resolver is consulted.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The hook is the trust decision, and the library makes none.</b> §2.5: the recipient "validates the X.509
+    /// certificate chain according to Section 4.1.6 of [RFC7515] and [RFC5280] against a trust anchor permitted for the
+    /// Issuer according to policy (a certificate in the x5c header parameter is not a trust anchor merely because it is
+    /// included there)". Return <c>true</c> only when that holds: for example with <c>X509Chain</c> in
+    /// <c>CustomRootTrust</c> mode, your anchors in <c>CustomTrustStore</c> and the <c>x5c</c> certificates in
+    /// <c>ExtraStore</c> only. The library checks no certificate signature, validity period, key usage, chain order,
+    /// revocation or anchor (see <see cref="X509CertificateChain"/>). An exception from the hook propagates unchanged.
+    /// </para>
+    /// <para>
+    /// Under this mechanism the Issuer is the subject of the end-entity certificate in
+    /// <see cref="SdJwtVcVerificationResult.IssuerCertificateChain"/>. An <c>iss</c> claim in the payload is not
+    /// authenticated by it (§2.5): bind it to the certificate yourself, for example through a Subject Alternative Name,
+    /// before treating it as the Issuer, or ignore it. A <c>kid</c> in the header is likewise not used.
+    /// </para>
+    /// <para>
+    /// Failures are coded: those of <see cref="VerifyAsync"/> and <see cref="VerifyWithTypeMetadataAsync"/>, with
+    /// <c>X5C_MISSING</c>, <c>X5C_MALFORMED</c>, <c>X5C_UNSUPPORTED_KEY</c> and <c>X5C_UNTRUSTED</c> (the hook returned
+    /// <c>false</c>) in place of the <c>kid</c> resolver's <c>ISSUER_KEY_UNRESOLVED</c>; a signature that does not verify
+    /// under the end-entity key is <c>ISSUER_SIGNATURE_INVALID</c>. Type Metadata is retrieved only after the hook
+    /// accepted the chain and every profile rule passed. A cancellation of <paramref name="cancellationToken"/> propagates.
+    /// </para>
+    /// </remarks>
+    /// <param name="presentation">The presented SD-JWT VC (issuer JWT, disclosures, optional KB-JWT).</param>
+    /// <param name="validateIssuerCertificateChain">
+    /// The caller's chain validation: <c>true</c> when the chain is valid (RFC 5280) to an anchor permitted for this
+    /// Issuer. Called once, after the Issuer signature verified under the chain's end-entity key.
+    /// </param>
+    /// <param name="options">SD-JWT verification/Key-Binding policy; <c>null</c> uses the defaults.</param>
+    /// <param name="typeMetadata">
+    /// Type Metadata processing options; <c>null</c> (the default) retrieves and processes no Type Metadata. When
+    /// supplied, processing is required, as for <see cref="VerifyWithTypeMetadataAsync"/>.
+    /// </param>
+    /// <param name="cryptoProvider">The crypto provider; <c>null</c> uses a fresh <see cref="JoseCryptoProvider"/>.</param>
+    /// <param name="cancellationToken">Cancels Type Metadata retrieval.</param>
+    public static async Task<SdJwtVcVerificationResult> VerifyWithCertificateChainAsync(
+        string presentation,
+        Func<X509CertificateChain, bool> validateIssuerCertificateChain,
+        SdJwtVerificationOptions? options = null,
+        TypeMetadataProcessingOptions? typeMetadata = null,
+        IJoseCryptoProvider? cryptoProvider = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(presentation);
+        ArgumentNullException.ThrowIfNull(validateIssuerCertificateChain);
+
+        var verified = VerifyProfile(
+            presentation, SdJwtVerifier.IssuerKeySource.ByCertificateChain(validateIssuerCertificateChain), options, cryptoProvider);
+        if (verified.Failure is { } failure)
+            return failure;
+
+        if (typeMetadata is null)
+        {
+            return SdJwtVcVerificationResult.Success(
+                verified.Disclosed!, verified.Vct!, null, verified.KeyBindingVerified, verified.IssuerCertificateChain);
+        }
+
+        return await ProcessTypeMetadataAsync(verified, typeMetadata, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Type Metadata processing (§5.7) over a presentation that passed <see cref="VerifyProfile"/>.</summary>
+    private static async Task<SdJwtVcVerificationResult> ProcessTypeMetadataAsync(
+        Verified verified, TypeMetadataProcessingOptions typeMetadata, CancellationToken cancellationToken)
+    {
         // The reconstruction step 2 ran, repeated with a trace of where each claim came from: the positions claim
         // metadata is judged on (§5.6). Same inputs, so it succeeds as it did there.
         var trace = new ReconstructionTrace();
@@ -118,7 +195,8 @@ public static class SdJwtVcVerifier
             return SdJwtVcVerificationResult.Failure(error);
 
         return SdJwtVcVerificationResult.Success(
-            verified.Disclosed!, verified.Vct!, outcome.LeafDocument!, outcome.Metadata!, verified.KeyBindingVerified);
+            verified.Disclosed!, verified.Vct!, outcome.LeafDocument!, outcome.Metadata!, verified.KeyBindingVerified,
+            verified.IssuerCertificateChain);
     }
 
     /// <summary>What the profile verification established, or the failure that stopped it.</summary>
@@ -128,12 +206,13 @@ public static class SdJwtVcVerifier
         CompactJwt? IssuerJwt = null,
         JsonObject? Disclosed = null,
         string? Vct = null,
-        bool KeyBindingVerified = false);
+        bool KeyBindingVerified = false,
+        X509CertificateChain? IssuerCertificateChain = null);
 
     /// <summary>Steps 1 to 5: the media type, the generic SD-JWT verification and the profile's claim rules.</summary>
     private static Verified VerifyProfile(
         string presentation,
-        Func<string, Jwk?> resolveIssuerPublicJwk,
+        SdJwtVerifier.IssuerKeySource issuerKey,
         SdJwtVerificationOptions? options,
         IJoseCryptoProvider? cryptoProvider)
     {
@@ -163,7 +242,7 @@ public static class SdJwtVcVerifier
         }
 
         // 2. Generic SD-JWT verification (signature, reconstruction, KB-JWT).
-        var inner = SdJwtVerifier.Verify(presentation, resolveIssuerPublicJwk, options, cryptoProvider);
+        var inner = SdJwtVerifier.VerifyCore(presentation, issuerKey, options, cryptoProvider);
         if (!inner.IsValid || inner.DisclosedPayload is not { } disclosed)
             return new(SdJwtVcVerificationResult.Failure(inner.Errors.Count > 0 ? inner.Errors : ["VERIFICATION_FAILED"]));
 
@@ -200,6 +279,6 @@ public static class SdJwtVcVerifier
                 $"VC_AKA_VCTS_INVALID: SD-JWT VC claim 'aka_vcts' {akaVctsViolation} ({SdJwtVcConstants.Revision} §2.2.2.2)."));
         }
 
-        return new(null, components, issuerJwt, disclosed, vct, inner.KeyBindingVerified);
+        return new(null, components, issuerJwt, disclosed, vct, inner.KeyBindingVerified, inner.IssuerCertificateChain);
     }
 }

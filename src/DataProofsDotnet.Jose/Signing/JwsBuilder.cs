@@ -130,6 +130,9 @@ public static class JwsBuilder
             // parameter-name sets to be disjoint, and strict verifiers enforce it (issue #17).
             Kid = unprotectedKid is null ? signer.Kid ?? string.Empty : string.Empty,
             Typ = typ,
+            // x5c always rides in the protected header: draft-ietf-oauth-sd-jwt-vc-27 §2.5 reads it only there,
+            // and an unprotected chain would let an intermediary swap the certificates (issue #46).
+            X5c = signer.CertificateChain?.ToHeaderValue(),
         };
         var protectedB64u = header.EncodeBase64Url();
         var signingInput = Encoding.ASCII.GetBytes(protectedB64u + "." + payloadB64u);

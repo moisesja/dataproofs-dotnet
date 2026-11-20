@@ -81,6 +81,80 @@ public static class JwsParser
         IJoseCryptoProvider cryptoProvider)
         => ParseCompactCore(compact, Base64Url.Encode(detachedPayload), resolveSignerPublicJwk, cryptoProvider);
 
+    /// <summary>
+    /// Parse and verify a compact JWS whose key comes from its <c>x5c</c> header parameter (RFC 7515 §4.1.6): the
+    /// X.509 mechanism, chosen by calling this method. The signature is verified with the end-entity certificate's
+    /// key (<c>x5c[0]</c>), and only then is the chain handed to <paramref name="validateCertificateChain"/>, which
+    /// must return <c>true</c> for the JWS to verify. No <c>kid</c> resolver is consulted.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The hook is the trust decision, and the library makes none.</b> RFC 7515 §4.1.6 requires the recipient to
+    /// validate the chain per RFC 5280, and a certificate in <c>x5c</c> is not a trust anchor because it is there
+    /// (draft-ietf-oauth-sd-jwt-vc-27 §2.5). Return <c>true</c> only when the chain validates to an anchor your
+    /// policy permits for this signer: for example with <c>X509Chain</c> in <c>CustomRootTrust</c> mode, your
+    /// anchors in <c>CustomTrustStore</c> and the <c>x5c</c> certificates in <c>ExtraStore</c> only. The library
+    /// checks no certificate signature, validity period, key usage, chain order, revocation or anchor (see
+    /// <see cref="X509CertificateChain"/>). An exception from the hook propagates unchanged.
+    /// </para>
+    /// <para>
+    /// <c>x5c</c> is read from the protected header, the only header compact serialization has. A <c>kid</c> there
+    /// did not select the key and nothing binds it to the certificate, so it is not reported:
+    /// <see cref="JwsParseResult.SignerKid"/> is empty and <see cref="JwsParseResult.SignerKidIsProtected"/> is
+    /// <c>false</c>. The signer is identified by the end-entity certificate in
+    /// <see cref="JwsParseResult.CertificateChain"/>. The <c>alg</c> must be the one the end-entity key's curve
+    /// produces, as for every key this parser uses.
+    /// </para>
+    /// </remarks>
+    /// <param name="compact">The compact JWS string.</param>
+    /// <param name="validateCertificateChain">
+    /// The caller's chain validation: <c>true</c> when the chain is valid (RFC 5280) to an anchor permitted for this
+    /// signer. Called once, after the signature verified under the chain's end-entity key.
+    /// </param>
+    /// <param name="cryptoProvider">Crypto provider used to verify.</param>
+    /// <exception cref="MalformedJoseException">
+    /// When the JWS is structurally invalid, or its <c>x5c</c> is not an array of base64 DER certificates: the message
+    /// then starts with <c>X5C_MALFORMED</c>.
+    /// </exception>
+    /// <exception cref="JoseCryptoException">
+    /// When the protected header has no <c>x5c</c> (<c>X5C_MISSING</c>), the end-entity key is of a type no supported
+    /// algorithm uses (<c>X5C_UNSUPPORTED_KEY</c>), the signature does not verify under the end-entity key, or the hook
+    /// returned <c>false</c> (<c>X5C_UNTRUSTED</c>).
+    /// </exception>
+    public static JwsParseResult ParseCompactWithCertificateChain(
+        string compact,
+        Func<X509CertificateChain, bool> validateCertificateChain,
+        IJoseCryptoProvider cryptoProvider)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(compact);
+        ArgumentNullException.ThrowIfNull(validateCertificateChain);
+        ArgumentNullException.ThrowIfNull(cryptoProvider);
+
+        var (payloadB64u, signature) = DecodeCompact(compact, detachedPayload: null);
+
+        var outcome = X509CertificateChain.FromHeader(signature.ProtectedHeader.AdditionalMembers);
+        if (outcome.Chain is not { } chain)
+        {
+            throw outcome.Code == X509CertificateChain.MalformedCode
+                ? new MalformedJoseException(outcome.Message)
+                : new JoseCryptoException(outcome.Message);
+        }
+
+        // The key is always the end-entity certificate's, built here from the chain's own copy: never a key the hook
+        // or the caller supplies. The kid plays no part in selecting it.
+        var (keyType, publicKey) = chain.EndEntityKey;
+        var endEntityKey = JwkConversion.ToPublicJwk(keyType, publicKey);
+        var verified = VerifySignatures(payloadB64u, [signature], _ => endEntityKey, cryptoProvider);
+
+        if (!validateCertificateChain(chain))
+        {
+            throw new JoseCryptoException(
+                $"{X509CertificateChain.UntrustedCode}: the certificate chain validation hook did not accept the 'x5c' chain.");
+        }
+
+        return verified with { SignerKid = string.Empty, SignerKidIsProtected = false, CertificateChain = chain };
+    }
+
     private static JwsParseResult ParseCompactCore(
         string compact,
         string? detachedPayload,
@@ -91,6 +165,13 @@ public static class JwsParser
         ArgumentNullException.ThrowIfNull(resolveSignerPublicJwk);
         ArgumentNullException.ThrowIfNull(cryptoProvider);
 
+        var (payloadB64u, signature) = DecodeCompact(compact, detachedPayload);
+        return VerifySignatures(payloadB64u, [signature], resolveSignerPublicJwk, cryptoProvider);
+    }
+
+    /// <summary>Split and decode a compact JWS: the payload segment to verify over, and its one signature.</summary>
+    private static (string PayloadB64u, RawSignature Signature) DecodeCompact(string compact, string? detachedPayload)
+    {
         var segments = compact.Split('.');
         if (segments.Length != 3)
             throw new MalformedJoseException($"Compact JWS must have exactly 3 dot-separated segments; got {segments.Length}.");
@@ -118,11 +199,7 @@ public static class JwsParser
         var kid = protectedHeader.Kid;
         var signature = DecodeSignature(segments[2]);
 
-        return VerifySignatures(
-            payloadB64u,
-            [new RawSignature(protectedB64u, protectedHeader, kid, signature)],
-            resolveSignerPublicJwk,
-            cryptoProvider);
+        return (payloadB64u, new RawSignature(protectedB64u, protectedHeader, kid, signature));
     }
 
     private static JwsParseResult ParseJsonCore(
@@ -451,8 +528,9 @@ public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid,
     /// <para>
     /// <c>true</c> whenever the protected header carried a <c>kid</c> member — including a valid
     /// empty-string value, which RFC 7515 §4.1.4 permits (it requires a string, not a non-empty
-    /// one). <c>false</c> means the kid was read from the per-signature unprotected header, or that
-    /// neither header carried one (<see cref="SignerKid"/> is then empty). Both placements are
+    /// one). <c>false</c> means the kid was read from the per-signature unprotected header, that
+    /// neither header carried one, or that the key came from <c>x5c</c> rather than a kid
+    /// (<see cref="CertificateChain"/> is then set); <see cref="SignerKid"/> is empty in the last two cases. Both placements are
     /// §4.1.4-conformant; DIDComm v2.1 states no placement rule, but its Appendix C.2 examples and
     /// both reference implementations use the unprotected one, which is what
     /// <see cref="JwsKidPlacement.Auto"/> emits for that media type.
@@ -483,4 +561,16 @@ public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid,
     /// </para>
     /// </remarks>
     public bool SignerKidIsProtected { get; init; }
+
+    /// <summary>
+    /// The <c>x5c</c> certificate chain whose end-entity key verified the signature, when the JWS was verified by
+    /// <see cref="JwsParser.ParseCompactWithCertificateChain"/>; <c>null</c> on every <c>kid</c>-resolver path, which
+    /// never reads <c>x5c</c>.
+    /// </summary>
+    /// <remarks>
+    /// When set, the caller's hook accepted this exact chain, and the signer is the subject of
+    /// <see cref="X509CertificateChain.EndEntityCertificate"/>; <see cref="SignerKid"/> is then empty, because no
+    /// <c>kid</c> selected the key.
+    /// </remarks>
+    public X509CertificateChain? CertificateChain { get; init; }
 }
