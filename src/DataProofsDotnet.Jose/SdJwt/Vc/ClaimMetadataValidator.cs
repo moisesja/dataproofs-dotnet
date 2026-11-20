@@ -18,18 +18,20 @@ internal static class ClaimMetadataValidator
     private readonly record struct Selected(JsonNode? Node, ReconstructionTrace.Origin Origin);
 
     /// <summary>
-    /// The most path selections one validation makes, summed over every claim metadata entry and path component. The
-    /// work is claims times the elements each path selects, so a large issuer-signed credential and a large document,
-    /// each within its own bound, could otherwise take tens of seconds (a 27,000-leaf credential against 27,000 claims
-    /// took 22 s). Figure 30 against its credential makes about thirty, so the bound leaves a wide margin while keeping
-    /// the worst case near a second on a slow host; a credential past it is refused, since processing that is required
-    /// and cannot complete rejects (-27 §5.7).
+    /// The most path evaluation steps one validation takes, summed over every claim metadata entry, pass and path
+    /// component: each element a component is applied to, and each element it selects. Every step is constant work (a
+    /// member lookup or an index into a list built once per array), so this bounds the whole validation. The work is
+    /// claims times the elements each path reaches, so a large issuer-signed credential and a large document, each
+    /// within its own bound, could otherwise take tens of seconds (a 27,000-leaf credential against 27,000 claims took
+    /// 22 s). Figure 30 against its credential takes about a hundred steps, so the bound leaves a wide margin while
+    /// keeping the worst case near a second on a slow host; a credential past it is refused, since processing that is
+    /// required and cannot complete rejects (-27 §5.7).
     /// </summary>
-    internal const int SelectionBudget = 1_000_000;
+    internal const int StepBudget = 1_000_000;
 
     private sealed class Budget
     {
-        public int Remaining { get; set; } = SelectionBudget;
+        public int Remaining { get; set; } = StepBudget;
     }
 
     /// <summary>Validates <paramref name="root"/>; returns <c>null</c> when every claim metadata entry holds.</summary>
@@ -44,8 +46,10 @@ internal static class ClaimMetadataValidator
     /// whatever that Verifier would, and once on the complete Unsecured Payload (§5.6: "Whether a mandatory claim was
     /// included can be determined by a Holder that has all Disclosures by evaluating the path against the complete
     /// Unsecured Payload"), where array decoys are not elements, so a decoy cannot stand in for a mandatory element.
-    /// The second pass reports only a missing mandatory claim: its indices skip the decoys, so its path errors and
-    /// <c>sd</c> findings would be about other elements than the ones -27 numbers "as issued".
+    /// The second pass runs only for a mandatory claim and reports only its absence: its indices skip the decoys, so its
+    /// path errors and <c>sd</c> findings would be about other elements than the ones -27 numbers "as issued". A branch
+    /// that meets such a shape error is dropped and the others are still evaluated, so the error cannot hide an absence
+    /// another branch proved.
     /// </param>
     public static string? Validate(JsonObject root, ReconstructionTrace trace, IReadOnlyList<ClaimMetadata> claims, bool allDisclosuresPresent)
     {
@@ -54,7 +58,8 @@ internal static class ClaimMetadataValidator
         {
             if (ValidateOne(root, trace, claim, allDisclosuresPresent, complete: false, budget) is { } violation)
                 return violation;
-            if (allDisclosuresPresent && ValidateOne(root, trace, claim, allDisclosuresPresent, complete: true, budget) is { } incomplete)
+            if (allDisclosuresPresent && claim.Mandatory
+                && ValidateOne(root, trace, claim, allDisclosuresPresent, complete: true, budget) is { } incomplete)
                 return incomplete;
         }
         return null;
@@ -63,7 +68,8 @@ internal static class ClaimMetadataValidator
     private static string? ValidateOne(
         JsonObject root, ReconstructionTrace trace, ClaimMetadata claim, bool allDisclosuresPresent, bool complete, Budget budget)
     {
-        var path = ClaimPathComponent.Format(claim.Path);
+        // Formatted only for a finding: a claim that holds costs no string.
+        string Path() => ClaimPathComponent.Format(claim.Path);
         List<Selected> selection = [new(root, ReconstructionTrace.Origin.Clear)];
         var absent = false;
 
@@ -81,7 +87,13 @@ internal static class ClaimMetadataValidator
                 if (component.Key is { } key)
                 {
                     if (selected.Node is not JsonObject obj)
-                        return complete ? null : PathError(path, step, "an object");
+                    {
+                        // In the complete view the indices are shifted, so the shape is not -27's error: drop this
+                        // branch and keep evaluating the others, whose absence findings stand.
+                        if (complete)
+                            continue;
+                        return PathError(Path(), step, "an object");
+                    }
 
                     if (obj.TryGetPropertyValue(key, out var value))
                     {
@@ -101,11 +113,32 @@ internal static class ClaimMetadataValidator
                 else
                 {
                     if (selected.Node is not JsonArray array)
-                        return complete ? null : PathError(path, step, "an array");
+                    {
+                        if (complete)
+                            continue;
+                        return PathError(Path(), step, "an array");
+                    }
 
-                    var asIssued = complete
-                        ? [.. trace.AsIssued(array).Where(e => e.Origin != ReconstructionTrace.Origin.Undisclosed)]
-                        : trace.AsIssued(array);
+                    if (complete)
+                    {
+                        // The complete Unsecured Payload's array is the processed one: at issuance every placeholder no
+                        // Disclosure resolved is a decoy, and the reconstruction already left them out.
+                        if (component.Index is { } completeIndex)
+                        {
+                            if (completeIndex < array.Count)
+                                next.Add(new(array[completeIndex], ReconstructionTrace.Origin.Clear));
+                            else
+                                absent = true;
+                        }
+                        else
+                        {
+                            foreach (var element in array)
+                                next.Add(new(element, ReconstructionTrace.Origin.Clear));
+                        }
+                        continue;
+                    }
+
+                    var asIssued = trace.AsIssued(array);
                     if (component.Index is { } index)
                     {
                         if (index < asIssued.Count)
@@ -120,15 +153,15 @@ internal static class ClaimMetadataValidator
                     }
                 }
             }
-            budget.Remaining -= next.Count;
+            budget.Remaining -= selection.Count + next.Count;
             if (budget.Remaining < 0)
-                return $"VC_CLAIM_METADATA_INVALID: evaluating the claim metadata against this credential selects more than {SelectionBudget} "
-                    + $"elements, so it cannot be processed ({Revision} §5.7).";
+                return $"VC_CLAIM_METADATA_INVALID: evaluating the claim metadata against this credential takes more than {StepBudget} "
+                    + $"path steps, so it cannot be processed ({Revision} §5.7).";
             selection = next;
         }
 
         if (claim.Mandatory && absent)
-            return $"VC_CLAIM_MANDATORY_MISSING: the mandatory claim {path} was not included in the issued credential ({Revision} §5.6, §5.6.3).";
+            return $"VC_CLAIM_MANDATORY_MISSING: the mandatory claim {Path()} was not included in the issued credential ({Revision} §5.6, §5.6.3).";
         if (complete)
             return null;
 
@@ -136,9 +169,9 @@ internal static class ClaimMetadataValidator
         {
             var disclosable = selected.Origin != ReconstructionTrace.Origin.Clear;
             if (claim.SelectiveDisclosure == ClaimSelectiveDisclosure.Always && !disclosable)
-                return $"VC_CLAIM_SD_VIOLATION: the claim at {path} must be selectively disclosable (sd: always) but is in the clear ({Revision} §5.6, §5.6.4).";
+                return $"VC_CLAIM_SD_VIOLATION: the claim at {Path()} must be selectively disclosable (sd: always) but is in the clear ({Revision} §5.6, §5.6.4).";
             if (claim.SelectiveDisclosure == ClaimSelectiveDisclosure.Never && disclosable)
-                return $"VC_CLAIM_SD_VIOLATION: the claim at {path} must not be selectively disclosable (sd: never) but is a Disclosure ({Revision} §5.6, §5.6.4).";
+                return $"VC_CLAIM_SD_VIOLATION: the claim at {Path()} must not be selectively disclosable (sd: never) but is a Disclosure ({Revision} §5.6, §5.6.4).";
         }
 
         return null;
