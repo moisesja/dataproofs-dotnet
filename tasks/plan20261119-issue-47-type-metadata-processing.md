@@ -292,9 +292,9 @@ findings, all linear but with large constants, and two observations:
   10,400 expressions allocated 28× its size.
 
 Fixed in `2c0e067`: documents are read through `JsonElement` and no tree is built; the 10,000-entry bound is charged
-from parsed array lengths before anything is read; the result keeps octets and parses on access; the canonical key is
-length-prefixed; messages echo bounded text; the integrity check allocates nothing per expression. F3 stays capped by
-the work bound (about 28 MB worst). The tests: `A_document_of_dense_path_components_is_refused_before_it_is_built`,
+before anything is built; the result keeps octets and parses on access; the canonical key is length-prefixed; messages
+echo bounded text; the integrity check allocates nothing per expression. F3 in `c16e9bf`: the validation reuses two
+selection lists, so its memory is the largest single selection (16 MB → under 256 KB for the F3 shape). The tests: `A_document_of_dense_path_components_is_refused_before_it_is_built`,
 `Display_and_template_arrays_count_against_the_entry_bound` (three arrays), `Error_messages_repeat_a_bounded_part_of_a_document_value`
 (four codes), `An_integrity_value_with_many_expressions_is_checked_without_allocating_per_expression`,
 `The_result_keeps_octets_and_hands_out_documents_the_caller_owns`,
@@ -302,4 +302,15 @@ the work bound (about 28 MB worst). The tests: `A_document_of_dense_path_compone
 (the review-1 10,000-index case and the pass-1 large-claims case now assert the refusal past the bound and success
 within it). Twelve fail on `fa34704`.
 
-PASS4_PLACEHOLDER
+**Verification pass 4** (the same agent, over `2c0e067`, with the updated inventory). F1 and F2 fixed: the dense
+9-document chain is refused in 31 ms with 2.1 MB allocated and 544 B retained (was 934 MB / 519 MB); the path error
+is 329 characters (was 6.29 million). Within the bounds the worst it reached was 0.42 s of CPU and 40 MB allocated
+(4.4×) for 9 documents of entries with long labels; 1 MiB `name`/`description` per document 4×; root and claim
+objects full of escaped unknown members 2.6–3.3×; 62-deep junk arrays 2×; `vct#integrity` with 20,000 expressions
+1.1× of plain `VerifyAsync`. Old and new `Check` agree on 200,000 generated integrity values. 58 odd documents gave a
+structured result on both entry points. Two findings: F3 still unaddressed at `2c0e067` (fixed in `c16e9bf`), and the
+entry bound charging display arrays by length, so 10,001 numbers in a display array refused the credential against
+-21 (fixed in `a650249`: display and template entries are charged as each object is read; non-objects are skipped
+unbuilt). Documented by design: a chain over 10,000 entries is refused, every document in the chain counts, and
+`Documents` parses all documents on each access (13× for a deep-junk chain, 0.4 s), which the XML docs tell the caller
+to read once. Tests for the last two fixes fail on `2c0e067` / `c16e9bf` respectively.
