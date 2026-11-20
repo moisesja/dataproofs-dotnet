@@ -193,7 +193,7 @@ Error codes (stable prefixes, as the existing `VC_*` ones): `VC_TYPE_METADATA_UN
   and a decoy cannot stand in for a mandatory element. Pass 2 showed the complete view also judged `sd` and path
   errors at indices the decoys had shifted, refusing credentials the verifier accepts; it now reports only a missing
   mandatory claim, which is what §5.6 ties to "the complete Unsecured Payload".
-- New: a fixed selection budget (4,000,000 path selections per validation). The two size bounds do not bound the work,
+- New: a fixed selection budget (1,000,000 path selections per validation; first 4,000,000, lowered when the Windows CI runner took 11 s for about 7.5 million selections). The two size bounds do not bound the work,
   which is claims times selected elements (pass 2: 22 s for a 27,000-leaf credential against 27,000 claims). A fixed
   internal bound, like the reconstruction's depth 64, rather than another option.
 

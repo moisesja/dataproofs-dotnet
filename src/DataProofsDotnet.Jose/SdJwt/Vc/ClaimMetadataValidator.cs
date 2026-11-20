@@ -21,10 +21,11 @@ internal static class ClaimMetadataValidator
     /// The most path selections one validation makes, summed over every claim metadata entry and path component. The
     /// work is claims times the elements each path selects, so a large issuer-signed credential and a large document,
     /// each within its own bound, could otherwise take tens of seconds (a 27,000-leaf credential against 27,000 claims
-    /// took 22 s). Figure 30 against its credential makes about thirty; a credential past this bound is refused, since
-    /// processing that is required and cannot complete rejects (-27 §5.7).
+    /// took 22 s). Figure 30 against its credential makes about thirty, so the bound leaves a wide margin while keeping
+    /// the worst case near a second on a slow host; a credential past it is refused, since processing that is required
+    /// and cannot complete rejects (-27 §5.7).
     /// </summary>
-    internal const int SelectionBudget = 4_000_000;
+    internal const int SelectionBudget = 1_000_000;
 
     private sealed class Budget
     {
