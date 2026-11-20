@@ -170,15 +170,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     exception from the hook propagates, as one from a `kid` resolver does.
   - *What a well-formed `x5c` is.* A JSON array of 1 to `X509CertificateChain.MaxCertificates` (10) strings, each
     canonical base64 (no base64url, no whitespace, padding required), each exactly one DER certificate whose
-    `TBSCertificate` fields are in RFC 5280 order, no two identical. Every TLV of the certificate is read under DER
-    rules: each Name down to its attribute values (RDNs non-empty, in DER order), each algorithm's parameters, and
-    each extension with the DER value in its `extnValue`, no extension twice (RFC 5280 §4.2). Inside the values the
-    schema leaves open, nested TLVs are read to a depth of 32 with DER's content rules for BOOLEAN, INTEGER,
-    ENUMERATED, BIT STRING, NULL, OBJECT IDENTIFIER and the time types. Not interpreted: the bytes of strings and
-    OCTET STRINGs (character sets are type constraints, not encoding rules), and the contents of the signature and
-    public-key BIT STRINGs, except the end-entity key. Two DEFAULT values encoded explicitly, which DER would omit (an
-    explicit v1 version, an explicit critical `FALSE`), are tolerated, as certificate parsers generally do. The
-    vendored RFC 7515 Appendix B chain and all 128 roots of the macOS trust bundle parse. The end-entity key must be Ed25519, P-256, P-384 or secp256k1, with the
+    `TBSCertificate` fields are in RFC 5280 order, no two identical. Where RFC 5280
+    gives the schema, the certificate is read under DER rules field by field: each Name down to its attribute values
+    (each RDN a non-empty SET OF in DER order), each AlgorithmIdentifier, and each extension, whose `extnValue` must
+    hold exactly one DER TLV, no extension twice (RFC 5280 §4.2). Where the schema is open (attribute values, algorithm
+    parameters, extension values), every nested TLV is read to a depth of 32, but only against the DER rules that hold
+    whatever the schema: minimal lengths and tags; primitive encodings for the universal types DER always encodes
+    primitively (BOOLEAN, INTEGER, the strings, OCTET STRING, NULL, OID, the time types and others), constructed ones
+    for SEQUENCE, SET, EXTERNAL, EMBEDDED PDV and CHARACTER STRING; and DER's content rules for BOOLEAN, INTEGER,
+    ENUMERATED, BIT STRING unused bits, NULL, OBJECT IDENTIFIER, UTCTime and GeneralizedTime. Without the schema, the
+    order of a SET's elements (a SET is ordered by tag, a SET OF by octets), DEFAULT omission and a named bit list's
+    trailing zeros cannot be judged, and are not. Not interpreted: the bytes of strings, OCTET STRINGs and REALs
+    (character sets are type constraints, not encoding rules), and the contents of the signature and public-key BIT
+    STRINGs, except the end-entity key. Tolerated where the schema is known: an explicit v1 version, an explicit
+    critical `FALSE` and Key Usage trailing zero bits, which DER would omit, as certificate parsers generally do. No
+    false rejects were found: the vendored RFC 7515 Appendix B chain parses, and so do certificates the platform
+    validates carrying certificatePolicies (EV, ETSI qualified), eIDAS qcStatements, a Certificate Transparency SCT
+    list, AIA, CRL distribution points, every subjectAltName form .NET builds, EKU, SKI and AKI, as does a schema-unknown
+    SET in tag order; locally, 349 distinct real certificates (the macOS trust bundle and keychains, NuGet signing
+    chains) parse, none `X5C_MALFORMED`. The end-entity key must be Ed25519, P-256, P-384 or secp256k1, with the
     `alg` that key's curve produces; RSA, Ed448, other algorithms and other named curves (P-521 among them) are
     `X5C_UNSUPPORTED_KEY`, and an EC key whose parameters are not a named curve is `X5C_MALFORMED`.
     `X509CertificateChain.Create` throws `MalformedJoseException` for `X5C_MALFORMED` and `NotSupportedException`
