@@ -1135,8 +1135,8 @@ public sealed class Issue47TypeMetadataProcessingTests
     public async Task Claim_metadata_evaluation_is_bounded()
     {
         // Adversarial pass 2: the work is claims times the elements each path reaches; a 27,000-leaf credential against
-        // 27,000 claims took 22 s. Here 5,000 elements: each claim ["a", null, "kN"] takes about 10,000 path steps (the
-        // array's 5,000 elements selected, then each tried for its key), so 90 claims pass and 300 are refused at the
+        // 27,000 claims took 22 s. Here 5,000 elements: each claim ["a", null, "kN"] takes about 10,000 units of work (the
+        // array's 5,000 elements selected, then each tried for its short key at one unit), so 90 claims pass and 300 are refused at the
         // bound. Deterministic: the refusal is asserted, not a duration.
         var elements = new JsonArray();
         for (var i = 0; i < 5_000; i++)
@@ -1154,7 +1154,7 @@ public sealed class Issue47TypeMetadataProcessingTests
         var refused = await Verify(presentation, Options((Vct, Document(300))));
 
         ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
-        refused.Errors.Single().Should().Contain("takes more than 1000000 path steps");
+        refused.Errors.Single().Should().Contain("takes more than 1000000 units of work");
     }
 
     // ------------------------------------------------------------------ PR #55 review (comment 7030160237)
@@ -1259,6 +1259,58 @@ public sealed class Issue47TypeMetadataProcessingTests
             new JsonObject { ["vct"] = Vct, ["a"] = rows }, new DisclosureFrame(), Issuer.Signer, Options((Vct, metadata)));
 
         await act.Should().NotThrowAsync();
+    }
+
+    // ------------------------------------------------------------------ PR #55 review 2 (review 5987613088)
+
+    private static JsonObject ManyObjects(int count)
+    {
+        var elements = new JsonArray();
+        for (var i = 0; i < count; i++)
+            elements.Add((JsonNode)new JsonObject { ["x"] = 0 });
+        return new JsonObject { ["vct"] = Vct, ["a"] = elements };
+    }
+
+    private static byte[] OneKeyPath(string key) => Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("a", null, key)))));
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_long_path_key_over_a_wildcard_is_charged_for_its_length(bool issuance)
+    {
+        // Review 2: each key lookup hashes the whole key, so one optional claim ["a", null, K] with a 900,000-character K
+        // over 80,000 objects took 14.2 s while 160,003 steps were charged. A lookup now costs a step per 32 characters,
+        // charged before it runs: 2,000 objects with a 900,000-character key need about 56 million, refused at the
+        // bound. The same claim with a short key costs about 6,000 and passes. Deterministic: a refusal, not a duration.
+        var claims = ManyObjects(2_000);
+        var longKey = OneKeyPath(new string('z', 900_000));
+        var shortKey = OneKeyPath("zzzzzzzzzz");
+
+        if (issuance)
+        {
+            await SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, shortKey)));
+            var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, longKey)));
+            (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_CLAIM_METADATA_INVALID:");
+            return;
+        }
+
+        var presentation = (await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer)).Issuance;
+        ShouldPass(await Verify(presentation, Options((Vct, shortKey))));
+        var refused = await Verify(presentation, Options((Vct, longKey)));
+        ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
+        refused.Errors.Single().Should().Contain("units of work");
+    }
+
+    [Fact]
+    public void A_key_lookup_is_charged_before_it_runs()
+    {
+        // One lookup whose key alone exceeds the bound is refused without being performed.
+        var trace = new ReconstructionTrace();
+        var root = SdJwtReconstructor.Reconstruct(new JsonObject { ["vct"] = Vct, ["a"] = 1 }, [], SdAlg, trace);
+        var key = new string('k', 32 * ClaimMetadataValidator.WorkBudget + 32);
+        var claim = new ClaimMetadata([ClaimPathComponent.ForKey(key)], [], false, ClaimSelectiveDisclosure.Allowed, null);
+
+        ClaimMetadataValidator.Validate(root, trace, [claim], allDisclosuresPresent: false).Should().StartWith("VC_CLAIM_METADATA_INVALID:");
     }
 
     [Fact]

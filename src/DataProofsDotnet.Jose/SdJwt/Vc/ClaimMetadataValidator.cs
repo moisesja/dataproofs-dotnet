@@ -18,21 +18,38 @@ internal static class ClaimMetadataValidator
     private readonly record struct Selected(JsonNode? Node, ReconstructionTrace.Origin Origin);
 
     /// <summary>
-    /// The most path evaluation steps one validation takes, summed over every claim metadata entry, pass and path
-    /// component: each element a component is applied to, and each element it selects. Every step is constant work (a
-    /// member lookup or an index into a list built once per array), so this bounds the whole validation. The work is
-    /// claims times the elements each path reaches, so a large issuer-signed credential and a large document, each
-    /// within its own bound, could otherwise take tens of seconds (a 27,000-leaf credential against 27,000 claims took
-    /// 22 s). Figure 30 against its credential takes about a hundred steps, so the bound leaves a wide margin while
-    /// keeping the worst case near a second on a slow host; a credential past it is refused, since processing that is
-    /// required and cannot complete rejects (-27 §5.7).
+    /// The most units of work one validation spends, summed over every claim metadata entry, pass and path component,
+    /// and charged before the work is done. Applying an index or a null component to an element is one unit; applying a
+    /// key component is one unit per <see cref="KeyCharsPerUnit"/> characters of the key, rounded down, plus one, because
+    /// the member lookup and the Disclosure lookup both hash the whole key; every element selected is one more unit. Each
+    /// unit is then a bounded amount of work: an index into a list built once per array, or hashing and comparing up to
+    /// <see cref="KeyCharsPerUnit"/> characters. The work is claims times the elements each path reaches times the key
+    /// length, and the two size bounds limit none of those products: a 27,000-leaf credential against 27,000 claims took
+    /// 22 s, and one 900,000-character key over 80,000 objects took 14 s. Figure 30 against its credential spends about
+    /// a hundred units. A credential past the bound is refused, since processing that is required and cannot complete
+    /// rejects (-27 §5.7). Everything else in Type Metadata processing is linear in the size of a document or of the
+    /// credential and runs once per document or per value (the plan for issue #47 lists each operation).
     /// </summary>
-    internal const int StepBudget = 1_000_000;
+    internal const int WorkBudget = 1_000_000;
+
+    /// <summary>The key characters one unit of <see cref="WorkBudget"/> pays for: at least the length of a typical claim name.</summary>
+    internal const int KeyCharsPerUnit = 32;
 
     private sealed class Budget
     {
-        public int Remaining { get; set; } = StepBudget;
+        private long _remaining = WorkBudget;
+
+        /// <summary>Spends <paramref name="units"/>; <c>false</c> when the bound is exceeded, and the work must not be done.</summary>
+        public bool Spend(long units)
+        {
+            _remaining -= units;
+            return _remaining >= 0;
+        }
     }
+
+    private static string OverBudget()
+        => $"VC_CLAIM_METADATA_INVALID: evaluating the claim metadata against this credential takes more than {WorkBudget} "
+            + $"units of work (a path step, or a key lookup per {KeyCharsPerUnit} characters of its key), so it cannot be processed ({Revision} §5.7).";
 
     /// <summary>Validates <paramref name="root"/>; returns <c>null</c> when every claim metadata entry holds.</summary>
     /// <param name="root">The processed payload the reconstruction recorded in <paramref name="trace"/> returned.</param>
@@ -73,13 +90,17 @@ internal static class ClaimMetadataValidator
         List<Selected> selection = [new(root, ReconstructionTrace.Origin.Clear)];
         var absent = false;
 
-        for (var step = 0; step < claim.Path.Count; step++)
+        for (var step = 0; step < claim.Path.Count && selection.Count > 0; step++)
         {
             var component = claim.Path[step];
             var last = step == claim.Path.Count - 1;
+            var cost = component.Key is { } costKey ? 1 + (long)costKey.Length / KeyCharsPerUnit : 1;
             var next = new List<Selected>();
             foreach (var selected in selection)
             {
+                if (!budget.Spend(cost))
+                    return OverBudget();
+
                 // An element that was not disclosed: present in the issued credential, contents unknown.
                 if (selected.Origin == ReconstructionTrace.Origin.Undisclosed)
                     continue;
@@ -97,6 +118,8 @@ internal static class ClaimMetadataValidator
 
                     if (obj.TryGetPropertyValue(key, out var value))
                     {
+                        if (!budget.Spend(1))
+                            return OverBudget();
                         next.Add(new(value, trace.IsDisclosedMember(obj, key)
                             ? ReconstructionTrace.Origin.Disclosed
                             : ReconstructionTrace.Origin.Clear));
@@ -123,6 +146,9 @@ internal static class ClaimMetadataValidator
                     {
                         // The complete Unsecured Payload's array is the processed one: at issuance every placeholder no
                         // Disclosure resolved is a decoy, and the reconstruction already left them out.
+                        var completeSelects = component.Index is { } i ? (i < array.Count ? 1 : 0) : array.Count;
+                        if (!budget.Spend(completeSelects))
+                            return OverBudget();
                         if (component.Index is { } completeIndex)
                         {
                             if (completeIndex < array.Count)
@@ -139,6 +165,9 @@ internal static class ClaimMetadataValidator
                     }
 
                     var asIssued = trace.AsIssued(array);
+                    var selects = component.Index is { } j ? (j < asIssued.Count ? 1 : 0) : asIssued.Count;
+                    if (!budget.Spend(selects))
+                        return OverBudget();
                     if (component.Index is { } index)
                     {
                         if (index < asIssued.Count)
@@ -153,10 +182,6 @@ internal static class ClaimMetadataValidator
                     }
                 }
             }
-            budget.Remaining -= selection.Count + next.Count;
-            if (budget.Remaining < 0)
-                return $"VC_CLAIM_METADATA_INVALID: evaluating the claim metadata against this credential takes more than {StepBudget} "
-                    + $"path steps, so it cannot be processed ({Revision} §5.7).";
             selection = next;
         }
 
