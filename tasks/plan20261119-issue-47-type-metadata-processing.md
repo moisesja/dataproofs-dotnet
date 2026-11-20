@@ -168,17 +168,28 @@ Error codes (stable prefixes, as the existing `VC_*` ones): `VC_TYPE_METADATA_UN
 
 ## Items
 
-- [ ] Reconstruction trace (internal), no behaviour change without it
-- [ ] Integrity: parse, strongest algorithm, NetCrypto hashing; `Matches` / `Compute`
-- [ ] Document resolver interface, local cache, processing options
-- [ ] Processor: retrieval, integrity, `vct` identity, chain, cycle, depth, parse and typed model, merge
-- [ ] Claim metadata validation against the traced payload (path, mandatory, sd)
-- [ ] `VerifyWithTypeMetadataAsync`, result members, fault handling
-- [ ] `IssueWithTypeMetadataAsync`
-- [ ] Tests: Figure 16/17 vector, A.2 document, every code, both directions, processing off unchanged
-- [ ] PublicAPI, sample section, samples-coverage report, PRD FR-17 / AC-3, CHANGELOG
-- [ ] Build `/warnaserror`, full suite, ac-7, ac-9, ac-12 legs touched
-- [ ] Adversarial pass, fixes with tests
+- [x] Reconstruction trace (internal), no behaviour change without it
+- [x] Integrity: parse, strongest algorithm, NetCrypto hashing; `Matches` / `Compute`
+- [x] Document resolver interface, local cache, processing options
+- [x] Processor: retrieval, integrity, `vct` identity, chain, cycle, depth, parse and typed model, merge
+- [x] Claim metadata validation against the traced payload (path, mandatory, sd)
+- [x] `VerifyWithTypeMetadataAsync`, result members, fault handling
+- [x] `IssueWithTypeMetadataAsync`
+- [x] Tests: Figure 16/17 vector, A.2 document, every code, both directions, processing off unchanged
+- [x] PublicAPI, sample section, samples-coverage report, PRD FR-17a / AC-3, CHANGELOG
+- [x] Build `/warnaserror`, full suite, ac-6, ac-7, ac-9, every sample; the SD-JWT VC sample with reflection-based
+      serialization disabled (no serializer is touched, so the ac-12 legs are not affected)
+- [ ] Adversarial pass, fixes with tests (pass 1 done; pass 2 over the fixes running)
 - [ ] PR
+
+## Changes to the decisions during implementation
+
+- Decision 5 moved once. The first parser refused a value with any token outside `alg-base64`, so `sha3-256-…`
+  beside a good sha256 failed; SRI §3.3.3 drops a token whose algorithm it does not recognise. Now only the
+  algorithm part must be alphanumeric, an unknown algorithm's token is ignored whatever follows it, and a supported
+  algorithm's value must be standard base64 of the right length, and (adversarial F4) canonical.
+- Decision 9 gained a second view. At issuance the validator runs on the credential as a verifier sees it and on the
+  complete payload with array decoys dropped (adversarial F3), so the issuer refuses whatever the verifier refuses
+  and a decoy cannot stand in for a mandatory element.
 
 ## Review
