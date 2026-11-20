@@ -440,7 +440,7 @@ public sealed class Issue48ReservedClaimPositionTests
         var result = await VerifyVc(await SignHandBuilt(payload, shared));
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle().Which.Should().Contain("referenced by more than one digest");
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("DISCLOSURE_INVALID");
     }
 
     [Fact]

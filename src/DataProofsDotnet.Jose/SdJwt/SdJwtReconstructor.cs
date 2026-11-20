@@ -34,8 +34,8 @@ internal static class SdJwtReconstructor
     /// <param name="disclosures">The Disclosures presented alongside the SD-JWT.</param>
     /// <param name="sdAlg">The resolved <c>_sd_alg</c> hash algorithm name.</param>
     /// <exception cref="MalformedJoseException">
-    /// On a duplicate digest in an <c>_sd</c> array, a Disclosure whose digest is referenced more
-    /// than once, a Disclosure of the wrong shape for its placement, or a Disclosure that is
+    /// On a digest that appears more than once in the payload, directly or through a Disclosure, whether or
+    /// not a Disclosure matches it; a Disclosure of the wrong shape for its placement; or a Disclosure that is
     /// presented but never referenced (RFC 9901 §7.1 / §10).
     /// </exception>
     public static JsonObject Reconstruct(JsonObject payload, IReadOnlyList<Disclosure> disclosures, string sdAlg)
@@ -91,12 +91,14 @@ internal static class SdJwtReconstructor
     }
 
     /// <summary>
-    /// The state of one reconstruction: the Disclosures by digest, the digests already resolved, the claim path of
-    /// the node being processed, and the position of every Disclosure resolved so far.
+    /// The state of one reconstruction: the Disclosures by digest, every digest encountered and every one resolved,
+    /// the claim path of the node being processed, and the position of every Disclosure resolved so far.
     /// </summary>
     private sealed class Walk(IReadOnlyDictionary<string, Disclosure> byDigest)
     {
         public IReadOnlyDictionary<string, Disclosure> ByDigest { get; } = byDigest;
+
+        public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> Used { get; } = new(StringComparer.Ordinal);
 
@@ -104,11 +106,24 @@ internal static class SdJwtReconstructor
 
         public List<DisclosurePosition> Positions { get; } = [];
 
+        /// <summary>
+        /// Records an embedded digest found in an <c>_sd</c> array or a <c>...</c> placeholder. RFC 9901 §7.1 step 4: "If
+        /// any digest value is encountered more than once in the Issuer-signed JWT payload (directly or recursively via
+        /// other Disclosures), the SD-JWT MUST be rejected" — decoys and withheld digests included, not only those a
+        /// Disclosure resolves.
+        /// </summary>
+        public void Encounter(string digest)
+        {
+            if (!Seen.Add(digest))
+                throw new MalformedJoseException(
+                    "An SD-JWT digest appears more than once in the payload, directly or through a Disclosure (RFC 9901 §7.1 step 4).");
+        }
+
         /// <summary>Marks <paramref name="digest"/> resolved and records <paramref name="disclosure"/> at the current path.</summary>
         public void Resolve(string digest, Disclosure disclosure)
         {
-            if (!Used.Add(digest))
-                throw new MalformedJoseException("An SD-JWT Disclosure is referenced by more than one digest (RFC 9901 §7.1).");
+            // Encounter has already refused a second occurrence of the digest, so this is the first resolution.
+            Used.Add(digest);
             Positions.Add(new DisclosurePosition(disclosure, Path.ToArray()));
         }
     }
@@ -154,16 +169,12 @@ internal static class SdJwtReconstructor
             if (sdNode is not JsonArray sdArray)
                 throw new MalformedJoseException("SD-JWT '_sd' must be an array of digest strings (RFC 9901 §4.2.4.1).");
 
-            var seenDigests = new HashSet<string>(StringComparer.Ordinal);
             foreach (var digestNode in sdArray)
             {
                 if (digestNode is not JsonValue dv || dv.GetValueKind() != JsonValueKind.String)
                     throw new MalformedJoseException("SD-JWT '_sd' entries must be base64url digest strings (RFC 9901 §4.2.4.1).");
                 var digest = dv.GetValue<string>();
-
-                // RFC 9901 §7.1: a digest MUST NOT appear more than once within an _sd array.
-                if (!seenDigests.Add(digest))
-                    throw new MalformedJoseException("SD-JWT '_sd' array contains a duplicate digest (RFC 9901 §7.1).");
+                walk.Encounter(digest);
 
                 if (!walk.ByDigest.TryGetValue(digest, out var disclosure))
                     continue; // No matching Disclosure: a decoy. Ignore it (RFC 9901 §4.2.7).
@@ -197,6 +208,7 @@ internal static class SdJwtReconstructor
             // An array-element placeholder is an object with exactly one member named "...".
             if (element is JsonObject elemObj && IsArrayDisclosurePlaceholder(elemObj, out var digest))
             {
+                walk.Encounter(digest!);
                 if (!walk.ByDigest.TryGetValue(digest!, out var disclosure))
                     continue; // Decoy / undisclosed element: drop it (RFC 9901 §4.2.4.2 / §7.1).
 
