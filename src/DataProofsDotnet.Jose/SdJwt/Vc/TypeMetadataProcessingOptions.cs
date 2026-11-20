@@ -6,6 +6,13 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// Processing is then required: metadata that cannot be retrieved or processed rejects the credential, as §5.7 says it
 /// must when "Type Metadata processing is required by policy". Immutable once built; thread-safe.
 /// </summary>
+/// <remarks>
+/// Besides the two bounds set here, processing applies two fixed ones, so its cost stays proportionate whatever the
+/// documents and the credential hold: an <c>extends</c> chain is processed only up to 10,000 claim, path, display and
+/// template entries (<c>VC_TYPE_METADATA_INVALID</c> past that), and validating a credential against the claim metadata
+/// only up to 1,000,000 units of work, a path step or a key lookup per 32 characters of its key
+/// (<c>VC_CLAIM_METADATA_INVALID</c> past that).
+/// </remarks>
 public sealed class TypeMetadataProcessingOptions
 {
     /// <summary>The default for <see cref="MaxExtendsDepth"/>: eight <c>extends</c> hops.</summary>
