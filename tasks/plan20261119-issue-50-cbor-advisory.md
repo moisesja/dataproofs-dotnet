@@ -96,7 +96,7 @@ because the vulnerable version arrives transitively. credentials-dotnet `main` n
 - [x] `dotnet test DataProofsDotnet.sln -c Release`: all pass, zero skips
 - [x] `ac-10` hardened (`785f34f`), its regression check run against `main` and the branch
 - [x] Gates: `ac-6` dependency hygiene, `ac-10` pack and smoke, `ac-12` JIT legs
-- [x] Adversarial pass (narrow, 20 minutes): does 10.0.15 actually restore and ship, and does anything still
+- [x] Adversarial pass (narrow): does 10.0.15 actually restore and ship, and does anything still
       resolve a vulnerable version
 - [ ] PR, CI green
 
@@ -119,7 +119,7 @@ because the vulnerable version arrives transitively. credentials-dotnet `main` n
 ## Adversarial pass
 
 One fresh agent, given the issue, the diff and an attack list (what ships; `ac-10` as CI runs it; `ac-12`;
-anything else resolving a vulnerable version), 20 minutes, isolated worktree and package cache.
+anything else resolving a vulnerable version), in an isolated worktree and package cache.
 
 - What ships: no finding. Cose and Rdfc nuspecs declare 10.0.15; Legacy and DI get CBOR only through them.
 - `ac-10`: finding, reproduced by the agent with a pre-populated cache; fixed in `785f34f` (decision 6).
