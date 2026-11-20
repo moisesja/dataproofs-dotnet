@@ -91,6 +91,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SdJwtVcVerificationResult.TypeMetadata` says the document is returned unprocessed (-27 §5.7);
   `SdJwtVcConstants.StatusClaim` and the verifier say `status` is carried, not checked; `SdJwtVerifier`
   says it does not check `typ`.
+- **SD-JWT VC Type Metadata processing** (issue [#47](https://github.com/moisesja/dataproofs-dotnet/issues/47);
+  -27 §5, §6, §7.4; PRD FR-17a). Until now the verifier handed back whatever document the resolver returned
+  and checked nothing in it. Two new entry points process it fully, as -27 §5.7 requires before the contents
+  are used: `SdJwtVcVerifier.VerifyWithTypeMetadataAsync` and `SdJwtVcIssuer.IssueWithTypeMetadataAsync`, both
+  taking `TypeMetadataProcessingOptions`. Once requested, processing is required: a credential whose metadata
+  cannot be retrieved or processed is refused.
+  - *Retrieval.* A new `ITypeMetadataDocumentResolver` returns the octets of a document (integrity is over the
+    octets, which a parsed `JsonObject` cannot give back), called for the `vct` and each `extends` value, only
+    after the issuer signature verified. `LocalCacheTypeMetadataDocumentResolver` is the offline default; the
+    library never fetches anything. A resolver that returns `null` gives `VC_TYPE_METADATA_UNAVAILABLE`, a
+    verdict. One that throws gives `VC_TYPE_METADATA_RESOLVER_FAULT` with the exception on the new
+    `SdJwtVcVerificationResult.TypeMetadataResolverFault`, a fault the caller can retry; at issuance it is a
+    `JoseException` (not a `MalformedJoseException`) with the resolver's exception inside.
+  - *Checks, each with a stable code.* `vct#integrity` and every `extends#integrity` against the octets, before
+    parsing (`VC_TYPE_METADATA_INTEGRITY_INVALID` for a malformed value or no supported algorithm,
+    `VC_TYPE_METADATA_INTEGRITY_MISMATCH`; sha256/384/512, the strongest present decides); each document's
+    `vct` identical to the reference, no normalization (`VC_TYPE_METADATA_VCT_MISMATCH`); the document's shape
+    and size (`VC_TYPE_METADATA_INVALID`); `extends` cycles and chains longer than `MaxExtendsDepth`, default 8
+    (`VC_TYPE_METADATA_EXTENDS_CYCLE`, `VC_TYPE_METADATA_EXTENDS_DEPTH`); malformed `claims`, `path`,
+    `mandatory` or `sd`, or a path twice in one document (`VC_CLAIM_METADATA_INVALID`); a child changing `sd`
+    away from `always`/`never` or making a mandatory claim optional (`VC_CLAIM_METADATA_OVERRIDE_INVALID`);
+    and the credential against the merged claim metadata (`VC_CLAIM_PATH_INVALID`, `VC_CLAIM_SD_VIOLATION`,
+    `VC_CLAIM_MANDATORY_MISSING`). Malformed display, rendering or `svg_id` never reject (-21).
+  - *Judged on the credential as issued.* A claim is selectively disclosable when a Disclosure supplies it
+    directly; array positions count undisclosed elements. A withheld selectively disclosable claim is not a
+    missing mandatory one; a mandatory claim is missing only where nothing could hide it. Two consequences to
+    know: a verifier cannot tell a withheld `sd: never` member from a decoy, so it is detected only when the
+    claim is also mandatory; and an issuer that adds decoys to arrays shifts the positions -27 counts.
+  - *Issuance is checked by the same code:* the verifier's processing runs on the issued credential with every
+    Disclosure, knowing every unresolved digest is a decoy, and the credential is not returned when it fails.
+  - *The processed metadata is typed* on `SdJwtVcVerificationResult.ProcessedTypeMetadata`: merged claim
+    metadata (`ClaimMetadata`, `ClaimPathComponent`, `ClaimDisplayMetadata`, `ClaimSelectiveDisclosure`) and the
+    effective display with rendering (`TypeDisplayMetadata`, `TypeRenderingMetadata`, `SimpleRenderingMetadata`,
+    `RenderingImageMetadata`, `SvgTemplateMetadata`), plus the parsed documents. `TypeMetadataIntegrity.Matches`
+    and `Compute` give a wallet the same check for `uri#integrity` on a logo or template it fetches, and an
+    issuer the value to put in `vct#integrity`.
+
+  Nothing changes for existing callers: `VerifyAsync`, `IssueAsync` and the raw `ITypeMetadataResolver` path
+  behave as before, and no member was removed or changed. A verifier that wants processing moves to
+  `VerifyWithTypeMetadataAsync` and supplies document octets; the credentials it then refuses are ones that
+  contradict their own Type Metadata, which this library's earlier issuers never checked, so credentials they
+  issued can be among them.
 
 ### Fixed
 

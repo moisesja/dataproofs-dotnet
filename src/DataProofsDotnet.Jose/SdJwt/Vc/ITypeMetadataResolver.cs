@@ -8,7 +8,9 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// (PRD FR-10 / FR-17), resolution is offline/local-cache by default and MUST NOT reach the
 /// network unless the consumer supplies an implementation that opts into it. A URL-, registry-,
 /// or cache-backed implementation is the consumer's choice; the bundled default
-/// (<see cref="LocalCacheTypeMetadataResolver"/>) never performs I/O.
+/// (<see cref="LocalCacheTypeMetadataResolver"/>) never performs I/O. This hook feeds the unprocessed
+/// <see cref="SdJwtVcVerificationResult.TypeMetadata"/>; processing (§5.7) uses
+/// <see cref="ITypeMetadataDocumentResolver"/>, which returns the octets integrity is checked over.
 /// </summary>
 /// <remarks>
 /// An implementation that retrieves over HTTP carries the draft's retrieval rules itself, because the
