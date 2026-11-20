@@ -150,9 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `X509CertificateChain.Create` from DER certificates, end-entity first. Every JWS that signer produces, compact
     or JSON, and so every JWT, VC-JOSE envelope, SD-JWT and SD-JWT VC, carries it as `x5c` in the **protected**
     header (standard padded base64, as §4.1.6 requires; -27 §2.5 reads it only there). Setting a chain whose
-    end-entity key is not the signer's public key (`ISigner.PublicKey`) throws `ArgumentException`, so the library
-    never emits an `x5c` whose end-entity key is not the signer's. A signer without a chain emits exactly the bytes
-    it did before.
+    end-entity key is not the signer's public key (`ISigner.PublicKey`), or whose end-entity Key Usage lacks
+    `digitalSignature` (`X5C_KEY_USAGE`), throws `ArgumentException`, so the library never emits an `x5c` whose
+    end-entity key is not the signer's or may not sign. A signer without a chain emits exactly the bytes it did
+    before.
   - *Verification.* `JwsParser.ParseCompactWithCertificateChain`, `SdJwtVerifier.VerifyWithCertificateChain` and
     `SdJwtVcVerifier.VerifyWithCertificateChainAsync` (Type Metadata processing optional, through
     `TypeMetadataProcessingOptions`) take a **mandatory** hook, `Func<X509CertificateChain, bool>`, in place of the
@@ -162,25 +163,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `SdJwtVerificationResult.IssuerCertificateChain` and `SdJwtVcVerificationResult.IssuerCertificateChain`, and
     `X509CertificateChain.EndEntityPublicKey` gives the end-entity key as a `Jwk`. A `kid` beside `x5c` selects
     nothing and is not reported (`SignerKid` is empty, `SignerKidIsProtected` is `false`). Failures have stable
-    codes at the start of the message: `X5C_MISSING`, `X5C_MALFORMED`, `X5C_UNSUPPORTED_KEY` and `X5C_UNTRUSTED`
-    (the hook said no); a signature that does not verify under the end-entity key is the existing
+    codes at the start of the message: `X5C_MISSING`, `X5C_MALFORMED`, `X5C_UNSUPPORTED_KEY`, `X5C_KEY_USAGE` and
+    `X5C_UNTRUSTED` (the hook said no); a signature that does not verify under the end-entity key is the existing
     `JoseCryptoException` / `ISSUER_SIGNATURE_INVALID`. `JwsParser` throws `MalformedJoseException` for
     `X5C_MALFORMED` and `JoseCryptoException` for the others; the SD-JWT verifiers return them in `Errors`. An
     exception from the hook propagates, as one from a `kid` resolver does.
   - *What a well-formed `x5c` is.* A JSON array of 1 to `X509CertificateChain.MaxCertificates` (10) strings, each
     canonical base64 (no base64url, no whitespace, padding required), each exactly one DER certificate whose
-    `TBSCertificate` fields are in RFC 5280 order, no two identical. Every TLV is strict DER; two DEFAULT values
-    encoded explicitly, which DER would omit (an explicit v1 version, an explicit critical `FALSE`), are tolerated,
-    as certificate parsers generally do. The end-entity key must be Ed25519, P-256, P-384 or secp256k1, with the
+    `TBSCertificate` fields are in RFC 5280 order, no two identical. Every TLV of the certificate is read under DER
+    rules: each Name down to its attribute values (RDNs non-empty, in DER order), each algorithm's parameters, and
+    each extension with the DER value in its `extnValue`, no extension twice (RFC 5280 §4.2). Inside the values the
+    schema leaves open, nested TLVs are read to a depth of 32 with DER's content rules for BOOLEAN, INTEGER,
+    ENUMERATED, BIT STRING, NULL, OBJECT IDENTIFIER and the time types. Not interpreted: the bytes of strings and
+    OCTET STRINGs (character sets are type constraints, not encoding rules), and the contents of the signature and
+    public-key BIT STRINGs, except the end-entity key. Two DEFAULT values encoded explicitly, which DER would omit (an
+    explicit v1 version, an explicit critical `FALSE`), are tolerated, as certificate parsers generally do. The
+    vendored RFC 7515 Appendix B chain and all 128 roots of the macOS trust bundle parse. The end-entity key must be Ed25519, P-256, P-384 or secp256k1, with the
     `alg` that key's curve produces; RSA, Ed448, other algorithms and other named curves (P-521 among them) are
     `X5C_UNSUPPORTED_KEY`, and an EC key whose parameters are not a named curve is `X5C_MALFORMED`.
     `X509CertificateChain.Create` throws `MalformedJoseException` for `X5C_MALFORMED` and `NotSupportedException`
     for `X5C_UNSUPPORTED_KEY`. EC points are checked on their curve; Ed25519 keys are checked for length, and a key
-    that is no curve point, or a small-order one, fails at the signature check, before the hook runs. DER is read with the in-box
+    that is no curve point, or a small-order one, fails at the signature check, before the hook runs.
+  - *Key Usage, checked by the library.* An end-entity certificate with a Key Usage extension that does not assert
+    `digitalSignature` (RFC 5280 §4.2.1.3; critical or not; `contentCommitment` alone included) may not verify a JWS:
+    the three verifiers refuse it with `X5C_KEY_USAGE` (`JoseCryptoException` from `JwsParser`) before using the key
+    or calling the hook. This is a limit on the library's own use of the key, and the platform's `X509Chain` does not
+    check it, so a hook built on it would otherwise accept a trusted key-agreement-only certificate as a signer. A
+    certificate without the extension is unrestricted. `X509CertificateChain.Create` accepts such a chain: it is well
+    formed. Extended Key Usage is not checked: its purposes are ecosystem-defined, so the hook checks the one its
+    ecosystem requires. DER is read with the in-box
     `System.Formats.Asn1`, which performs no cryptography: no package was added.
   - **What the library does not check: the chain.** It performs no RFC 5280 path validation. It verifies no
-    certificate signature and checks no validity period, basic constraints, key usage, name chaining or order,
-    revocation, policy, name constraint or critical extension, and it holds no trust anchor. RFC 7515 §4.1.6
+    certificate signature and checks no validity period, basic constraints, Extended Key Usage, name chaining or
+    order, revocation, policy, name constraint or critical extension, and it holds no trust anchor. RFC 7515 §4.1.6
     requires the recipient to validate the chain, and -27 §2.5 requires it to be validated "against a trust
     anchor permitted for the Issuer according to policy (a certificate in the x5c header parameter is not a trust
     anchor merely because it is included there)". That is the hook's job. NetCrypto, through which this library's
