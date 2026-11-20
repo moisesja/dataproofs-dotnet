@@ -69,6 +69,15 @@ public static class SdJwtVcIssuer
                     + $"({SdJwtVcConstants.Revision} §2.2.2.3); remove its entry from the DisclosureFrame.");
         }
 
+        // The same rule for the claims set itself: a reserved claim must reach the signer as plain JSON. An '_sd' key
+        // or '...' placeholder the caller built inside one would be signed as it is, and the verifier refuses it.
+        if (SdJwtVcClaimRules.ReservedClaimWithDisclosureStructure(claims) is { } structured)
+        {
+            throw new MalformedJoseException(
+                $"SD-JWT VC claim '{structured}' carries an '_sd' digest array or a '...' array placeholder; it and its "
+                + $"subclaims MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3). Pass it as plain JSON.");
+        }
+
         // typ is fixed to the SD-JWT VC media type; everything else is the generic SD-JWT pipeline.
         return SdJwtIssuer.IssueAsync(
             claims, frame, signer, options, typ: SdJwtVcConstants.MediaType, cancellationToken);

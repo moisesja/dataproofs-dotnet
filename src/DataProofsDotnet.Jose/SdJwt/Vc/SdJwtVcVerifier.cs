@@ -75,21 +75,14 @@ public static class SdJwtVcVerifier
             return SdJwtVcVerificationResult.Failure(inner.Errors.Count > 0 ? inner.Errors : ["VERIFICATION_FAILED"]);
 
         // 3. No registered must-not-disclose claim, nor any of its subclaims, may have been selectively disclosed
-        //    (§2.2.2.3). The rule is positional: it refuses a Disclosure that resolved to a top-level member with a
-        //    reserved name, or anywhere inside one (a member of status or cnf under any name, an element of
-        //    aka_vcts, and so on down). A Disclosure elsewhere that only shares a reserved name, such as
-        //    credentialSubject.status, is an ordinary claim. The reconstructor reports where each presented
-        //    Disclosure resolved, one position per Disclosure, so none is judged by its name alone.
-        foreach (var position in inner.DisclosurePositions)
-        {
-            if (SdJwtVcClaimRules.ReservedClaimAt(position) is not { } reserved)
-                continue;
-
-            return SdJwtVcVerificationResult.Failure(position.Path.Count == 1
-                ? $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{reserved}' MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3)."
-                : $"VC_DISALLOWED_DISCLOSURE: a Disclosure at '{position}' is inside SD-JWT VC claim '{reserved}', whose subclaims "
-                  + $"MUST NOT be selectively disclosed either ({SdJwtVcConstants.Revision} §2.2.2.3).");
-        }
+        //    (§2.2.2.3). The rule is positional: it covers the top-level members with reserved names and everything
+        //    inside them (a member of status or cnf under any name, an element of aka_vcts, and so on down), judged
+        //    by where the reconstructor resolved each presented Disclosure and by the selective-disclosure structure
+        //    in the signed reserved claims, so a withheld Disclosure is caught too. A claim elsewhere that only shares
+        //    a reserved name, such as credentialSubject.status, is an ordinary claim. issuerJwt is the JWT whose
+        //    signature step 2 verified: both parsed the same presentation string.
+        if (SdJwtVcClaimRules.DisallowedDisclosure(issuerJwt.Payload, inner.DisclosurePositions) is { } disallowed)
+            return SdJwtVcVerificationResult.Failure($"VC_DISALLOWED_DISCLOSURE: {disallowed}");
 
         // 4. vct REQUIRED, a non-empty string, present in the (cleared) disclosed payload (§2.2.2.1).
         if (!disclosed.TryGetPropertyValue(SdJwtVcConstants.VctClaim, out var vctNode)

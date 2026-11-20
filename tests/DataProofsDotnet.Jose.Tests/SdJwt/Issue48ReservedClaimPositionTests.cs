@@ -143,7 +143,7 @@ public sealed class Issue48ReservedClaimPositionTests
     }
 
     /// <summary>Other places a reserved name can sit without being the registered claim, each issued by the VC issuer.</summary>
-    public static TheoryData<string> NestedFrames => new() { "recursive parent", "two levels down", "recursive two levels" };
+    public static TheoryData<string> NestedFrames => new() { "recursive parent", "two levels down", "recursive two levels", "inside a nested status" };
 
     [Theory]
     [MemberData(nameof(NestedFrames))]
@@ -157,6 +157,7 @@ public sealed class Issue48ReservedClaimPositionTests
                 ["status"] = "active",
                 ["exp"] = 1883000000,
                 ["employment"] = new JsonObject { ["status"] = "employed", ["iss"] = "https://employer.example" },
+                ["record"] = new JsonObject { ["status"] = new JsonObject { ["state"] = "open", ["lists"] = new JsonArray(1, 2) } },
             },
         };
         var frame = shape switch
@@ -164,8 +165,12 @@ public sealed class Issue48ReservedClaimPositionTests
             "recursive parent" => new DisclosureFrame().DiscloseRecursively("credentialSubject", "status", "exp"),
             "two levels down" => new DisclosureFrame().DiscloseObject(
                 "credentialSubject", new DisclosureFrame().Disclose("status").DiscloseObjectProperties("employment", "status", "iss")),
-            _ => new DisclosureFrame().DiscloseRecursiveObject(
+            "recursive two levels" => new DisclosureFrame().DiscloseRecursiveObject(
                 "credentialSubject", new DisclosureFrame().DiscloseRecursively("employment", "status", "iss")),
+            // credentialSubject.record.status is an ordinary object, so it may carry an _sd and array placeholders.
+            _ => new DisclosureFrame().DiscloseObject("credentialSubject", new DisclosureFrame().DiscloseObject(
+                "record", new DisclosureFrame().DiscloseObject(
+                    "status", new DisclosureFrame().Disclose("state").DiscloseArrayElements("lists", 0, 1)))),
         };
 
         var issued = await SdJwtVcIssuer.IssueAsync(claims, frame, Issuer.Signer);
@@ -316,18 +321,95 @@ public sealed class Issue48ReservedClaimPositionTests
         result.Errors.Should().ContainSingle().Which.Should().Contain("'status.lists'");
     }
 
-    [Fact]
-    public async Task Withholding_every_disclosure_inside_a_reserved_claim_leaves_nothing_to_refuse()
+    public static TheoryData<string, string> InsideReservedClaimsWithheld()
     {
-        // A digest with no Disclosure behind it is indistinguishable from a decoy (RFC 9901 §4.2.5), and -27 forbids
-        // Disclosures, not digests: with none presented, the credential verifies and status keeps its clear members.
-        var issued = await SdJwtIssuer.IssueAsync(
-            CredentialWithReservedClaims(), new DisclosureFrame().DiscloseObjectProperties("status", "lists"), Issuer.Signer, typ: "dc+sd-jwt");
+        var data = new TheoryData<string, string>();
+        foreach (var row in InsideReservedClaims)
+            data.Add((string)row[0], (string)row[1]);
+        return data;
+    }
 
-        var result = await VerifyVc(SdJwtHolder.CreatePresentation(issued.Issuance, []));
+    [Theory]
+    [MemberData(nameof(InsideReservedClaimsWithheld))]
+    public async Task Verifier_refuses_a_disclosure_inside_a_reserved_claim_when_it_is_withheld(string shape, string reserved)
+    {
+        // Withholding the Disclosure leaves no position to judge, and changes the reserved claim under the same
+        // signature. The '_sd' or '...' left in the signed claim is the evidence, so the rule is checked there too.
+        var issuance = await IssueGeneric(FrameFor(shape));
+
+        var result = await VerifyVc(SdJwtHolder.CreatePresentation(issuance, []));
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE")
+            .And.Contain($"SD-JWT VC claim '{reserved}' carries an '_sd' digest array or a '...' array placeholder")
+            .And.Contain("§2.2.2.3");
+    }
+
+    [Fact]
+    public async Task Withholding_an_aka_vcts_element_cannot_turn_an_invalid_signed_value_into_a_valid_one()
+    {
+        // The signed aka_vcts holds the vct value at index 1, which -27 §2.2.2.2 forbids. With the element's
+        // Disclosure attached the array is refused; withholding it would leave ["urn:example:visible"] under the same
+        // signature. Both are refused, before the aka_vcts format check runs.
+        var claims = new JsonObject { ["vct"] = "urn:example:main", ["aka_vcts"] = new JsonArray("urn:example:visible", "urn:example:main") };
+        var issued = await SdJwtIssuer.IssueAsync(claims, new DisclosureFrame().DiscloseArrayElements("aka_vcts", 1), Issuer.Signer, typ: "dc+sd-jwt");
+
+        var attached = await VerifyVc(issued.Issuance);
+        var withheld = await VerifyVc(SdJwtHolder.CreatePresentation(issued.Issuance, []));
+
+        attached.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts[1]'");
+        withheld.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts' carries");
+    }
+
+    public static TheoryData<string> DecoyShapes => new() { "decoy in status", "decoy two levels inside cnf", "decoy placeholder in aka_vcts", "decoy placeholder in status array" };
+
+    [Theory]
+    [MemberData(nameof(DecoyShapes))]
+    public async Task Verifier_refuses_decoy_structure_inside_a_reserved_claim(string shape)
+    {
+        // A digest with no Disclosure behind it cannot be told from a withheld one, so it fails closed too.
+        const string decoy = "Ywu0YwV9r8O5eFYC0qWdC3gExgl23sDk0iIwV3PlmVc";
+        var payload = CredentialWithReservedClaims();
+        switch (shape)
+        {
+            case "decoy in status":
+                payload["status"]!["_sd"] = new JsonArray(decoy);
+                break;
+            case "decoy two levels inside cnf":
+                payload["cnf"]!["jwk"]!["_sd"] = new JsonArray(decoy);
+                break;
+            case "decoy placeholder in aka_vcts":
+                payload["aka_vcts"]!.AsArray().Add((JsonNode)new JsonObject { ["..."] = decoy });
+                break;
+            default:
+                payload["status"]!["lists"]!.AsArray().Add((JsonNode)new JsonObject { ["..."] = decoy });
+                break;
+        }
+
+        var result = await VerifyVc(await SignHandBuilt(payload));
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain(" carries an '_sd'");
+    }
+
+    [Fact]
+    public async Task Decoys_outside_reserved_claims_are_still_accepted()
+    {
+        var claims = new JsonObject
+        {
+            ["vct"] = Vct,
+            ["status"] = new JsonObject { ["status_list"] = new JsonObject { ["idx"] = 1, ["uri"] = "https://example.com/sl" } },
+            ["credentialSubject"] = new JsonObject { ["given_name"] = "John", ["status"] = "active" },
+        };
+        var issued = await SdJwtVcIssuer.IssueAsync(
+            claims,
+            new DisclosureFrame().DiscloseObjectProperties("credentialSubject", "status"),
+            Issuer.Signer,
+            new SdJwtIssuerOptions { DecoyDigestCount = 3 });
+
+        var result = await VerifyVc(issued.Issuance);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
-        result.DisclosedPayload!["status"]!.AsObject().Should().ContainKey("status_list").And.NotContainKey("lists");
     }
 
     // ---- Ways around the positional rule that must still fail ----
@@ -427,6 +509,48 @@ public sealed class Issue48ReservedClaimPositionTests
         Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, frame, Issuer.Signer);
 
         await act.Should().ThrowAsync<MalformedJoseException>().WithMessage("*'status' MUST NOT be selectively disclosed*");
+    }
+
+    public static TheoryData<string> StructuredReservedClaims => new() { "_sd in status", "_sd two levels inside cnf", "placeholder in a status array" };
+
+    [Theory]
+    [MemberData(nameof(StructuredReservedClaims))]
+    public async Task Issuer_refuses_a_claims_set_whose_reserved_claim_carries_disclosure_structure(string shape)
+    {
+        // A caller-built '_sd' or '...' inside a reserved claim would be signed as it is; the verifier refuses it.
+        var hidden = Disclosure.ForObjectProperty("salt-hidden", "idx", JsonValue.Create(1));
+        var claims = CredentialWithReservedClaims();
+        switch (shape)
+        {
+            case "_sd in status":
+                claims["status"]!["_sd"] = Sd(hidden);
+                break;
+            case "_sd two levels inside cnf":
+                claims["cnf"]!["jwk"]!["_sd"] = Sd(hidden);
+                break;
+            default:
+                claims["status"]!["lists"]!.AsArray().Add((JsonNode)Placeholder(Disclosure.ForArrayElement("salt-el", JsonValue.Create(3))));
+                break;
+        }
+
+        Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+
+        await act.Should().ThrowAsync<MalformedJoseException>()
+            .WithMessage("*carries an '_sd' digest array or a '...' array placeholder*MUST NOT be selectively disclosed*");
+    }
+
+    [Fact]
+    public async Task Nested_aka_vcts_array_claim_round_trips()
+    {
+        // The PR #52 review's reproduction: related.aka_vcts is an ordinary nested claim, not the registered one.
+        var claims = JsonNode.Parse("""{"vct":"urn:example:main","related":{"aka_vcts":["urn:example:related"]}}""")!.AsObject();
+        var issued = await SdJwtVcIssuer.IssueAsync(
+            claims, new DisclosureFrame().DiscloseObjectProperties("related", "aka_vcts"), Issuer.Signer);
+
+        var result = await VerifyVc(issued.Issuance);
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+        result.DisclosedPayload!["related"]!["aka_vcts"]!.ToJsonString().Should().Be("""["urn:example:related"]""");
     }
 
     [Fact]
