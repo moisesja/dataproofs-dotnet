@@ -1003,7 +1003,7 @@ public sealed class Issue47TypeMetadataProcessingTests
 
         ShouldPass(result);
         result.ProcessedTypeMetadata!.Claims.Should().HaveCount(count + count / 2);
-        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "before the fix this took over four minutes");
     }
 
     private sealed class FlippingResolver(byte[] a, byte[] b) : ITypeMetadataDocumentResolver, IDisposable
@@ -1135,7 +1135,8 @@ public sealed class Issue47TypeMetadataProcessingTests
     public async Task Claim_metadata_evaluation_is_bounded()
     {
         // Adversarial pass 2: the work is claims times selected elements; a 27,000-leaf credential against 27,000 claims
-        // took 22 s. Here 5,000 elements: 700 claims select 3.5 million elements and pass, 1,000 select 5 million and are refused.
+        // took 22 s. Here 5,000 elements: 150 claims select 750,000 elements and pass, 300 would select 1.5 million and
+        // are refused at the bound. Deterministic: the refusal is asserted, not a duration.
         var elements = new JsonArray();
         for (var i = 0; i < 5_000; i++)
             elements.Add((JsonNode)new JsonObject { ["v"] = i });
@@ -1148,14 +1149,11 @@ public sealed class Issue47TypeMetadataProcessingTests
             return Bytes(SimpleDocument(claims));
         }
 
-        var watch = Stopwatch.StartNew();
-        ShouldPass(await Verify(presentation, Options((Vct, Document(700)))));
-        var refused = await Verify(presentation, Options((Vct, Document(1_000))));
-        watch.Stop();
+        ShouldPass(await Verify(presentation, Options((Vct, Document(150)))));
+        var refused = await Verify(presentation, Options((Vct, Document(300))));
 
         ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
-        refused.Errors.Single().Should().Contain("selects more than 4000000 elements");
-        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
+        refused.Errors.Single().Should().Contain("selects more than 1000000 elements");
     }
 
     [Fact]

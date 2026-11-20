@@ -104,6 +104,9 @@ internal static class SdJwtReconstructor
         public void Resolve(string digest) => Used.Add(digest);
     }
 
+    private const string NestedSdAlg =
+        "SD-JWT '_sd_alg' MUST NOT be used in any object nested within the payload, in the clear or through a Disclosure (RFC 9901 §4.1.1).";
+
     private static JsonNode? ProcessNode(JsonNode? node, Walk walk, int depth)
     {
         // Bound the recursion. A chained recursive-disclosure presentation (RFC 9901 §6.3) adds one
@@ -133,11 +136,18 @@ internal static class SdJwtReconstructor
         // First copy non-control members, recursing into them.
         foreach (var (key, value) in obj.ToList())
         {
-            // _sd_alg is a control claim only at the top level (RFC 9901 §4.1.1, §7.1 step 3.f). A nested member of
-            // that name is not one, so it is processed like any other member: skipping it dropped its value unread,
-            // digests included, which hid them from the step 4 uniqueness check.
-            if (key is "_sd" || (key is "_sd_alg" && depth == 0))
+            if (key is "_sd")
                 continue;
+            if (key is "_sd_alg")
+            {
+                // RFC 9901 §4.1.1: _sd_alg "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used
+                // in any object nested within the payload." Only the top-level one is a control claim (§7.1 step
+                // 3.f); a nested one, in the clear or in a disclosed value, makes the SD-JWT invalid. Skipping it, as
+                // releases up to 2.0.0 did, dropped its value unread, digests included.
+                if (depth == 0)
+                    continue;
+                throw new MalformedJoseException(NestedSdAlg);
+            }
             output[key] = ProcessNode(value?.DeepClone(), walk, depth + 1);
         }
 
@@ -165,6 +175,11 @@ internal static class SdJwtReconstructor
 
                 walk.Resolve(digest);
                 var name = disclosure.ClaimName!;
+
+                // A Disclosure named _sd_alg would put the claim into this object: below the top level that is the
+                // nested use §4.1.1 forbids; at the top level it meets the clear _sd_alg below, or stands in for it.
+                if (name is "_sd_alg" && depth > 0)
+                    throw new MalformedJoseException(NestedSdAlg);
 
                 // RFC 9901 §7.1 step 3.c.ii.3: "If the claim name already exists at the level of the _sd key, the
                 // SD-JWT MUST be rejected" (no overwriting a clear claim via a Disclosure). The signed object counts as

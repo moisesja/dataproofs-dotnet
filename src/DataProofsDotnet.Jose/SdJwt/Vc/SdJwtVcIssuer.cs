@@ -151,6 +151,8 @@ public static class SdJwtVcIssuer
         var issued = await IssueAsync(claims, frame, signer, options, cancellationToken).ConfigureAwait(false);
 
         // Parity with the verifier: the same reconstruction, traced, over what was signed, with every Disclosure.
+        // SdJwtIssuer has already reconstructed these bytes untraced and refused to sign anything that would not verify,
+        // so this walk cannot fail; it is repeated only to record the positions claim metadata is judged on.
         var signed = CompactJwt.Decode(issued.IssuerJwt).Payload;
         var trace = new ReconstructionTrace();
         var processed = SdJwtReconstructor.Reconstruct(signed, issued.Disclosures, SdJwtClaims.ResolveSdAlg(signed), trace);

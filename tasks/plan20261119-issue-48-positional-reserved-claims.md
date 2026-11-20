@@ -95,18 +95,29 @@ RFC 9901:
    getter) still fails through the returned task, as it did inside `SdJwtIssuer`; depth behaviour is unchanged
    (checked from 60 to 200 against the generic issuer). Alternative: issue, then run the verifier's check on the
    result. Lost: it signs before it refuses.
-6. **RFC 9901 §7.1 step 4 and the top-level-only `_sd_alg` in the reconstructor, in their own commits.** The
-   reconstructor refused a repeated digest only within one `_sd` array or when a Disclosure resolved it twice (first
-   pass, X1), and it skipped every `_sd_alg` member at any depth, so a digest under a nested one was never seen and the
-   member vanished from the processed payload (second pass, A1). Now every embedded digest is tracked for the whole
-   walk, and a nested `_sd_alg` is processed like any other member (`_sd_alg` is a control claim only at the top
-   level, §4.1.1 and §7.1 step 3.f). This decision moved: `80880e8` first refused a nested `_sd_alg` (§4.1.1 "MUST NOT
-   be used in any object nested"), but `SdJwtIssuer` signs one from a caller's claims as given, so the library refused
-   its own output (third pass, P3_07); `2e18450` walks it instead, which closes A1 without a new refusal. The same
-   commit makes a Disclosure named `_sd_alg` beside the top-level one a name clash (§7.1 step 3.c.ii.3, third pass
-   P3_08). All in the code this PR changes and a few lines each; the brief's default is to fix such defects in the PR.
-   Separate commits so each can be dropped alone.
-7. **Failure messages** are #52's: `SD-JWT VC claim 'x' MUST NOT be selectively disclosed (… §2.2.2.3)` for a top-level
+6. **RFC 9901 §7.1 step 4, and `_sd_alg` at the top level only, in their own commits.** The reconstructor refused a
+   repeated digest only within one `_sd` array or when a Disclosure resolved it twice (first pass, X1), and it skipped
+   every `_sd_alg` member at any depth, so a digest under a nested one was never seen and the member vanished from
+   the processed payload (second pass, A1). Now every embedded digest is tracked for the whole walk (`2317ec1`), and
+   a nested `_sd_alg` is refused (this decision moved twice). `80880e8` refused it (§4.1.1 "MUST NOT be used in any
+   object nested within the payload"); `2e18450` switched to keeping it as data, because `SdJwtIssuer` signs one from
+   a caller's claims and the library refused its own output (third pass, P3_07); the PR #54 review showed that
+   §4.1.1 is a MUST with no exception in §7.1 and that an issuer emitting the shape is an issuer bug, so `f7909a0`
+   refuses it again, on both sides: the reconstructor in the clear, in a disclosed value and through a Disclosure's
+   name, and the issuer before signing (decision 7). A Disclosure named `_sd_alg` beside the top-level one is a name
+   clash (§7.1 step 3.c.ii.3, third pass P3_08). Own output refused by this: only SD-JWTs whose caller's claims held
+   a member named `_sd_alg` below the top level (or framed the top-level one); in every release the issuer wrote
+   `_sd_alg` at the top level only (checked per tag), so default issuance never produced it.
+7. **`SdJwtIssuer` reconstructs what it is about to sign, as the verifier would with every Disclosure presented, and
+   refuses to sign an SD-JWT that fails** (`f7909a0`). The review asked for issuance to reject a nested `_sd_alg`,
+   including one a Disclosure introduces and one inside a .NET object in a `JsonValue`; parsing back the payload
+   bytes and the encoded Disclosures and running the reconstructor sees exactly what a verifier will. Alternative: a
+   dedicated walk for nested `_sd_alg` over the payload, the Disclosure values and the Disclosure names. Lost: three
+   places to keep in step with the reconstructor, the issuer/verifier mismatch this PR has hit three times, and it
+   leaves the other mismatches (duplicate member names, Disclosures named `_sd` or `...`, depth 63, caller-built
+   `_sd` that does not reconstruct), which the self-check closes too. Cost: one parse and one reconstruction per
+   issuance.
+8. **Failure messages** are #52's: `SD-JWT VC claim 'x' MUST NOT be selectively disclosed (… §2.2.2.3)` for a top-level
    Disclosure (unchanged from 2.0.0) and `SD-JWT VC claim 'x' MUST NOT have selectively disclosable sub-claims or
    elements (…)` for a site inside one.
 
@@ -122,7 +133,7 @@ RFC 9901:
 - [x] PRD FR-16, FR-17 and AC-3 step 5, `SdJwtVcConstants`, issuer and verifier docs, sample, CHANGELOG.
 - [x] Build `/warnaserror`, full test run, `ac-7`, `ac-9`.
 - [x] Adversarial passes, fixes re-attacked.
-- [ ] PR, CI green.
+- [x] PR #54, CI green (12 of 12 on `34ccbba`).
 
 ## Verification
 
@@ -138,7 +149,8 @@ RFC 9901:
   generic `SdJwtIssuer` (pass up to 63, the serializer's `InvalidOperationException` from 64), so the as-signed scan
   changes nothing there.
 - `dotnet build DataProofsDotnet.sln -c Release --no-incremental /warnaserror`: 0 warnings, 0 errors.
-- `dotnet test DataProofsDotnet.sln -c Release --no-build`: 3496 passed, 0 failed, 0 skipped (Jose 1525).
+- `dotnet test DataProofsDotnet.sln -c Release --no-build`: 3496 passed, 0 failed, 0 skipped (Jose 1525) at `34ccbba`;
+  3509 (Jose 1538) after review round 1.
 - `ac-7` `tasks/api-surface-scan`: clean. `ac-9` `tasks/samples-coverage`: OK, 549 members (547 covered, 2
   allowlisted); all 15 samples exit 0. No public API change, so `PublicAPI.Unshipped.txt` is untouched by this issue.
 
@@ -176,10 +188,19 @@ masking a site; every vendored fixture; size and depth.
 - Generic `SdJwtIssuer` input rule: refuse a caller-built `_sd`, `_sd_alg` or `...` placeholder in the claims set
   (RFC 9901 §4.1 rule 7). It signs them as given, and silently overwrites a caller's `_sd` when the frame makes digests
   at the same level. A top-level one can hide a reserved claim that no verifier can see.
-- Issuance at depth 63: both issuers sign a claims set the reconstructor's depth bound of 64 then refuses
-  (pre-existing).
 - #45: neither verifier checks `exp` or `nbf` (RFC 9901 §7.1 step 6).
 
 ## Review
 
-(Filled in as review rounds happen.)
+**Round 1, on `34ccbba`** (issue comment 7029609982): one P2. A nested `_sd_alg` is prohibited by RFC 9901 §4.1.1,
+not ordinary data, so `2e18450` and the tests asserting validity were wrong; reject it during issuance and
+reconstruction, including what Disclosures introduce; keep top-level and default-algorithm controls; correct the PRD,
+CHANGELOG and PR description.
+- Reproduced on `34ccbba`: the reviewer's payload, signed with `typ: dc+sd-jwt`, verifies on both verifiers and keeps
+  `address._sd_alg`; so does the disclosed variant.
+- Own output before changing anything: every tag's `SdJwtIssuer` writes `_sd_alg` only at the top level after
+  applying the frame, and every tag's reconstructor skipped `_sd_alg` at any depth. So only caller-supplied nested
+  `_sd_alg` (or a framed top-level one) was ever issued and verified; default issuance never produced it.
+- Fixed in `f7909a0` (decisions 6 and 7). `SdJwtSdAlgPlacementTests` (24 tests with the digest file): 10 fail on
+  `34ccbba`, all pass here; the passing ones there are the controls (top-level `sha-256`/`sha-512`, default
+  algorithm, issuer controls), the clash test and the digest tests.

@@ -193,11 +193,21 @@ Error codes (stable prefixes, as the existing `VC_*` ones): `VC_TYPE_METADATA_UN
   and a decoy cannot stand in for a mandatory element. Pass 2 showed the complete view also judged `sd` and path
   errors at indices the decoys had shifted, refusing credentials the verifier accepts; it now reports only a missing
   mandatory claim, which is what §5.6 ties to "the complete Unsecured Payload".
-- New: a fixed selection budget (4,000,000 path selections per validation). The two size bounds do not bound the work,
+- New: a fixed selection budget (1,000,000 path selections per validation; first 4,000,000, lowered when the Windows CI runner took 11 s for about 7.5 million selections). The two size bounds do not bound the work,
   which is claims times selected elements (pass 2: 22 s for a 27,000-leaf credential against 27,000 claims). A fixed
   internal bound, like the reconstruction's depth 64, rather than another option.
 
 ## Review
+
+### Merge of #54's head `5881d62` (merge `20a71c1`)
+
+#54 now refuses a nested `_sd_alg` in the reconstructor (in the clear, in a disclosed value, or as a Disclosure's
+name) and makes `SdJwtIssuer` reconstruct the bytes it is about to sign, refusing to sign what would not verify. The
+merge was clean: the new throws sit beside the trace calls and do not touch them. The two issuance checks are layered,
+not duplicated in purpose: `SdJwtIssuer`'s runs before signing, untraced, and decides whether the SD-JWT verifies at
+all; `IssueWithTypeMetadataAsync`'s runs after, traced, on the signed bytes, and decides whether it satisfies its Type
+Metadata. The second reconstruction therefore cannot fail; it repeats the walk only for the positions (a comment says
+so). Full suite after the merge: 3,617 passed, 0 skipped; `git diff 5881d62 HEAD` holds only this issue's files.
 
 ### Adversarial pass 1 (fresh agent; issue, diff and -27 text only), on `e4b6743`
 
