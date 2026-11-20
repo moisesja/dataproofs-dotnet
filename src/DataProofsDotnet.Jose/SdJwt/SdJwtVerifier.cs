@@ -72,9 +72,10 @@ public static class SdJwtVerifier
     /// <remarks>
     /// The hook is the trust decision: return <c>true</c> only when the chain validates (RFC 5280) to an anchor your
     /// policy permits for this Issuer. A certificate in <c>x5c</c> is not an anchor because it is there, and the library
-    /// checks no certificate signature, validity, key usage, order, revocation or anchor (see
-    /// <see cref="X509CertificateChain"/>). An exception from the hook propagates unchanged. Failures are coded:
-    /// <c>X5C_MISSING</c>, <c>X5C_MALFORMED</c>, <c>X5C_UNSUPPORTED_KEY</c>, <c>ISSUER_SIGNATURE_INVALID</c> (the
+    /// checks no certificate signature, validity, order, revocation or anchor (see <see cref="X509CertificateChain"/>);
+    /// it does refuse an end-entity certificate whose Key Usage does not assert <c>digitalSignature</c>, before using the
+    /// key. An exception from the hook propagates unchanged. Failures are coded: <c>X5C_MISSING</c>,
+    /// <c>X5C_MALFORMED</c>, <c>X5C_UNSUPPORTED_KEY</c>, <c>X5C_KEY_USAGE</c>, <c>ISSUER_SIGNATURE_INVALID</c> (the
     /// signature does not verify under the end-entity key) and <c>X5C_UNTRUSTED</c> (the hook returned <c>false</c>).
     /// </remarks>
     /// <param name="presentation">The presented SD-JWT (<c>issuer-JWT~D1~…~Dn~</c> optionally followed by a KB-JWT).</param>
@@ -161,6 +162,9 @@ public static class SdJwtVerifier
             var outcome = X509CertificateChain.FromHeader(issuerJwt.Header);
             if (outcome.Chain is not { } chain)
                 return SdJwtVerificationResult.Failure(outcome.Message, issuerJwt.Algorithm);
+            // A key whose certificate does not permit digital signatures is not used at all (RFC 5280 §4.2.1.3).
+            if (!chain.EndEntityMaySign)
+                return SdJwtVerificationResult.Failure(X509CertificateChain.KeyUsageMessage, issuerJwt.Algorithm);
             issuerChain = chain;
             var (keyType, publicKey) = chain.EndEntityKey;
             issuerPublicJwk = JwkConversion.ToPublicJwk(keyType, publicKey);

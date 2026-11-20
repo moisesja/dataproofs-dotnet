@@ -143,8 +143,10 @@ public static class SdJwtVcVerifier
     /// Issuer according to policy (a certificate in the x5c header parameter is not a trust anchor merely because it is
     /// included there)". Return <c>true</c> only when that holds: for example with <c>X509Chain</c> in
     /// <c>CustomRootTrust</c> mode, your anchors in <c>CustomTrustStore</c> and the <c>x5c</c> certificates in
-    /// <c>ExtraStore</c> only. The library checks no certificate signature, validity period, key usage, chain order,
-    /// revocation or anchor (see <see cref="X509CertificateChain"/>). An exception from the hook propagates unchanged.
+    /// <c>ExtraStore</c> only. The library checks no certificate signature, validity period, chain order, revocation or
+    /// anchor (see <see cref="X509CertificateChain"/>); it does refuse an end-entity certificate whose Key Usage does not
+    /// assert <c>digitalSignature</c>, before using the key (<c>X5C_KEY_USAGE</c>). Extended Key Usage, whose purposes
+    /// an ecosystem defines, is the hook's to check. An exception from the hook propagates unchanged.
     /// </para>
     /// <para>
     /// Under this mechanism the Issuer is the subject of the end-entity certificate in
@@ -154,7 +156,7 @@ public static class SdJwtVcVerifier
     /// </para>
     /// <para>
     /// Failures are coded: those of <see cref="VerifyAsync"/> and <see cref="VerifyWithTypeMetadataAsync"/>, with
-    /// <c>X5C_MISSING</c>, <c>X5C_MALFORMED</c>, <c>X5C_UNSUPPORTED_KEY</c> and <c>X5C_UNTRUSTED</c> (the hook returned
+    /// <c>X5C_MISSING</c>, <c>X5C_MALFORMED</c>, <c>X5C_UNSUPPORTED_KEY</c>, <c>X5C_KEY_USAGE</c> and <c>X5C_UNTRUSTED</c> (the hook returned
     /// <c>false</c>) in place of the <c>kid</c> resolver's <c>ISSUER_KEY_UNRESOLVED</c>; a signature that does not verify
     /// under the end-entity key is <c>ISSUER_SIGNATURE_INVALID</c>. The validity window is judged after the hook, which
     /// is called for an expired credential too. Type Metadata is retrieved only after the hook accepted the chain, the

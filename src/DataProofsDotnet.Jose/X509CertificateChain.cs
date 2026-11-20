@@ -16,14 +16,31 @@ namespace DataProofsDotnet.Jose;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Parsed, not validated.</b> Building this type checks that each entry is one well-formed DER certificate
-/// with nothing after it (an explicit v1 version and an explicit critical <c>FALSE</c>, DEFAULT values DER would omit,
-/// are tolerated) and that the end-entity key is one this package verifies with. It does <b>not</b> perform
-/// RFC 5280 path validation: it checks no certificate signature, validity period, basic constraints, key usage,
-/// name chaining or order, revocation, policy, name constraint or critical extension, and it knows no trust anchor.
-/// RFC 7515 §4.1.6 requires the recipient to validate the chain, and draft-ietf-oauth-sd-jwt-vc-27 §2.5 requires
-/// it to be validated "against a trust anchor permitted for the Issuer according to policy (a certificate in the
-/// x5c header parameter is not a trust anchor merely because it is included there)". That is the caller's hook.
+/// <b>Parsed, not validated.</b> Building this type reads each entry as exactly one DER certificate with nothing after
+/// it. Every TLV is read under DER rules: each field of <c>TBSCertificate</c> for its tag and position, each issuer and
+/// subject Name down to its attribute values, each AlgorithmIdentifier's parameters, and each extension with the DER
+/// value inside its <c>extnValue</c>; no extension may appear twice (RFC 5280 §4.2). Inside values the schema leaves
+/// open (attribute values, parameters, extension values) every nested TLV is read too, to a depth of 32, with DER's
+/// content rules for BOOLEAN, INTEGER, ENUMERATED, BIT STRING, NULL, OBJECT IDENTIFIER and the two time types; the bytes
+/// of strings and OCTET STRINGs are not interpreted (a character set is a type constraint, not an encoding rule), and the
+/// contents of the signature and public-key BIT STRINGs are not TLVs and are not read, except the end-entity key. Two
+/// DEFAULT values encoded explicitly, which DER would omit (an explicit v1 version, an explicit critical <c>FALSE</c>),
+/// are tolerated, as certificate parsers generally do.
+/// </para>
+/// <para>
+/// It does <b>not</b> perform RFC 5280 path validation: it checks no certificate signature, validity period, basic
+/// constraints, name chaining or order, revocation, policy, name constraint, Extended Key Usage or critical extension,
+/// and it knows no trust anchor. RFC 7515 §4.1.6 requires the recipient to validate the chain, and
+/// draft-ietf-oauth-sd-jwt-vc-27 §2.5 requires it to be validated "against a trust anchor permitted for the Issuer
+/// according to policy (a certificate in the x5c header parameter is not a trust anchor merely because it is included
+/// there)". That is the caller's hook.
+/// </para>
+/// <para>
+/// One restriction is checked where the key is used, because it limits that use: an end-entity certificate with a Key
+/// Usage extension that does not assert <c>digitalSignature</c> (RFC 5280 §4.2.1.3; critical or not; a
+/// <c>contentCommitment</c>-only key included) may not verify a JWS. The verifiers refuse it with <c>X5C_KEY_USAGE</c>
+/// before using the key or calling the hook, and <see cref="Signing.JwsSigner.CertificateChain"/> refuses it.
+/// <see cref="Create"/> does not: such a chain is well formed.
 /// </para>
 /// <para>
 /// A well-formed chain holds 1 to <see cref="MaxCertificates"/> certificates, no two identical. The end-entity
@@ -45,6 +62,14 @@ public sealed class X509CertificateChain
     internal const string MalformedCode = "X5C_MALFORMED";
     internal const string UnsupportedKeyCode = "X5C_UNSUPPORTED_KEY";
     internal const string UntrustedCode = "X5C_UNTRUSTED";
+    internal const string KeyUsageCode = "X5C_KEY_USAGE";
+
+    /// <summary>
+    /// The deepest nesting accepted inside a value the certificate's schema leaves open (an attribute value, algorithm
+    /// parameters, an extension value). Real certificates nest such values a few levels deep; 32 bounds the recursion.
+    /// </summary>
+    private const int MaxOpenValueDepth = 32;
+    private const string KeyUsageOid = "2.5.29.15";             // id-ce-keyUsage (RFC 5280 §4.2.1.3)
 
     private const string HeaderParameter = "x5c";
     private const string EcPublicKeyOid = "1.2.840.10045.2.1"; // id-ecPublicKey (RFC 5480 §2.1.1)
@@ -61,11 +86,13 @@ public sealed class X509CertificateChain
     private readonly KeyType _endEntityKeyType;
     private readonly byte[] _endEntityPublicKey;
 
-    private X509CertificateChain(IReadOnlyList<ReadOnlyMemory<byte>> certificates, KeyType endEntityKeyType, byte[] endEntityPublicKey)
+    private X509CertificateChain(
+        IReadOnlyList<ReadOnlyMemory<byte>> certificates, KeyType endEntityKeyType, byte[] endEntityPublicKey, bool endEntityMaySign)
     {
         Certificates = certificates;
         _endEntityKeyType = endEntityKeyType;
         _endEntityPublicKey = endEntityPublicKey;
+        EndEntityMaySign = endEntityMaySign;
     }
 
     /// <summary>The DER certificates, in <c>x5c</c> order: the end-entity certificate first. Copies owned by this instance.</summary>
@@ -84,13 +111,25 @@ public sealed class X509CertificateChain
     internal (KeyType KeyType, byte[] PublicKey) EndEntityKey => (_endEntityKeyType, _endEntityPublicKey);
 
     /// <summary>
+    /// Whether the end-entity key may verify a JWS signature: <c>true</c> when the certificate has no Key Usage extension
+    /// or its Key Usage asserts <c>digitalSignature</c> (RFC 5280 §4.2.1.3). Checked before the key is used.
+    /// </summary>
+    internal bool EndEntityMaySign { get; }
+
+    /// <summary>The coded message for an end-entity certificate whose Key Usage does not permit JWS signatures.</summary>
+    internal const string KeyUsageMessage =
+        KeyUsageCode + ": the end-entity certificate's Key Usage does not assert digitalSignature (RFC 5280 §4.2.1.3), "
+        + "so its key may not verify a JWS signature.";
+
+    /// <summary>
     /// Build a chain from DER certificates, the end-entity certificate first. The bytes are copied.
     /// </summary>
     /// <param name="certificates">The DER certificates, end-entity first (for example <c>X509Certificate2.RawData</c>).</param>
     /// <exception cref="ArgumentNullException">When <paramref name="certificates"/> is null.</exception>
     /// <exception cref="MalformedJoseException">
     /// <c>X5C_MALFORMED</c>: no certificate, more than <see cref="MaxCertificates"/>, an entry that is not exactly
-    /// one DER certificate, two identical entries, or an end-entity key that is not a valid encoding: an EC key not on its
+    /// one DER certificate (see the remarks for what is read), an extension twice in one certificate, two identical
+    /// entries, or an end-entity key that is not a valid encoding: an EC key not on its
     /// named curve, or an Ed25519 key that is not 32 bytes. Whether 32 Ed25519 bytes decode to a curve point is left to
     /// signature verification (RFC 8032 §5.1.7), as for an Ed25519 JWK: a JWS under such a key fails as a signature that
     /// does not verify, before any hook runs.
@@ -197,6 +236,7 @@ public sealed class X509CertificateChain
             return ParseOutcome.Malformed(countProblem);
 
         (string Oid, ReadOnlyMemory<byte>? Parameters, byte[] Key, int UnusedBits) endEntitySpki = default;
+        var endEntityMaySign = true;
         for (var i = 0; i < der.Count; i++)
         {
             for (var j = 0; j < i; j++)
@@ -207,9 +247,15 @@ public sealed class X509CertificateChain
 
             try
             {
-                var spki = ReadCertificate(der[i]);
+                var (spki, keyUsage) = ReadCertificate(der[i]);
                 if (i == 0)
+                {
                     endEntitySpki = spki;
+                    // RFC 5280 §4.2.1.3: when present, Key Usage lists what the key may be used for, critical or not.
+                    // A JWS signature is verified with the end-entity key, so its certificate must assert
+                    // digitalSignature (bit 0). Only the end-entity: a CA's usage is the caller's path validation.
+                    endEntityMaySign = keyUsage is null || (keyUsage.Length > 0 && (keyUsage[0] & 0x80) != 0);
+                }
             }
             catch (AsnContentException ex)
             {
@@ -223,20 +269,25 @@ public sealed class X509CertificateChain
         return ParseOutcome.Success(new X509CertificateChain(
             new ReadOnlyCollection<ReadOnlyMemory<byte>>(der.Select(b => new ReadOnlyMemory<byte>(b)).ToArray()),
             keyType,
-            key!));
+            key!,
+            endEntityMaySign));
     }
 
     /// <summary>
-    /// Read one <c>Certificate</c> (RFC 5280 §4.1) under DER rules and return its <c>subjectPublicKeyInfo</c>. The
-    /// structure is walked to a fixed depth, so a deeply nested input costs no recursion; every field of
-    /// <c>TBSCertificate</c> is checked for its tag and position, and nothing may follow the certificate.
+    /// Read one <c>Certificate</c> (RFC 5280 §4.1) under DER rules and return its <c>subjectPublicKeyInfo</c> and its Key
+    /// Usage bits (<c>null</c> without the extension). Every TLV is read: each field of <c>TBSCertificate</c> for its tag
+    /// and position, each Name down to its attribute values, each extension and the DER value inside it, and the values
+    /// the schema leaves open (attribute values, algorithm parameters, extension values) with <see cref="ReadOpenValue"/>.
+    /// The contents of the signature and public-key BIT STRINGs are not TLVs and are not read. Nothing may follow the
+    /// certificate.
     /// </summary>
-    private static (string Oid, ReadOnlyMemory<byte>? Parameters, byte[] Key, int UnusedBits) ReadCertificate(byte[] der)
+    private static ((string Oid, ReadOnlyMemory<byte>? Parameters, byte[] Key, int UnusedBits) Spki, byte[]? KeyUsage) ReadCertificate(byte[] der)
     {
         var reader = new AsnReader(der, AsnEncodingRules.DER);
         var certificate = reader.ReadSequence();
         if (reader.HasData)
             throw new AsnContentException("bytes follow the certificate.");
+        byte[]? keyUsage = null;
 
         var tbs = certificate.ReadSequence();
         ReadAlgorithmIdentifier(certificate);   // signatureAlgorithm
@@ -254,13 +305,13 @@ public sealed class X509CertificateChain
         }
         tbs.ReadIntegerBytes();                 // serialNumber
         ReadAlgorithmIdentifier(tbs);           // signature
-        tbs.ReadSequence();                     // issuer
+        ReadName(tbs);                          // issuer
         var validity = tbs.ReadSequence();
         ReadTime(validity);                     // notBefore
         ReadTime(validity);                     // notAfter
         if (validity.HasData)
             throw new AsnContentException("the validity has more than two fields.");
-        tbs.ReadSequence();                     // subject
+        ReadName(tbs);                          // subject
 
         var spki = tbs.ReadSequence();
         var algorithm = spki.ReadSequence();
@@ -269,7 +320,10 @@ public sealed class X509CertificateChain
         // empty memory, so absent parameters would read as present.
         ReadOnlyMemory<byte>? parameters = null;
         if (algorithm.HasData)
+        {
+            ReadOpenValue(algorithm.Clone(), 0);
             parameters = algorithm.ReadEncodedValue();
+        }
         if (algorithm.HasData)
             throw new AsnContentException("the public key algorithm has more than two fields.");
         var key = spki.ReadBitString(out var unusedBits);
@@ -286,21 +340,129 @@ public sealed class X509CertificateChain
             var extensions = explicitExtensions.ReadSequence();
             if (explicitExtensions.HasData || !extensions.HasData)
                 throw new AsnContentException("the extensions field is not one non-empty SEQUENCE.");
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             while (extensions.HasData)
             {
                 var extension = extensions.ReadSequence();
-                extension.ReadObjectIdentifier();
+                var extensionId = extension.ReadObjectIdentifier();
+                // RFC 5280 §4.2: "A certificate MUST NOT include more than one instance of a particular extension."
+                if (!seen.Add(extensionId))
+                    throw new AsnContentException($"the extension {extensionId} appears twice.");
                 if (extension.HasData && extension.PeekTag().HasSameClassAndValue(Asn1Tag.Boolean))
                     extension.ReadBoolean();
-                extension.ReadOctetString();
+                var value = extension.ReadOctetString();
                 if (extension.HasData)
                     throw new AsnContentException("an extension has more than three fields.");
+
+                // extnValue "contains the DER encoding of an ASN.1 value" (RFC 5280 §4.1): exactly one TLV.
+                var valueReader = new AsnReader(value, AsnEncodingRules.DER);
+                if (extensionId == KeyUsageOid)
+                {
+                    // KeyUsage ::= BIT STRING, bit 0 digitalSignature.
+                    keyUsage = valueReader.ReadBitString(out _);
+                }
+                else
+                {
+                    ReadOpenValue(valueReader, 0);
+                }
+                if (valueReader.HasData)
+                    throw new AsnContentException($"the value of the extension {extensionId} is not one DER TLV.");
             }
         }
         if (tbs.HasData)
             throw new AsnContentException("the TBSCertificate has unexpected trailing fields.");
 
-        return (oid, parameters, key, unusedBits);
+        return ((oid, parameters, key, unusedBits), keyUsage);
+    }
+
+    /// <summary>
+    /// RFC 5280 §4.1.2.4: <c>Name ::= RDNSequence</c>, a SEQUENCE OF <c>RelativeDistinguishedName</c>, each a SET (in DER
+    /// order) of one or more <c>AttributeTypeAndValue ::= SEQUENCE { type OID, value ANY }</c>. An empty RDNSequence is
+    /// allowed (a subject named only in subjectAltName).
+    /// </summary>
+    private static void ReadName(AsnReader reader)
+    {
+        var rdnSequence = reader.ReadSequence();
+        while (rdnSequence.HasData)
+        {
+            var rdn = rdnSequence.ReadSetOf();
+            if (!rdn.HasData)
+                throw new AsnContentException("a RelativeDistinguishedName is empty.");
+            while (rdn.HasData)
+            {
+                var attribute = rdn.ReadSequence();
+                attribute.ReadObjectIdentifier();
+                ReadOpenValue(attribute, 0);
+                if (attribute.HasData)
+                    throw new AsnContentException("an AttributeTypeAndValue has more than two fields.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Read one TLV whose type the certificate schema leaves open, and everything inside it, under DER rules: definite
+    /// minimal lengths at every level; constructed encodings only for SEQUENCE, SET and non-universal tags (DER encodes
+    /// every other universal type primitively); a SET's elements in DER order; and the content rules DER sets for
+    /// BOOLEAN, INTEGER, ENUMERATED, BIT STRING, NULL, OBJECT IDENTIFIER, UTCTime and GeneralizedTime. The bytes of strings
+    /// and of OCTET STRINGs are not interpreted (a character set is a type constraint, not an encoding rule). Nesting
+    /// deeper than <see cref="MaxOpenValueDepth"/> is refused.
+    /// </summary>
+    private static void ReadOpenValue(AsnReader reader, int depth)
+    {
+        var tag = reader.PeekTag();
+        if (tag.IsConstructed)
+        {
+            if (depth >= MaxOpenValueDepth)
+                throw new AsnContentException($"a value is nested more than {MaxOpenValueDepth} levels deep.");
+            AsnReader inner;
+            if (tag.TagClass != TagClass.Universal)
+                inner = reader.ReadSequence(tag);
+            else if (tag.TagValue == (int)UniversalTagNumber.Sequence)
+                inner = reader.ReadSequence();
+            else if (tag.TagValue == (int)UniversalTagNumber.Set)
+                inner = reader.ReadSetOf();
+            else
+                throw new AsnContentException($"a constructed encoding of universal type {tag.TagValue}, which DER forbids.");
+            while (inner.HasData)
+                ReadOpenValue(inner, depth + 1);
+            return;
+        }
+
+        if (tag.TagClass == TagClass.Universal)
+        {
+            switch ((UniversalTagNumber)tag.TagValue)
+            {
+                case UniversalTagNumber.EndOfContents:
+                case UniversalTagNumber.Sequence:
+                case UniversalTagNumber.Set:
+                    throw new AsnContentException($"a primitive encoding of universal type {tag.TagValue}.");
+                case UniversalTagNumber.Boolean:
+                    reader.ReadBoolean();
+                    return;
+                case UniversalTagNumber.Integer:
+                    reader.ReadIntegerBytes();
+                    return;
+                case UniversalTagNumber.Enumerated:
+                    reader.ReadEnumeratedBytes();
+                    return;
+                case UniversalTagNumber.BitString:
+                    reader.ReadBitString(out _);
+                    return;
+                case UniversalTagNumber.Null:
+                    reader.ReadNull();
+                    return;
+                case UniversalTagNumber.ObjectIdentifier:
+                    reader.ReadObjectIdentifier();
+                    return;
+                case UniversalTagNumber.UtcTime:
+                    reader.ReadUtcTime();
+                    return;
+                case UniversalTagNumber.GeneralizedTime:
+                    reader.ReadGeneralizedTime();
+                    return;
+            }
+        }
+        reader.ReadEncodedValue();
     }
 
     private static void ReadAlgorithmIdentifier(AsnReader reader)
@@ -308,7 +470,7 @@ public sealed class X509CertificateChain
         var algorithm = reader.ReadSequence();
         algorithm.ReadObjectIdentifier();
         if (algorithm.HasData)
-            algorithm.ReadEncodedValue();
+            ReadOpenValue(algorithm, 0);
         if (algorithm.HasData)
             throw new AsnContentException("an AlgorithmIdentifier has more than two fields.");
     }
