@@ -25,8 +25,16 @@ public sealed class X5cReviewRound2Tests
     /// <summary>The reviewer's value: SET { a [0] EXPLICIT INTEGER 1, b [1] IMPLICIT INTEGER 2 }, valid DER in tag order.</summary>
     private static readonly byte[] TagOrderedSet = [0x31, 0x08, 0xA0, 0x03, 0x02, 0x01, 0x01, 0x81, 0x01, 0x02];
 
-    /// <summary>A platform-made end-entity certificate with digitalSignature Key Usage and the given extra extensions.</summary>
+    /// <summary>
+    /// A platform-made end-entity certificate with digitalSignature Key Usage and the given extra extensions. With
+    /// <paramref name="authorityKeyIdentifier"/>, the intermediate carries a subjectKeyIdentifier and the leaf an
+    /// authorityKeyIdentifier naming it (key id, issuer and serial), as real issuers emit them: OpenSSL matches the AKI
+    /// against the issuer when it builds the path, so an AKI naming another CA would leave the leaf without an issuer.
+    /// </summary>
     private static (Pki Pki, byte[] Certificate) PlatformLeaf(string name, params X509Extension[] extensions)
+        => PlatformLeaf(name, authorityKeyIdentifier: false, extensions);
+
+    private static (Pki Pki, byte[] Certificate) PlatformLeaf(string name, bool authorityKeyIdentifier, params X509Extension[] extensions)
     {
         var pki = CreatePki(KeyType.P256, name);
         // Re-issue the end-entity for the same NetCrypto key with the extra extensions, under the same intermediate.
@@ -34,6 +42,8 @@ public sealed class X5cReviewRound2Tests
         var intermediateRequest = new CertificateRequest($"CN={name} Intermediate", intermediateKey, HashAlgorithmName.SHA256);
         intermediateRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
         intermediateRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign, true));
+        if (authorityKeyIdentifier)
+            intermediateRequest.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(intermediateRequest.PublicKey, critical: false));
         var now = DateTimeOffset.UtcNow;
         using var intermediate = intermediateRequest.Create(pki.Root, now.AddDays(-1), now.AddYears(1), [0x11]);
         var jwk = pki.Leaf.PublicJwk;
@@ -46,6 +56,11 @@ public sealed class X5cReviewRound2Tests
         request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
         foreach (var extension in extensions)
             request.CertificateExtensions.Add(extension);
+        if (authorityKeyIdentifier)
+        {
+            request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(
+                intermediate, includeKeyIdentifier: true, includeIssuerAndSerial: true));
+        }
         using var leaf = request.Create(intermediate.SubjectName, X509SignatureGenerator.CreateForECDsa(intermediateKey),
             now.AddDays(-1), now.AddMonths(6), [0x12]);
         return (pki with { Intermediate = X509CertificateLoader.LoadCertificate(intermediate.RawData) }, leaf.RawData);
@@ -55,12 +70,27 @@ public sealed class X5cReviewRound2Tests
     private static async Task ShouldBeAcceptedEndToEnd(Pki pki, byte[] leafCertificate)
     {
         var chain = X509CertificateChain.Create([leafCertificate, pki.Intermediate.RawData]);
-        ValidateWithAnchors(chain, pki.Root).Should().BeTrue("the platform accepts the chain");
+        ValidateWithAnchors(chain, pki.Root).Should().BeTrue($"the platform accepts the chain ({PlatformStatus(chain, pki.Root)})");
 
         var signer = new JwsSigner(pki.Leaf.Signer.Signer) { CertificateChain = chain };
         var compact = await JwsBuilder.BuildCompactAsync(Payload, signer);
         JwsParser.ParseCompactWithCertificateChain(compact, c => ValidateWithAnchors(c, pki.Root), Crypto)
             .PayloadBytes.Should().Equal(Payload);
+    }
+
+    /// <summary>What the platform chain engine reports, for an assertion message.</summary>
+    private static string PlatformStatus(X509CertificateChain chain, X509Certificate2 anchor)
+    {
+        using var platformChain = new X509Chain();
+        platformChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        platformChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        platformChain.ChainPolicy.DisableCertificateDownloads = true;
+        platformChain.ChainPolicy.CustomTrustStore.Add(anchor);
+        foreach (var certificate in chain.Certificates.Skip(1))
+            platformChain.ChainPolicy.ExtraStore.Add(X509CertificateLoader.LoadCertificate(certificate.Span));
+        using var endEntity = X509CertificateLoader.LoadCertificate(chain.EndEntityCertificate.Span);
+        platformChain.Build(endEntity);
+        return string.Join("; ", platformChain.ChainStatus.Select(s => $"{s.Status}: {s.StatusInformation.Trim()}"));
     }
 
     private static byte[] Der(Action<AsnWriter> write)
@@ -283,7 +313,7 @@ public sealed class X5cReviewRound2Tests
     [Fact]
     public async Task Certificates_with_real_world_extensions_are_accepted()
     {
-        var (pki, leaf) = PlatformLeaf("RealWorld",
+        var (pki, leaf) = PlatformLeaf("RealWorld", authorityKeyIdentifier: true,
             CertificatePolicies(),
             QcStatements(),
             SignedCertificateTimestamps(),
@@ -291,10 +321,7 @@ public sealed class X5cReviewRound2Tests
             CrlDistributionPoints(),
             SubjectAlternativeNames(),
             new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1"), new Oid("1.3.6.1.5.5.7.3.2")], critical: false),
-            new X509SubjectKeyIdentifierExtension(Enumerable.Range(1, 20).Select(i => (byte)i).ToArray(), critical: false),
-            X509AuthorityKeyIdentifierExtension.Create(
-                Enumerable.Range(21, 20).Select(i => (byte)i).ToArray(), new X500DistinguishedName("CN=Some Issuer, O=Example, C=DE"),
-                new byte[] { 0x01, 0x02 }));
+            new X509SubjectKeyIdentifierExtension(Enumerable.Range(1, 20).Select(i => (byte)i).ToArray(), critical: false));
 
         await ShouldBeAcceptedEndToEnd(pki, leaf);
     }
