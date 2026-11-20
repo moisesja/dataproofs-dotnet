@@ -20,7 +20,8 @@ using Base64Url = DataProofsDotnet.Jose.Base64Url;
 //   * offline-by-default Type Metadata (`vct`) resolution via a pluggable resolver hook —
 //     LocalCacheTypeMetadataResolver here, never the network (FR-10 posture),
 //   * Type Metadata processing on request (draft -27 §5.7, issue #47): integrity, the extends chain,
-//     merged claim metadata the credential must satisfy, typed display metadata for a wallet.
+//     merged claim metadata the credential must satisfy, typed display metadata for a wallet,
+//   * the validity window: nbf and exp judged at CurrentTime with ClockSkew (issue #45).
 //
 // Constructed by hand (no DI package).
 
@@ -181,6 +182,41 @@ SdJwtVcVerificationResult nestedResult = await SdJwtVcVerifier.VerifyAsync(neste
 Console.WriteLine($"  credentialSubject.status disclosed and verified: {nestedResult.IsValid}");
 Check(nestedResult.IsValid && nestedResult.DisclosedPayload!["credentialSubject"]!["status"]!.GetValue<string>() == "active",
     "a nested claim named like a registered claim is selectively disclosable");
+Console.WriteLine();
+
+// ----------------------------------------------------------- 2b. Validity window (nbf / exp)
+// draft -27 §2.2.2.3: the credential "MUST NOT be accepted" before nbf and "is no longer valid" after
+// exp. Every SdJwtVcVerifier method judges both, in the clear at the top level as the issuer signed
+// them, at CurrentTime with ClockSkew; a nested credentialSubject.exp is an ordinary claim.
+Console.WriteLine("--- validity window (nbf / exp) ---");
+var validFrom = new DateTimeOffset(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
+JsonObject windowed = VcClaims();
+windowed["nbf"] = validFrom.ToUnixTimeSeconds();
+windowed["exp"] = validFrom.AddYears(1).ToUnixTimeSeconds();
+SdJwtIssuer.Result windowIssued = await SdJwtVcIssuer.IssueAsync(windowed, frame, issuerSigner);
+
+async Task<SdJwtVcVerificationResult> VerifyAt(DateTimeOffset now) => await SdJwtVcVerifier.VerifyAsync(
+    windowIssued.Issuance, resolveIssuer, new SdJwtVerificationOptions { CurrentTime = now, ClockSkew = TimeSpan.FromMinutes(1) },
+    cryptoProvider: joseCrypto);
+
+SdJwtVcVerificationResult current = await VerifyAt(validFrom.AddMonths(6));
+SdJwtVcVerificationResult early = await VerifyAt(validFrom.AddMinutes(-2));
+SdJwtVcVerificationResult withinSkew = await VerifyAt(validFrom.AddSeconds(-30));
+SdJwtVcVerificationResult lapsed = await VerifyAt(validFrom.AddYears(1));
+Console.WriteLine($"  mid-term: valid={current.IsValid}; 2 min early: {early.Errors[0].Split(':')[0]}; 30 s early: valid={withinSkew.IsValid}; "
+    + $"at exp: valid={lapsed.IsValid} (inside the 1 min skew)");
+Check(current.IsValid, "a credential inside its window verifies");
+Check(!early.IsValid && early.Errors[0].StartsWith("SD_JWT_NOT_YET_VALID"), "before nbf - skew it is SD_JWT_NOT_YET_VALID");
+Check(withinSkew.IsValid && lapsed.IsValid, "the clock skew widens the window on both sides");
+SdJwtVcVerificationResult expired = await VerifyAt(validFrom.AddYears(1).AddMinutes(1));
+Check(!expired.IsValid && expired.Errors[0].StartsWith("SD_JWT_EXPIRED"), "from exp + skew on it is SD_JWT_EXPIRED");
+
+// A credentialSubject.exp in the past is an ordinary claim, not the credential's expiry.
+JsonObject nestedExp = VcClaims();
+nestedExp["credentialSubject"] = new JsonObject { ["exp"] = 1000000000 };
+SdJwtIssuer.Result nestedExpIssued = await SdJwtVcIssuer.IssueAsync(nestedExp, frame, issuerSigner);
+Check((await SdJwtVcVerifier.VerifyAsync(nestedExpIssued.Issuance, resolveIssuer, cryptoProvider: joseCrypto)).IsValid,
+    "a nested exp is not the credential's expiry");
 Console.WriteLine();
 
 // ----------------------------------------------------------- 3. Type Metadata (offline, opt-in)

@@ -19,6 +19,16 @@ internal static class SdJwtFixtureSupport
         return Fixtures.ToJwk(doc.RootElement.GetProperty("issuer_public_key_jwk"));
     }
 
+    /// <summary>
+    /// The instant the vendored examples are verified at: 2026-11-16T10:44:04Z, the <c>iat</c> of the -27 Key Binding JWTs,
+    /// inside every example's validity window (<c>iat</c> 1683000000, <c>exp</c> 1883000000, which is 2029-09-02). The
+    /// verifier judges <c>exp</c> (issue #45), so a test that read the wall clock would start failing then.
+    /// </summary>
+    public static readonly DateTimeOffset FixtureTime = DateTimeOffset.FromUnixTimeSeconds(1794825844);
+
+    /// <summary>The default verification options, judged at <see cref="FixtureTime"/>.</summary>
+    public static SdJwtVerificationOptions AtFixtureTime => new() { CurrentTime = FixtureTime };
+
     /// <summary>A kid → JWK resolver that returns <paramref name="key"/> for any kid (the fixtures use a single Issuer key).</summary>
     public static Func<string, Jwk?> SingleKeyResolver(Jwk key) => _ => key;
 

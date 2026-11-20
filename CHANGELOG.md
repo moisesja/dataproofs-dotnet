@@ -225,6 +225,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Behaviour change: SD-JWT and SD-JWT VC verification refuses an expired or not-yet-valid credential** (issue
+  [#45](https://github.com/moisesja/dataproofs-dotnet/issues/45)). RFC 9901 §7.1 step 6, part of the verification the
+  Holder or Verifier "MUST perform": "Check that the SD-JWT is valid using claims such as nbf, exp, and aud in the
+  processed payload, if present". draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3: `nbf` is "The time before which the
+  Verifiable Digital Credential MUST NOT be accepted", `exp` the time "after which the Verifiable Digital Credential is
+  no longer valid". Neither `SdJwtVerifier` nor `SdJwtVcVerifier` read them: an SD-JWT VC with `exp: 1000000000`
+  (2001), or with `nbf: 4102444800` (2100), verified with `IsValid = true`. **Credentials that verified before now
+  fail when they have expired or are not yet valid, including credentials this library issued.**
+  - *What is checked.* The top-level `nbf` and `exp`, both optional, at `SdJwtVerificationOptions.CurrentTime`
+    (default: now) with `SdJwtVerificationOptions.ClockSkew` (default: 2 minutes), which until now applied only to the
+    Key Binding JWT. A presentation fails with `SD_JWT_NOT_YET_VALID` before `nbf` − skew, and with `SD_JWT_EXPIRED` at
+    or after `exp` + skew: RFC 7519 §4.1.4 says the time "MUST be before" `exp`, so with no skew the instant `exp` itself
+    is refused, while `nbf` itself is accepted (§4.1.5, "after or equal"). A present value must be an RFC 7519
+    NumericDate, a JSON number of seconds from -62135596800 to 253402300799 (0001-01-01 to 9999-12-31; exponent
+    notation and fractions allowed, fractions kept to the 100 ns tick); anything else is `SD_JWT_NBF_INVALID` or
+    `SD_JWT_EXP_INVALID`, at any time. Both claims are judged, so a presentation can carry two codes. Each code starts
+    the error message, as every SD-JWT code does.
+  - *Where.* `SdJwtVerifier.Verify` and `VerifyWithCertificateChain`, and `SdJwtVcVerifier.VerifyAsync`,
+    `VerifyWithTypeMetadataAsync` and `VerifyWithCertificateChainAsync`: the check is in the verification all five
+    share, after the Disclosures are processed and before the Key Binding JWT, the SD-JWT VC claim rules (`vct`,
+    `aka_vcts`, the must-not-disclose rule) and any Type Metadata retrieval, so an expired credential never makes a
+    resolver fetch. The SD-JWT VC media-type check (`VC_MEDIA_TYPE_INVALID`) still comes first. The generic verifier enforces it too,
+    because RFC 9901 §7.1 does: it reads the processed payload, so an `exp` an Issuer made selectively disclosable is
+    checked when disclosed (RFC 9901 §9.7 says Issuers must not do this). An SD-JWT VC that verifies has had the value
+    the Issuer signed in the clear at the top level judged, and no other. A Disclosure cannot add an `nbf` or `exp`
+    beside it (the name clash is `DISCLOSURE_INVALID`), and one that adds it where there is none is always refused: with
+    the window's code (`SD_JWT_EXPIRED`, `SD_JWT_NOT_YET_VALID`, `SD_JWT_EXP_INVALID`, `SD_JWT_NBF_INVALID`) when its
+    value fails the window, and with `VC_DISALLOWED_DISCLOSURE` otherwise. A nested claim such as
+    `credentialSubject.exp` is an ordinary claim and is not judged.
+  - *The Key Binding JWT's own `nbf` and `exp`*, when present, are judged the same way (RFC 9901 §7.3 step 5.h: "a valid
+    JWT in all other respects, per [RFC7519]"), with the new codes `KB_JWT_NOT_YET_VALID`, `KB_JWT_EXP_PASSED`,
+    `KB_JWT_NBF_INVALID` and `KB_JWT_EXP_INVALID`. `KB_JWT_EXPIRED` keeps its one meaning, the `iat` age bound
+    (`MaxKeyBindingAge`), and one result can carry it beside `KB_JWT_EXP_PASSED`. The KB-JWT's claims never stand in
+    for the Issuer's. This library's Key Binding JWTs carry neither claim, so none it made is affected.
+  - *This narrows what the verifiers accept.* An expired or not-yet-valid credential, and a non-number `nbf`/`exp`, are
+    invalid under RFC 9901 and RFC 7519. A NumericDate before year 1 or after year 9999 (such as `1e20`) is valid under
+    RFC 7519 and is now refused as `*_INVALID`: no conformant Issuer has a use for it, and refusing is the fail-closed
+    reading in every direction. `nbf` later than `exp` is not refused as such: with no skew it fails at every instant.
+  - *This library's own output.* `SdJwtIssuer` and `SdJwtVcIssuer` have never added `nbf` or `exp`, and have signed the
+    caller's values as given in every release from 0.1.0-preview.1 to 2.0.0. A credential they issued with an `exp` that
+    has now passed, or an `nbf` still ahead, verified until this release and now fails. One they issued with a
+    non-number `nbf` or `exp` (a string, or a .NET `DateTimeOffset` placed in the claims set, which serializes as one)
+    now fails at every instant, and both issuers now refuse to sign it, throwing `MalformedJoseException` with the
+    verifier's code. The issuers do not judge the time: a credential valid from tomorrow is still issued.
+  - *What to do.* Issuers write `nbf` and `exp` as seconds (`DateTimeOffset.ToUnixTimeSeconds()`) and reissue
+    credentials whose holders still need them after `exp`. Verifiers that must judge a credential at another instant,
+    such as an audit of past presentations, set `CurrentTime`; one that tolerates more clock drift raises `ClockSkew`.
+    Tests that verify fixed credentials should set `CurrentTime` too, or they will start failing at the credential's
+    `exp`. No member was added, removed or changed.
+
+- **SD-JWT: the Key Binding JWT age bound no longer throws `OverflowException`.** With `MaxKeyBindingAge` set,
+  `maxAge + ClockSkew` overflowed `TimeSpan` when both were large (for example `ClockSkew = TimeSpan.MaxValue`), and the
+  exception escaped `SdJwtVerifier.Verify` and `SdJwtVcVerifier.VerifyAsync`. It is now compared without overflow.
+  Found by the issue #45 work.
+
 - **SD-JWT VC: the must-not-disclose rule follows a claim's position, not its name** (issue
   [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48)). -27 §2.2.2.3: "The following
   registered JWT claims, including any of their subclaims, when used in the SD-JWT component of an

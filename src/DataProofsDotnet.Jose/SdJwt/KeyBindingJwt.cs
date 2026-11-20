@@ -64,8 +64,9 @@ public static class KeyBindingJwt
     /// Verify a Key Binding JWT against the presented SD-JWT (RFC 9901 §7.3): the header
     /// <c>typ</c> MUST be <c>kb+jwt</c>; the signature MUST verify under the SD-JWT's <c>cnf</c>
     /// Holder key; the <c>sd_hash</c> claim MUST equal the recomputed hash over
-    /// <paramref name="sdJwtWithoutKeyBinding"/>; and <c>aud</c>/<c>nonce</c> (and, when set, the
-    /// <c>iat</c> freshness bound) MUST match the Verifier's expectations. Returns the collected
+    /// <paramref name="sdJwtWithoutKeyBinding"/>; <c>aud</c>/<c>nonce</c> (and, when set, the
+    /// <c>iat</c> freshness bound) MUST match the Verifier's expectations; and a present <c>nbf</c>
+    /// or <c>exp</c> must be a NumericDate whose window holds the current time (§7.3 step 5.h). Returns the collected
     /// failure reasons (empty when the KB-JWT is valid). Never throws on a bad KB-JWT — structural
     /// issues are reported as failures.
     /// </summary>
@@ -149,12 +150,20 @@ public static class KeyBindingJwt
             else
             {
                 var now = options.CurrentTime ?? DateTimeOffset.UtcNow;
-                if (now - iat.Value > maxAge + options.ClockSkew)
+                // In 128-bit ticks: maxAge + ClockSkew overflows TimeSpan (OverflowException out of a never-throws
+                // verifier) when both are large. now - iat cannot: both are DateTimeOffsets, under 3.2e18 ticks apart.
+                if ((Int128)(now - iat.Value).Ticks > (Int128)maxAge.Ticks + options.ClockSkew.Ticks)
                     errors.Add($"KB_JWT_EXPIRED: Key Binding JWT 'iat' is older than the {maxAge} freshness bound (replay defense, RFC 9901 §10).");
                 if (iat.Value - now > options.ClockSkew)
                     errors.Add("KB_JWT_IAT_IN_FUTURE: Key Binding JWT 'iat' is in the future beyond the allowed clock skew.");
             }
         }
+
+        // The KB-JWT's own nbf and exp, when present (RFC 9901 §7.3 step 5.h: "a valid JWT in all other respects, per
+        // [RFC7519]"), judged as the SD-JWT's are. This library's KB-JWTs carry neither. They are the Holder's and never
+        // stand in for the Issuer's, which SdJwtVerifier judged before calling this.
+        errors.AddRange(ValidityWindow.Check(
+            kbJwt.Payload, options.CurrentTime ?? DateTimeOffset.UtcNow, options.ClockSkew, ValidityWindow.KeyBindingJwt));
 
         return errors;
     }

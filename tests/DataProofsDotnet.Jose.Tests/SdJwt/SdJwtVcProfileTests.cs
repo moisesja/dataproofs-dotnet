@@ -46,7 +46,7 @@ public sealed class SdJwtVcProfileTests
         var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
         var expected = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("processed_sd_jwt_payload"));
 
-        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver);
+        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, SdJwtFixtureSupport.AtFixtureTime);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.Vct.Should().Be("https://credentials.example.com/identity_credential");
@@ -65,6 +65,7 @@ public sealed class SdJwtVcProfileTests
 
         var options = new SdJwtVerificationOptions
         {
+            CurrentTime = SdJwtFixtureSupport.FixtureTime,
             RequireKeyBinding = true,
             ExpectedAudience = "https://example.com/verifier",
             ExpectedNonce = "1234567890",
@@ -89,7 +90,7 @@ public sealed class SdJwtVcProfileTests
         doc.RootElement.GetProperty("issuer_signed_jwt_header").GetProperty("typ").GetString()
             .Should().Be(SdJwtVcConstants.MediaType, "the issuer-JWT typ is the dc+sd-jwt media type");
 
-        var result = await SdJwtVcVerifier.VerifyAsync(issued, Resolver);
+        var result = await SdJwtVcVerifier.VerifyAsync(issued, Resolver, SdJwtFixtureSupport.AtFixtureTime);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.Vct.Should().Be("https://credentials.example.com/identity_credential");
@@ -108,7 +109,7 @@ public sealed class SdJwtVcProfileTests
         foreach (var name in new[] { "iat", "exp", "cnf" })
             expected[name] = payload[name]!.DeepClone();
 
-        var result = await SdJwtVcVerifier.VerifyAsync(issued, Resolver);
+        var result = await SdJwtVcVerifier.VerifyAsync(issued, Resolver, SdJwtFixtureSupport.AtFixtureTime);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.Vct.Should().Be("urn:example:eudi:pid:aendgard:1");
@@ -128,6 +129,7 @@ public sealed class SdJwtVcProfileTests
 
         var options = new SdJwtVerificationOptions
         {
+            CurrentTime = SdJwtFixtureSupport.FixtureTime,
             RequireKeyBinding = true,
             ExpectedAudience = kbPayload.GetProperty("aud").GetString(),
             ExpectedNonce = kbPayload.GetProperty("nonce").GetString(),
@@ -301,7 +303,7 @@ public sealed class SdJwtVcProfileTests
         using var presentationDoc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-presentation-no-kb.json");
         var presentation = presentationDoc.RootElement.GetProperty("presentation").GetString()!;
 
-        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, typeMetadataResolver: resolver);
+        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, SdJwtFixtureSupport.AtFixtureTime, typeMetadataResolver: resolver);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.TypeMetadata.Should().NotBeNull("the resolver knows this vct");
@@ -317,7 +319,7 @@ public sealed class SdJwtVcProfileTests
         using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-presentation-no-kb.json");
         var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
 
-        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, typeMetadataResolver: resolver);
+        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, SdJwtFixtureSupport.AtFixtureTime, typeMetadataResolver: resolver);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.TypeMetadata.Should().BeNull("the offline resolver does not know this vct and never reaches the network");

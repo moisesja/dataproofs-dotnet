@@ -33,7 +33,12 @@ public static class SdJwtVcIssuer
     /// <param name="signer">The Issuer's NetCrypto-backed JWS signer.</param>
     /// <param name="options">Issuance options (hash algorithm, decoys, holder cnf key).</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
-    /// <exception cref="MalformedJoseException">When <c>vct</c> is missing/blank, <c>aka_vcts</c> is malformed, the frame discloses a disallowed claim, or a reserved claim carries selective-disclosure structure.</exception>
+    /// <exception cref="MalformedJoseException">
+    /// When <c>vct</c> is missing/blank, <c>aka_vcts</c> is malformed, the frame discloses a disallowed claim, a reserved
+    /// claim carries selective-disclosure structure, or <see cref="SdJwtIssuer.IssueAsync"/> refuses the SD-JWT, for
+    /// example a present <c>nbf</c> or <c>exp</c> that is not a NumericDate (the verifier's <c>SD_JWT_NBF_INVALID</c> /
+    /// <c>SD_JWT_EXP_INVALID</c>). Their times are not judged: a credential valid from tomorrow is issued.
+    /// </exception>
     public static Task<SdJwtIssuer.Result> IssueAsync(
         JsonObject claims,
         DisclosureFrame frame,

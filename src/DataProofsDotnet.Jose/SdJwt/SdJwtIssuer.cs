@@ -32,7 +32,12 @@ public static class SdJwtIssuer
     /// <exception cref="MalformedJoseException">
     /// When the frame references a claim shape the claims set does not have, or the SD-JWT would not verify: an
     /// <c>_sd_alg</c> below the top level (RFC 9901 §4.1.1), a duplicate member name, a Disclosure named <c>_sd</c> or
-    /// <c>...</c>, or anything else <see cref="SdJwtVerifier"/> refuses when every Disclosure is presented.
+    /// <c>...</c>, a top-level <c>nbf</c> or <c>exp</c> that is not a NumericDate (a JSON number of seconds, RFC 7519
+    /// §4.1; a <see cref="DateTimeOffset"/> serializes as a string), or anything else in its content that
+    /// <see cref="SdJwtVerifier"/> refuses when every Disclosure is presented. The time is not judged: an SD-JWT whose
+    /// <c>nbf</c> is in the future, or whose <c>exp</c> has passed, is issued, and fails verification until, or from,
+    /// then. A value the serializer cannot write at all, such as a non-finite <see cref="double"/>, fails as it always
+    /// has, with the serializer's exception.
     /// </exception>
     public static async Task<Result> IssueAsync(
         JsonObject claims,
@@ -177,7 +182,8 @@ public static class SdJwtIssuer
     /// Refuses to sign an SD-JWT that <see cref="SdJwtVerifier"/> would refuse to reconstruct with every Disclosure
     /// presented: the payload bytes and the encoded Disclosures are parsed back and reconstructed as a verifier would.
     /// A caller's claims set can carry what RFC 9901 forbids, such as an <c>_sd_alg</c> below the top level (§4.1.1),
-    /// a member name twice (RFC 7519 §4), or a Disclosure named <c>_sd</c> or <c>...</c>; the frame copies it as given,
+    /// a member name twice (RFC 7519 §4), a Disclosure named <c>_sd</c> or <c>...</c>, or a top-level <c>nbf</c> or
+    /// <c>exp</c> that is not a NumericDate, read in the processed payload as the verifier reads it; the frame copies it as given,
     /// and a .NET object inside a <see cref="JsonValue"/> only shows it once serialized, which is why the serialized
     /// form is checked.
     /// </summary>
@@ -189,7 +195,13 @@ public static class SdJwtIssuer
             var signed = JsonNode.Parse(payloadBytes, documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false })
                 as JsonObject ?? throw new MalformedJoseException("The SD-JWT payload is not a JSON object.");
             var parsed = disclosures.Select(d => Disclosure.Parse(d.Encoded)).ToList();
-            SdJwtReconstructor.Reconstruct(signed, parsed, sdAlg);
+            var processed = SdJwtReconstructor.Reconstruct(signed, parsed, sdAlg);
+
+            // The verifier refuses a present top-level nbf or exp that is not a NumericDate (RFC 9901 §7.1 step 6,
+            // RFC 7519 §4.1), at any time. Only the shape is checked here: an Issuer may sign a credential that
+            // becomes valid later, or one already expired.
+            if (ValidityWindow.ShapeViolation(processed) is { } violation)
+                throw new MalformedJoseException(violation);
         }
         catch (JsonException ex)
         {

@@ -35,8 +35,15 @@ public sealed class Issue48ReservedClaimPositionTests
     /// <summary>The registered claims of -27 §2.2.2.3, as literals.</summary>
     private static readonly string[] Reserved = ["iss", "nbf", "exp", "cnf", "vct", "vct#integrity", "aka_vcts", "status"];
 
+    /// <summary>
+    /// The instant every presentation here is verified at, inside the window of <see cref="CredentialWithReservedClaims"/>
+    /// (<c>nbf</c> 2023-11-14, <c>exp</c> 2029-09-02): the verifier judges both (issue #45), and an expired credential
+    /// would report that before the rule under test.
+    /// </summary>
+    private static readonly DateTimeOffset VerifiedAt = new(2026, 11, 19, 0, 0, 0, TimeSpan.Zero);
+
     private static Task<SdJwtVcVerificationResult> VerifyVc(string presentation)
-        => SdJwtVcVerifier.VerifyAsync(presentation, _ => Issuer.PublicJwk);
+        => SdJwtVcVerifier.VerifyAsync(presentation, _ => Issuer.PublicJwk, new SdJwtVerificationOptions { CurrentTime = VerifiedAt });
 
     /// <summary>A credential carrying every reserved claim in the clear, with object and array shapes to reach into.</summary>
     private static JsonObject CredentialWithReservedClaims() => new()
@@ -136,7 +143,10 @@ public sealed class Issue48ReservedClaimPositionTests
         var result = await SdJwtVcVerifier.VerifyAsync(
             presentation,
             _ => Issuer.PublicJwk,
-            new SdJwtVerificationOptions { RequireKeyBinding = true, ExpectedAudience = "https://verifier.example", ExpectedNonce = "n-48" });
+            new SdJwtVerificationOptions
+            {
+                CurrentTime = VerifiedAt, RequireKeyBinding = true, ExpectedAudience = "https://verifier.example", ExpectedNonce = "n-48",
+            });
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.KeyBindingVerified.Should().BeTrue();
@@ -472,7 +482,7 @@ public sealed class Issue48ReservedClaimPositionTests
         // reconstructs this credential, and only SdJwtVcVerifier refuses it.
         var issuance = await IssueGeneric(new DisclosureFrame().DiscloseObjectProperties("cnf", "jwk"));
 
-        SdJwtVerifier.Verify(issuance, _ => Issuer.PublicJwk).IsValid.Should().BeTrue();
+        SdJwtVerifier.Verify(issuance, _ => Issuer.PublicJwk, new SdJwtVerificationOptions { CurrentTime = VerifiedAt }).IsValid.Should().BeTrue();
         (await VerifyVc(issuance)).Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE");
     }
 

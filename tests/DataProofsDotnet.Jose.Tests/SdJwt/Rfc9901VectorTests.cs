@@ -98,7 +98,7 @@ public sealed class Rfc9901VectorTests
         using var doc = SdJwtFixtureSupport.Load("rfc9901", "example1-sd-jwt.json");
         var sdJwt = doc.RootElement.GetProperty("sd_jwt").GetString()!;
 
-        var result = SdJwtVerifier.Verify(sdJwt, Resolver);
+        var result = SdJwtVerifier.Verify(sdJwt, Resolver, SdJwtFixtureSupport.AtFixtureTime);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.SignatureAlgorithm.Should().Be("ES256");
@@ -126,6 +126,7 @@ public sealed class Rfc9901VectorTests
 
         var options = new SdJwtVerificationOptions
         {
+            CurrentTime = SdJwtFixtureSupport.FixtureTime,
             ExpectedAudience = "https://verifier.example.org",
             ExpectedNonce = "1234567890",
         };
@@ -145,7 +146,7 @@ public sealed class Rfc9901VectorTests
         var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
         var expected = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("processed_sd_jwt_payload"));
 
-        var result = SdJwtVerifier.Verify(presentation, Resolver);
+        var result = SdJwtVerifier.Verify(presentation, Resolver, SdJwtFixtureSupport.AtFixtureTime);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         AssertProcessedPayloadMatches(result.DisclosedPayload!, expected);
@@ -242,7 +243,7 @@ public sealed class Rfc9901VectorTests
         var decoys = doc.RootElement.GetProperty("decoy_digests").EnumerateArray().Select(e => e.GetString()!).ToArray();
         decoys.Should().NotBeEmpty("Appendix A.1 publishes decoy digests");
 
-        var result = SdJwtVerifier.Verify(presentation, Resolver);
+        var result = SdJwtVerifier.Verify(presentation, Resolver, SdJwtFixtureSupport.AtFixtureTime);
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         // The processed payload's serialized form must contain none of the decoy digest strings.
