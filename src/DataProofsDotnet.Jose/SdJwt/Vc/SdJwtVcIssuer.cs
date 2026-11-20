@@ -71,13 +71,20 @@ public static class SdJwtVcIssuer
                     + $"({SdJwtVcConstants.Revision} §2.2.2.3); remove its entry from the DisclosureFrame.");
         }
 
-        // The same rule for the claims set itself: a reserved claim must reach the signer as plain JSON. An '_sd' key
-        // or '...' placeholder the caller built inside one would be signed as it is, and the verifier refuses it.
-        if (SdJwtVcClaimRules.ReservedClaimWithDisclosureStructure(claims) is { } structured)
+        // The same rule for the claims set itself: a reserved claim must reach the signer as plain JSON. A disclosure
+        // site the caller built inside one would be signed as it is, and the verifier refuses it. The check reads the
+        // claims as SdJwtIssuer will sign them, cloned and serialized, because a JsonValue can wrap a .NET object that
+        // only becomes a JSON object or array there. The frame cannot change a reserved claim: the check above refused
+        // every entry on one.
+        var asSigned = JsonNode.Parse(CompactJwt.SerializePayload((JsonObject)claims.DeepClone()))!.AsObject();
+        foreach (var (claim, value) in asSigned)
         {
-            throw new MalformedJoseException(
-                $"SD-JWT VC claim '{structured}' carries an '_sd' digest array or a '...' array placeholder; it and its "
-                + $"subclaims MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3). Pass it as plain JSON.");
+            if (SdJwtVcClaimRules.IsReserved(claim) && SdJwtVcClaimRules.HoldsDisclosureSite(value))
+            {
+                throw new MalformedJoseException(
+                    $"SD-JWT VC claim '{claim}' carries an '_sd' digest array or a '...' array placeholder; it and its "
+                    + $"subclaims MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3). Pass it as plain JSON.");
+            }
         }
 
         // typ is fixed to the SD-JWT VC media type; everything else is the generic SD-JWT pipeline.

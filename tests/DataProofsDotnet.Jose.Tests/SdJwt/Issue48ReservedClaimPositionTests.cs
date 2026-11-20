@@ -235,16 +235,16 @@ public sealed class Issue48ReservedClaimPositionTests
             .And.Contain($"'{reserved}' MUST NOT be selectively disclosed");
     }
 
-    /// <summary>Every way the frame API can place a Disclosure inside a reserved claim, with the path it resolves at.</summary>
-    public static TheoryData<string, string, string> InsideReservedClaims => new()
+    /// <summary>Every way the frame API can place a Disclosure inside a reserved claim.</summary>
+    public static TheoryData<string, string> InsideReservedClaims => new()
     {
-        { "member of status", "status", "status.status_list" },
-        { "two levels inside status", "status", "status.status_list.idx" },
-        { "array element inside status", "status", "status.lists[0]" },
-        { "member of cnf", "cnf", "cnf.jwk" },
-        { "two levels inside cnf", "cnf", "cnf.jwk.x" },
-        { "element of aka_vcts", "aka_vcts", "aka_vcts[0]" },
-        { "second element of aka_vcts", "aka_vcts", "aka_vcts[1]" },
+        { "member of status", "status" },
+        { "two levels inside status", "status" },
+        { "array element inside status", "status" },
+        { "member of cnf", "cnf" },
+        { "two levels inside cnf", "cnf" },
+        { "element of aka_vcts", "aka_vcts" },
+        { "second element of aka_vcts", "aka_vcts" },
     };
 
     private static DisclosureFrame FrameFor(string shape) => shape switch
@@ -258,20 +258,20 @@ public sealed class Issue48ReservedClaimPositionTests
         "two levels inside cnf" => new DisclosureFrame().DiscloseObject(
             "cnf", new DisclosureFrame().DiscloseObjectProperties("jwk", "x")),
         "element of aka_vcts" => new DisclosureFrame().DiscloseArrayElements("aka_vcts", 0),
-        // Index 1 disclosed, index 0 in the clear: the element resolves at aka_vcts[1].
+        // Index 1 disclosed, index 0 in the clear.
         "second element of aka_vcts" => new DisclosureFrame().DiscloseArrayElements("aka_vcts", 1),
         _ => throw new ArgumentOutOfRangeException(nameof(shape)),
     };
 
     [Theory]
     [MemberData(nameof(InsideReservedClaims))]
-    public async Task Verifier_refuses_a_disclosure_inside_a_reserved_claim(string shape, string reserved, string path)
+    public async Task Verifier_refuses_a_disclosure_inside_a_reserved_claim(string shape, string reserved)
     {
         var result = await VerifyVc(await IssueGeneric(FrameFor(shape)));
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE")
-            .And.Contain($"'{path}'").And.Contain($"inside SD-JWT VC claim '{reserved}'").And.Contain("§2.2.2.3");
+            .And.Contain($"SD-JWT VC claim '{reserved}' MUST NOT have selectively disclosable sub-claims or elements").And.Contain("§2.2.2.3");
     }
 
     [Fact]
@@ -281,7 +281,8 @@ public sealed class Issue48ReservedClaimPositionTests
         var result = await VerifyVc(await IssueGeneric(new DisclosureFrame().DiscloseRecursively("status", "status_list")));
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim 'status'");
+        result.Errors.Should().ContainSingle().Which.Should().StartWith(
+            "VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim 'status' MUST NOT be selectively disclosed");
     }
 
     [Fact]
@@ -300,7 +301,7 @@ public sealed class Issue48ReservedClaimPositionTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE")
-            .And.Contain("'status.lists[0]'");
+            .And.Contain("'status' MUST NOT have selectively disclosable sub-claims or elements");
     }
 
     [Fact]
@@ -318,19 +319,11 @@ public sealed class Issue48ReservedClaimPositionTests
         var result = await VerifyVc(presentation);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle().Which.Should().Contain("'status.lists'");
-    }
-
-    public static TheoryData<string, string> InsideReservedClaimsWithheld()
-    {
-        var data = new TheoryData<string, string>();
-        foreach (var row in InsideReservedClaims)
-            data.Add((string)row[0], (string)row[1]);
-        return data;
+        result.Errors.Should().ContainSingle().Which.Should().Contain("'status' MUST NOT have selectively disclosable sub-claims or elements");
     }
 
     [Theory]
-    [MemberData(nameof(InsideReservedClaimsWithheld))]
+    [MemberData(nameof(InsideReservedClaims))]
     public async Task Verifier_refuses_a_disclosure_inside_a_reserved_claim_when_it_is_withheld(string shape, string reserved)
     {
         // Withholding the Disclosure leaves no position to judge, and changes the reserved claim under the same
@@ -341,8 +334,7 @@ public sealed class Issue48ReservedClaimPositionTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE")
-            .And.Contain($"SD-JWT VC claim '{reserved}' carries an '_sd' digest array or a '...' array placeholder")
-            .And.Contain("§2.2.2.3");
+            .And.Contain($"SD-JWT VC claim '{reserved}' MUST NOT have selectively disclosable sub-claims or elements").And.Contain("§2.2.2.3");
     }
 
     [Fact]
@@ -357,8 +349,8 @@ public sealed class Issue48ReservedClaimPositionTests
         var attached = await VerifyVc(issued.Issuance);
         var withheld = await VerifyVc(SdJwtHolder.CreatePresentation(issued.Issuance, []));
 
-        attached.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts[1]'");
-        withheld.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts' carries");
+        attached.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts' MUST NOT have selectively disclosable sub-claims or elements");
+        withheld.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts' MUST NOT have selectively disclosable sub-claims or elements");
     }
 
     public static TheoryData<string> DecoyShapes => new() { "decoy in status", "decoy two levels inside cnf", "decoy placeholder in aka_vcts", "decoy placeholder in status array" };
@@ -389,7 +381,23 @@ public sealed class Issue48ReservedClaimPositionTests
         var result = await VerifyVc(await SignHandBuilt(payload));
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain(" carries an '_sd'");
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("MUST NOT have selectively disclosable sub-claims or elements");
+    }
+
+    [Fact]
+    public async Task An_empty_sd_array_inside_a_reserved_claim_is_not_a_disclosure_site()
+    {
+        // RFC 9901 §4.2.4.1: "The array MAY be empty in case the Issuer decided not to selectively disclose any of the
+        // claims at that level." An empty _sd carries no digest, so nothing in status is disclosable or withheld.
+        var payload = CredentialWithReservedClaims();
+        payload["status"]!["_sd"] = new JsonArray();
+        payload["cnf"]!["jwk"]!["_sd"] = new JsonArray();
+
+        var verified = await VerifyVc(await SignHandBuilt(payload));
+        var issued = await SdJwtVcIssuer.IssueAsync(payload, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+
+        verified.IsValid.Should().BeTrue(string.Join("; ", verified.Errors));
+        (await VerifyVc(issued.Issuance)).IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -537,6 +545,20 @@ public sealed class Issue48ReservedClaimPositionTests
 
         await act.Should().ThrowAsync<MalformedJoseException>()
             .WithMessage("*carries an '_sd' digest array or a '...' array placeholder*MUST NOT be selectively disclosed*");
+    }
+
+    [Fact]
+    public async Task Issuer_reads_a_reserved_claim_as_it_will_be_signed()
+    {
+        // A JsonValue can wrap a .NET object that serializes as a JSON object: the structure check must see the '_sd'
+        // it will sign, not the JsonValue node that hides it (second adversarial pass, finding A2).
+        var hidden = Disclosure.ForObjectProperty("salt-hidden", "idx", JsonValue.Create(1));
+        var claims = CredentialWithReservedClaims();
+        claims["status"] = JsonValue.Create(new Dictionary<string, string[]> { ["_sd"] = [hidden.ComputeDigest(SdAlg)] });
+
+        Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+
+        await act.Should().ThrowAsync<MalformedJoseException>().WithMessage("*'status' carries an '_sd' digest array*");
     }
 
     [Fact]

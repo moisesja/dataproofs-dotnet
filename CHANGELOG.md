@@ -99,14 +99,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registered JWT claims, including any of their subclaims, when used in the SD-JWT component of an
   SD-JWT VC, MUST NOT be included in Disclosures". The listed names are JWT claims, members of the
   top-level claims set. `SdJwtVcVerifier` compared each presented Disclosure's claim name with the list
-  wherever the Disclosure sat. It now uses the claim path at which the RFC 9901 reconstruction resolved
-  the Disclosure, and refuses it when that path starts at a reserved claim: the claim itself, or anything
-  inside it. Because a holder can withhold a Disclosure, it also checks the signed payload: a reserved
-  claim whose signed value carries an `_sd` key or a `{"...": digest}` array placeholder anywhere inside
-  it is refused whether or not the Disclosure is attached. Otherwise withholding one changes a registered
-  claim under the same signature, for example an element dropped from `aka_vcts` that would have failed
-  the `aka_vcts` format check, or `status.status_list` dropped from `status`. The behaviour changes
-  follow, one each way:
+  wherever the Disclosure sat. It now applies to every reserved name the positional rule #49 introduced for
+  `aka_vcts`, which reads what the issuer signed: it refuses a reserved top-level claim that is absent from
+  the issuer-signed payload but present in the processed one (a presented Disclosure supplied it), and a
+  reserved claim whose signed value holds a disclosure site anywhere inside it, an `_sd` array with at
+  least one digest or a `{"...": digest}` element placeholder, whether the Disclosure is attached, withheld
+  or a decoy. Judging only the presented Disclosures would not do: withholding one changes a registered
+  claim under the same signature, for example `status.status_list` dropped from `status`. The behaviour
+  changes follow, one each way:
   - *Now accepted:* a Disclosure of a nested claim that only shares a reserved name, such as
     `credentialSubject.status`, `credentialSubject.exp` or `credentialSubject.iss` made disclosable with
     `DisclosureFrame.DiscloseObjectProperties("credentialSubject", "status")`. `SdJwtVcIssuer` issued
@@ -118,10 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the reserved claim around it is in the clear or is itself a Disclosure. 2.0.0 verified these. -16 did
     not say whether a reserved claim's subclaims could be disclosed; -19 added "including any of their
     subclaims", so under the pinned -27 such a credential is invalid. The failure is
-    `VC_DISALLOWED_DISCLOSURE`. With the Disclosure attached, the message gives its path (`a Disclosure at
-    'status.status_list.idx' is inside SD-JWT VC claim 'status', ...`); with it withheld, it names the
-    claim (`SD-JWT VC claim 'status' carries an '_sd' digest array or a '...' array placeholder, ...`). The
-    message for a reserved claim disclosed at the top level is unchanged.
+    `VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim 'status' MUST NOT have selectively disclosable sub-claims or
+    elements (...)`. The message for a reserved claim disclosed at the top level is unchanged. An empty
+    `_sd` array inside a reserved claim carries no digest and is accepted (RFC 9901 §4.2.4.1).
   - *Also refused, and possibly valid:* decoy digests inside a reserved claim. RFC 9901 §4.2.5 lets an
     issuer add decoys to any `_sd` array or array, and -27 forbids Disclosures, not digests, so a
     credential with only decoys there may be conformant. A verifier cannot tell a decoy from a withheld
@@ -130,16 +129,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` in every release from 0.1.0-preview.1
     to 2.0.0, every Disclosure such an entry makes sits at or under that claim, and it adds decoys only to
     objects a frame entry processes, so none of its output is newly refused, apart from the `aka_vcts`
-    element Disclosures under *Changed* and a claims set in which the caller itself built an `_sd` key or
-    a `...` placeholder inside a reserved claim. A credential built with the generic `SdJwtIssuer`,
+    element Disclosures under *Changed* and a claims set in which the caller itself built a disclosure
+    site inside a reserved claim. A credential built with the generic `SdJwtIssuer`,
     `typ: dc+sd-jwt` and a frame entry on a reserved claim is newly refused.
   - *What to do:* issuers keep `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and
     `status` wholly in the clear. A verifier that receives credentials with Disclosures inside them needs
     the issuer to reissue them.
 
   `SdJwtVcIssuer` refuses the same frames as before, and its message now adds "and neither may any of its
-  subclaims". It now also throws `MalformedJoseException` for a claims set whose reserved claim carries an
-  `_sd` key or a `...` placeholder the caller built, which it used to sign as given. A Disclosure
+  subclaims". It now also throws `MalformedJoseException` for a claims set whose reserved claim holds a
+  disclosure site the caller built, which it used to sign as given; it reads the claims as they will be
+  signed, so a `JsonValue` wrapping a .NET object that serializes with an `_sd` member is caught too. A Disclosure
   referenced from the top-level `_sd` hides its name behind its digest, so when it is withheld no verifier
   can tell that it was a reserved claim: keeping those claims in the clear is the issuer's duty. The
   generic `SdJwtVerifier` does not apply the rule, which belongs to the SD-JWT VC profile.

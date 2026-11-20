@@ -75,14 +75,20 @@ public static class SdJwtVcVerifier
             return SdJwtVcVerificationResult.Failure(inner.Errors.Count > 0 ? inner.Errors : ["VERIFICATION_FAILED"]);
 
         // 3. No registered must-not-disclose claim, nor any of its subclaims, may have been selectively disclosed
-        //    (§2.2.2.3). The rule is positional: it covers the top-level members with reserved names and everything
-        //    inside them (a member of status or cnf under any name, an element of aka_vcts, and so on down), judged
-        //    by where the reconstructor resolved each presented Disclosure and by the selective-disclosure structure
-        //    in the signed reserved claims, so a withheld Disclosure is caught too. A claim elsewhere that only shares
-        //    a reserved name, such as credentialSubject.status, is an ordinary claim. issuerJwt is the JWT whose
-        //    signature step 2 verified: both parsed the same presentation string.
-        if (SdJwtVcClaimRules.DisallowedDisclosure(issuerJwt.Payload, inner.DisclosurePositions) is { } disallowed)
-            return SdJwtVcVerificationResult.Failure($"VC_DISALLOWED_DISCLOSURE: {disallowed}");
+        //    (§2.2.2.3). The rule is positional and reads what the issuer signed: each reserved claim comes from the
+        //    signed payload's clear top level, and its signed value holds no disclosure site at any depth, whether
+        //    the Disclosure is presented, withheld or a decoy (a member of status or cnf under any name, an element
+        //    of aka_vcts, and so on down). A claim elsewhere that only shares a reserved name, such as
+        //    credentialSubject.status, is an ordinary claim. issuerJwt is the JWT whose signature step 2 verified:
+        //    both parsed the same presentation string.
+        foreach (var name in SdJwtVcConstants.MustNotBeSelectivelyDisclosed)
+        {
+            if (SdJwtVcClaimRules.SelectiveDisclosureViolation(issuerJwt.Payload, disclosed, name) is { } violation)
+            {
+                return SdJwtVcVerificationResult.Failure(
+                    $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{name}' {violation} ({SdJwtVcConstants.Revision} §2.2.2.3).");
+            }
+        }
 
         // 4. vct REQUIRED, a non-empty string, present in the (cleared) disclosed payload (§2.2.2.1).
         if (!disclosed.TryGetPropertyValue(SdJwtVcConstants.VctClaim, out var vctNode)

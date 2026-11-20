@@ -9,7 +9,6 @@ namespace DataProofsDotnet.Jose.SdJwt;
 /// Disclosures, recursively, producing the processed (disclosed) payload. Rejects unknown,
 /// duplicate, and unused-Disclosure conditions with documented failures (RFC 9901 §7.1 steps and
 /// §10 security considerations); decoy digests with no matching Disclosure are silently dropped.
-/// It also records the claim path at which each Disclosure was resolved (<see cref="DisclosurePosition"/>).
 /// </summary>
 internal static class SdJwtReconstructor
 {
@@ -39,25 +38,6 @@ internal static class SdJwtReconstructor
     /// presented but never referenced (RFC 9901 §7.1 / §10).
     /// </exception>
     public static JsonObject Reconstruct(JsonObject payload, IReadOnlyList<Disclosure> disclosures, string sdAlg)
-        => Reconstruct(payload, disclosures, sdAlg, out _);
-
-    /// <summary>
-    /// Reconstruct the disclosed payload and report where each Disclosure was resolved. Because every presented
-    /// Disclosure must be referenced exactly once, <paramref name="positions"/> holds one entry per presented
-    /// Disclosure, in the order the walk resolved them. A profile rule that depends on where a claim sits
-    /// (SD-JWT VC's must-not-disclose claims, draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3) reads these positions
-    /// instead of walking the digests a second time.
-    /// </summary>
-    /// <param name="payload">The SD-JWT issuer-signed payload (carries <c>_sd</c>/<c>...</c>/<c>_sd_alg</c>).</param>
-    /// <param name="disclosures">The Disclosures presented alongside the SD-JWT.</param>
-    /// <param name="sdAlg">The resolved <c>_sd_alg</c> hash algorithm name.</param>
-    /// <param name="positions">The claim path at which each presented Disclosure was resolved.</param>
-    /// <exception cref="MalformedJoseException">As for the overload without <paramref name="positions"/>.</exception>
-    public static JsonObject Reconstruct(
-        JsonObject payload,
-        IReadOnlyList<Disclosure> disclosures,
-        string sdAlg,
-        out IReadOnlyList<DisclosurePosition> positions)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(disclosures);
@@ -86,13 +66,11 @@ internal static class SdJwtReconstructor
                 $"{unused} presented SD-JWT Disclosure(s) were not referenced by any digest in the payload (RFC 9901 §7.1).");
         }
 
-        positions = walk.Positions;
         return result;
     }
 
     /// <summary>
-    /// The state of one reconstruction: the Disclosures by digest, every digest encountered and every one resolved,
-    /// the claim path of the node being processed, and the position of every Disclosure resolved so far.
+    /// The state of one reconstruction: the Disclosures by digest, and every digest encountered and resolved so far.
     /// </summary>
     private sealed class Walk(IReadOnlyDictionary<string, Disclosure> byDigest)
     {
@@ -101,10 +79,6 @@ internal static class SdJwtReconstructor
         public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> Used { get; } = new(StringComparer.Ordinal);
-
-        public List<ClaimPathComponent> Path { get; } = [];
-
-        public List<DisclosurePosition> Positions { get; } = [];
 
         /// <summary>
         /// Records an embedded digest found in an <c>_sd</c> array or a <c>...</c> placeholder. RFC 9901 §7.1 step 4: "If
@@ -119,13 +93,8 @@ internal static class SdJwtReconstructor
                     "An SD-JWT digest appears more than once in the payload, directly or through a Disclosure (RFC 9901 §7.1 step 4).");
         }
 
-        /// <summary>Marks <paramref name="digest"/> resolved and records <paramref name="disclosure"/> at the current path.</summary>
-        public void Resolve(string digest, Disclosure disclosure)
-        {
-            // Encounter has already refused a second occurrence of the digest, so this is the first resolution.
-            Used.Add(digest);
-            Positions.Add(new DisclosurePosition(disclosure, Path.ToArray()));
-        }
+        /// <summary>Marks <paramref name="digest"/> resolved; <see cref="Encounter"/> has refused any second occurrence.</summary>
+        public void Resolve(string digest) => Used.Add(digest);
     }
 
     private static JsonNode? ProcessNode(JsonNode? node, Walk walk, int depth)
@@ -158,9 +127,7 @@ internal static class SdJwtReconstructor
         {
             if (key is "_sd" or "_sd_alg")
                 continue;
-            walk.Path.Add(ClaimPathComponent.Member(key));
             output[key] = ProcessNode(value?.DeepClone(), walk, depth + 1);
-            walk.Path.RemoveAt(walk.Path.Count - 1);
         }
 
         // Then resolve the _sd digest array into disclosed object properties.
@@ -182,9 +149,8 @@ internal static class SdJwtReconstructor
                 if (disclosure.IsArrayElement)
                     throw new MalformedJoseException("An '_sd' digest resolved to an array-element Disclosure (RFC 9901 §7.1).");
 
+                walk.Resolve(digest);
                 var name = disclosure.ClaimName!;
-                walk.Path.Add(ClaimPathComponent.Member(name));
-                walk.Resolve(digest, disclosure);
 
                 // RFC 9901 §7.1: a disclosed claim name MUST NOT clash with a name already present
                 // in the object (no overwriting a clear claim via a Disclosure).
@@ -193,7 +159,6 @@ internal static class SdJwtReconstructor
                         $"Disclosed SD-JWT claim '{name}' collides with a claim already present in the object (RFC 9901 §7.1).");
 
                 output[name] = ProcessNode(disclosure.ClaimValueNode?.DeepClone(), walk, depth + 1);
-                walk.Path.RemoveAt(walk.Path.Count - 1);
             }
         }
 
@@ -215,17 +180,12 @@ internal static class SdJwtReconstructor
                 if (!disclosure.IsArrayElement)
                     throw new MalformedJoseException("An array '...' placeholder resolved to an object-property Disclosure (RFC 9901 §7.1).");
 
-                // The element's index is its index in the processed array: dropped elements do not count.
-                walk.Path.Add(ClaimPathComponent.Element(output.Count));
-                walk.Resolve(digest!, disclosure);
+                walk.Resolve(digest!);
                 output.Add(ProcessNode(disclosure.ClaimValueNode?.DeepClone(), walk, depth + 1));
-                walk.Path.RemoveAt(walk.Path.Count - 1);
             }
             else
             {
-                walk.Path.Add(ClaimPathComponent.Element(output.Count));
                 output.Add(ProcessNode(element?.DeepClone(), walk, depth + 1));
-                walk.Path.RemoveAt(walk.Path.Count - 1);
             }
         }
         return output;

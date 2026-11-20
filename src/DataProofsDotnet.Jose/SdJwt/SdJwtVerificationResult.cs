@@ -17,14 +17,12 @@ public sealed class SdJwtVerificationResult
     private SdJwtVerificationResult(
         bool isValid,
         JsonObject? disclosedPayload,
-        IReadOnlyList<DisclosurePosition> disclosurePositions,
         IReadOnlyList<string> errors,
         bool keyBindingVerified,
         string? signatureAlgorithm)
     {
         IsValid = isValid;
         _disclosedPayload = disclosedPayload;
-        DisclosurePositions = disclosurePositions;
         Errors = errors;
         KeyBindingVerified = keyBindingVerified;
         SignatureAlgorithm = signatureAlgorithm;
@@ -50,22 +48,11 @@ public sealed class SdJwtVerificationResult
     /// <summary>The issuer JWT's signature algorithm when known; <c>null</c> otherwise.</summary>
     public string? SignatureAlgorithm { get; }
 
-    /// <summary>
-    /// Where each presented Disclosure was resolved in <see cref="DisclosedPayload"/>, one entry per Disclosure;
-    /// empty on failure. Profile rules that depend on a claim's position read it (SD-JWT VC's must-not-disclose
-    /// claims, draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3). Internal: the position is not part of the public result.
-    /// </summary>
-    internal IReadOnlyList<DisclosurePosition> DisclosurePositions { get; }
-
-    internal static SdJwtVerificationResult Success(
-        JsonObject disclosedPayload,
-        IReadOnlyList<DisclosurePosition> disclosurePositions,
-        bool keyBindingVerified,
-        string signatureAlgorithm)
-        => new(true, disclosedPayload, disclosurePositions, [], keyBindingVerified, signatureAlgorithm);
+    internal static SdJwtVerificationResult Success(JsonObject disclosedPayload, bool keyBindingVerified, string signatureAlgorithm)
+        => new(true, disclosedPayload, [], keyBindingVerified, signatureAlgorithm);
 
     internal static SdJwtVerificationResult Failure(IReadOnlyList<string> errors, string? signatureAlgorithm = null)
-        => new(false, null, [], errors, false, signatureAlgorithm);
+        => new(false, null, errors, false, signatureAlgorithm);
 
     internal static SdJwtVerificationResult Failure(string error, string? signatureAlgorithm = null)
         => Failure([error], signatureAlgorithm);

@@ -95,10 +95,9 @@ public static class SdJwtVerifier
         // 4. Reconstruct the disclosed payload (RFC 9901 §7.1): resolve every digest against the
         //    presented Disclosures, rejecting unknown/duplicate/shape-mismatched/unused ones.
         JsonObject disclosedPayload;
-        IReadOnlyList<DisclosurePosition> disclosurePositions;
         try
         {
-            disclosedPayload = SdJwtReconstructor.Reconstruct(issuerJwt.Payload, components.Disclosures, sdAlg, out disclosurePositions);
+            disclosedPayload = SdJwtReconstructor.Reconstruct(issuerJwt.Payload, components.Disclosures, sdAlg);
         }
         catch (MalformedJoseException ex)
         {
@@ -130,7 +129,7 @@ public static class SdJwtVerifier
                 issuerJwt.Algorithm);
         }
 
-        return SdJwtVerificationResult.Success(disclosedPayload, disclosurePositions, keyBindingVerified, issuerJwt.Algorithm);
+        return SdJwtVerificationResult.Success(disclosedPayload, keyBindingVerified, issuerJwt.Algorithm);
     }
 
     private static Jwk? SafeGetConfirmationKey(JsonObject payload, out string? error)
