@@ -125,18 +125,11 @@ internal static class SdJwtReconstructor
         // First copy non-control members, recursing into them.
         foreach (var (key, value) in obj.ToList())
         {
-            if (key is "_sd")
+            // _sd_alg is a control claim only at the top level (RFC 9901 §4.1.1, §7.1 step 3.f). A nested member of
+            // that name is not one, so it is processed like any other member: skipping it dropped its value unread,
+            // digests included, which hid them from the step 4 uniqueness check.
+            if (key is "_sd" || (key is "_sd_alg" && depth == 0))
                 continue;
-            if (key is "_sd_alg")
-            {
-                // RFC 9901 §4.1.1: _sd_alg "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used
-                // in any object nested within the payload." Skipping a nested one would drop its value unread,
-                // digests included, so it is refused instead.
-                if (depth == 0)
-                    continue;
-                throw new MalformedJoseException(
-                    "SD-JWT '_sd_alg' MUST NOT be used in any object nested within the payload (RFC 9901 §4.1.1).");
-            }
             output[key] = ProcessNode(value?.DeepClone(), walk, depth + 1);
         }
 
@@ -162,9 +155,10 @@ internal static class SdJwtReconstructor
                 walk.Resolve(digest);
                 var name = disclosure.ClaimName!;
 
-                // RFC 9901 §7.1: a disclosed claim name MUST NOT clash with a name already present
-                // in the object (no overwriting a clear claim via a Disclosure).
-                if (output.ContainsKey(name))
+                // RFC 9901 §7.1 step 3.c.ii.3: "If the claim name already exists at the level of the _sd key, the
+                // SD-JWT MUST be rejected" (no overwriting a clear claim via a Disclosure). The signed object counts as
+                // well as the output, so the top-level _sd_alg, which the output omits, is covered.
+                if (output.ContainsKey(name) || obj.ContainsKey(name))
                     throw new MalformedJoseException(
                         $"Disclosed SD-JWT claim '{name}' collides with a claim already present in the object (RFC 9901 §7.1).");
 

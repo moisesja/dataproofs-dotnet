@@ -14,9 +14,11 @@ namespace DataProofsDotnet.Jose.Tests.SdJwt;
 /// (directly or recursively via other Disclosures), the SD-JWT MUST be rejected." Step 3.b identifies every embedded
 /// digest, in <c>_sd</c> arrays and <c>{"...": digest}</c> placeholders, whether or not a Disclosure matches it. The
 /// reconstructor used to refuse a repeat only within one <c>_sd</c> array or when a Disclosure resolved it twice, so a
-/// decoy or withheld digest could repeat across locations (found by the issue #48 adversarial pass). The walk skipped
-/// every <c>_sd_alg</c> member at any depth, so digests under a nested one were never seen; RFC 9901 §4.1.1 says
-/// <c>_sd_alg</c> "MUST NOT be used in any object nested within the payload", and a nested one is now refused.
+/// decoy or withheld digest could repeat across locations (found by the issue #48 adversarial pass). The walk also
+/// skipped every <c>_sd_alg</c> member at any depth, so digests under a nested one were never seen and the member
+/// vanished; <c>_sd_alg</c> is a control claim only at the top level (RFC 9901 §4.1.1, §7.1 step 3.f), so a nested one
+/// is now processed like any other member. A Disclosure named <c>_sd_alg</c> beside the top-level one is a name clash
+/// (§7.1 step 3.c.ii.3).
 /// </summary>
 public sealed class SdJwtDigestUniquenessTests
 {
@@ -114,21 +116,45 @@ public sealed class SdJwtDigestUniquenessTests
             },
         };
 
-        var result = await SignAndVerify(payload, shared);
-
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().ContainSingle().Which.Should().StartWith("DISCLOSURE_INVALID").And.Contain("RFC 9901 §4.1.1");
+        ShouldBeRefusedAsRepeated(await SignAndVerify(payload, shared));
     }
 
     [Fact]
-    public async Task A_nested_sd_alg_in_the_clear_or_in_a_disclosed_value_is_refused()
+    public async Task A_nested_sd_alg_is_an_ordinary_member_in_the_clear_or_in_a_disclosed_value()
     {
         var clear = await SignAndVerify(new JsonObject { ["address"] = new JsonObject { ["_sd_alg"] = "sha-256", ["country"] = "DE" } });
-        var parent = Disclosure.ForObjectProperty("salt-p", "address", new JsonObject { ["_sd_alg"] = "sha-256" });
+        var parent = Disclosure.ForObjectProperty("salt-p", "address", new JsonObject { ["_sd_alg"] = "sha-512" });
         var disclosed = await SignAndVerify(new JsonObject { ["_sd"] = new JsonArray(parent.ComputeDigest(SdAlg)) }, parent);
 
-        clear.Errors.Should().ContainSingle().Which.Should().StartWith("DISCLOSURE_INVALID").And.Contain("§4.1.1");
-        disclosed.Errors.Should().ContainSingle().Which.Should().StartWith("DISCLOSURE_INVALID").And.Contain("§4.1.1");
+        clear.IsValid.Should().BeTrue(string.Join("; ", clear.Errors));
+        clear.DisclosedPayload!["address"]!["_sd_alg"]!.GetValue<string>().Should().Be("sha-256");
+        disclosed.IsValid.Should().BeTrue(string.Join("; ", disclosed.Errors));
+        disclosed.DisclosedPayload!["address"]!["_sd_alg"]!.GetValue<string>().Should().Be("sha-512");
+    }
+
+    [Fact]
+    public async Task A_claims_set_with_a_nested_sd_alg_issues_and_verifies()
+    {
+        // SdJwtIssuer copies a nested _sd_alg as given; its own verifier must not refuse what it signed.
+        var claims = new JsonObject { ["credentialSubject"] = new JsonObject { ["_sd_alg"] = "sha-256", ["name"] = "Erika" } };
+        var issued = await SdJwtIssuer.IssueAsync(
+            claims, new DisclosureFrame().DiscloseObjectProperties("credentialSubject", "name"), Issuer.Signer);
+
+        var result = SdJwtVerifier.Verify(issued.Issuance, _ => Issuer.PublicJwk);
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+        JsonNode.DeepEquals(result.DisclosedPayload!["credentialSubject"], claims["credentialSubject"]).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_disclosure_named_sd_alg_beside_the_top_level_sd_alg_is_refused()
+    {
+        // RFC 9901 §7.1 step 3.c.ii.3: the claim name already exists at the level of the _sd key.
+        var shadow = Disclosure.ForObjectProperty("salt-alg", "_sd_alg", JsonValue.Create("sha-512"));
+        var result = await SignAndVerify(new JsonObject { ["_sd"] = new JsonArray(shadow.ComputeDigest(SdAlg)) }, shadow);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("DISCLOSURE_INVALID").And.Contain("collides");
     }
 
     [Fact]
