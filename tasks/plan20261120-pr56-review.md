@@ -1,17 +1,21 @@
 # PR #56 review
 
-Owner intent: thoroughly review PR #56 and post specific, verified concerns or a brief approving comment on GitHub.
+Owner intent: read the PR title, description, commits and diff; review correctness, security, scalability and tests; post a specific review comment or brief approval on GitHub.
 
-Reviewed head: 188471ff69d65d063ea04d31680dbeaac49c50fb; base: 55086a4ef9c3e5039fe521408613d8e4e0d9fadd.
+This is a review, not an implementation change. Inspect the existing PR checkout at 188471ff69d65d063ea04d31680dbeaac49c50fb against 55086a4. Keep source unchanged. Use one independent adversarial reviewer per AGENTS.md; verify findings before publication.
 
-- [x] Read repository guidance, PR description, changed-file inventory and commit history.
-- [ ] Read the complete diff, surrounding security paths and normative requirements.
-- [ ] Independently challenge certificate trust, parser handling, API contracts and test coverage with one adversarial subagent.
-- [ ] Run relevant tests and reproduce/refute candidate findings on an isolated snapshot.
-- [ ] Recheck the PR head and publish an evidence-backed GitHub review.
-
-Decisions: review only; do not change implementation or existing user work. Use a temporary git archive snapshot for builds and disposable probes. User has explicitly authorized posting the review. One subagent, no multi-agent workflow. Current collaboration mode remains Default; this file records the review and verification plan.
+- [x] Read PR metadata, commit subjects and changed-file inventory.
+- [x] Read the complete diff and relevant callers, requirements and tests.
+- [x] Run relevant verification and independently challenge possible findings.
+- [x] Post the evidence-backed review authorized by the user.
+- [x] Record review results and verification limits.
 
 ## Review results
 
-Pending.
+Posted https://github.com/moisesja/dataproofs-dotnet/pull/56#issuecomment-7047770615 through authenticated gh after the connector rejected writes (403).
+
+P2: the recommended X509Chain hook accepts a trusted leaf restricted to critical KeyAgreement for all three signature verification paths. Independently reproduced using the sample with only the leaf Key Usage changed.
+
+P3: issuer/subject Name contents are skipped; malformed nested TLVs are accepted despite the documented strict-DER guarantee. Independently reproduced with Name bytes 30 02 31 01. No authentication bypass claimed.
+
+Release solution build: zero warnings/errors. JOSE tests: 1851 passed, zero failed/skipped. CI successful. Full solution tests and AOT matrix not rerun. Large-OID CPU concern disproved by the adversarial reviewer; omitted from published findings. Source branch unchanged.

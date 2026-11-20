@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-11-20 — Finish and publish a bounded PR review promptly
+
+The user twice requested faster completion, then explicitly demanded publication. Once concrete findings are independently reproduced, prioritize posting them over broadening exploratory probes. If the connector lacks write access, promptly use the authenticated CLI; sandboxed keychain failures can appear as invalid credentials, so verify outside the sandbox before declaring authentication blocked.
+
 Self-improvement log (AGENTS.md §3). After any user correction, record the pattern and a
 rule that prevents recurrence.
 
