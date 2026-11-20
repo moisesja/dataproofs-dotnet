@@ -1354,20 +1354,105 @@ public sealed class Issue47TypeMetadataProcessingTests
         ShouldFail(await Verify(await SimpleCredential(), Options((Vct, document))), "VC_TYPE_METADATA_INVALID");
     }
 
-    [Fact]
-    public async Task Malformed_display_elements_are_skipped_without_counting_against_the_entry_bound()
+    /// <summary>
+    /// 10,001 copies of <paramref name="element"/> in one of the three display readers (type display, claim display,
+    /// SVG templates), plus one accepted type display entry so the template array has a home.
+    /// </summary>
+    private static byte[] DisplayDocument(string location, string element, int count = 10_001)
     {
-        // Pass 4: display elements that are not objects are not understood and never reject (-21), however many there
-        // are; they are skipped without being built, so they are not charged.
-        var junk = string.Join(",", Enumerable.Repeat("1", 20_000));
-        var document = Encoding.UTF8.GetBytes(
-            "{\"vct\":\"" + Vct + "\",\"display\":[" + junk + ",{\"locale\":\"en\",\"name\":\"n\",\"rendering\":{\"svg_templates\":[" + junk
-            + "]}}],\"claims\":[{\"path\":[\"a\"],\"display\":[" + junk + "]}]}");
+        var many = string.Join(",", Enumerable.Repeat(element, count));
+        var member = location switch
+        {
+            "type display" => "\"display\":[" + many + "]",
+            "svg templates" => "\"display\":[{\"locale\":\"en\",\"name\":\"n\",\"rendering\":{\"svg_templates\":[" + many + "]}}]",
+            _ => "\"claims\":[{\"path\":[\"a\"],\"display\":[" + many + "]}]",
+        };
+        return Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\"," + member + "}");
+    }
 
-        var result = await Verify(await SimpleCredential(), Options((Vct, document)));
+    public static TheoryData<string, string> SkippedDisplayElements()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var element in new[] { "1", "null", "\"x\"", "[]", "{}" })
+        {
+            data.Add("type display", element);
+            data.Add("claim display", element);
+            data.Add("svg templates", element);
+        }
+        // Objects whose required members are missing or of the wrong kind (review 5993588801).
+        data.Add("type display", "{\"locale\":\"en\"}");
+        data.Add("type display", "{\"name\":\"n\"}");
+        data.Add("type display", "{\"locale\":1,\"name\":\"n\"}");
+        data.Add("type display", "{\"locale\":\"en\",\"name\":{}}");
+        data.Add("type display", "{\"locale\":\"en\",\"rendering\":{\"svg_templates\":[{\"uri\":\"u\"}]}}");
+        data.Add("claim display", "{\"locale\":\"en\"}");
+        data.Add("claim display", "{\"label\":\"l\"}");
+        data.Add("claim display", "{\"locale\":\"en\",\"label\":1}");
+        data.Add("claim display", "{\"locale\":[],\"label\":\"l\"}");
+        data.Add("svg templates", "{\"properties\":{\"orientation\":\"landscape\"}}");
+        data.Add("svg templates", "{\"uri\":1}");
+        data.Add("svg templates", "{\"uri\":null,\"uri#integrity\":\"sha256-x\"}");
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(SkippedDisplayElements))]
+    public async Task Skipped_display_elements_do_not_count_against_the_entry_bound(string location, string element)
+    {
+        // Pass 4 and review 5993588801: a display element that is not an object, or an object without its required string
+        // members, is not understood and never rejects (-21, -27 §5.6); it is skipped without being built, so it is not
+        // charged, at verification and at issuance alike.
+        var options = Options((Vct, DisplayDocument(location, element)));
+        var claims = new JsonObject { ["vct"] = Vct, ["a"] = 1 };
+
+        var issued = await SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, options);
+        var result = await Verify(issued.Issuance, options);
 
         ShouldPass(result);
-        result.ProcessedTypeMetadata!.Display.Should().ContainSingle().Which.Rendering!.SvgTemplates.Should().BeEmpty();
+        var processed = result.ProcessedTypeMetadata!;
+        processed.Display.Count.Should().Be(location == "svg templates" ? 1 : 0);
+        processed.Display.SelectMany(d => d.Rendering!.SvgTemplates).Should().BeEmpty();
+        processed.Claims.SelectMany(c => c.Display).Should().BeEmpty();
+    }
+
+    public static TheoryData<string, string> AcceptedDisplayElements => new()
+    {
+        { "type display", "{\"locale\":\"en\",\"name\":\"n\"}" },
+        { "claim display", "{\"locale\":\"en\",\"label\":\"l\"}" },
+        { "svg templates", "{\"uri\":\"u\"}" },
+    };
+
+    [Theory]
+    [MemberData(nameof(AcceptedDisplayElements))]
+    public async Task Too_many_accepted_display_entries_still_fail_at_both_entry_points(string location, string element)
+    {
+        var options = Options((Vct, DisplayDocument(location, element)));
+        var claims = new JsonObject { ["vct"] = Vct, ["a"] = 1 };
+
+        var plain = await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer);
+        ShouldFail(await Verify(plain.Issuance, options), "VC_TYPE_METADATA_INVALID");
+        var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, options);
+        (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_TYPE_METADATA_INVALID:");
+
+        // At the bound exactly it is processed: the accepted type display entry of the template case counts too, and so do
+        // the claim and its path component of the claim display case.
+        var under = Options((Vct, DisplayDocument(location, element, location == "type display" ? 10_000 : 9_998)));
+        ShouldPass(await Verify(plain.Issuance, under));
+    }
+
+    [Fact]
+    public async Task An_undisclosed_element_is_not_charged_for_a_key_lookup_it_does_not_make()
+    {
+        // Round 3 sweep of every charge: a key component was charged 1 + length/32 for each selected element before the
+        // element was known to be undisclosed (no lookup) or, in the complete pass, not an object (no lookup either).
+        // 2,000 undisclosed elements under a 32,000-character key were charged about 2 million units and refused.
+        var placeholders = new JsonArray();
+        for (var i = 0; i < 2_000; i++)
+            placeholders.Add((JsonNode)Placeholder(Disclosure.ForArrayElement("salt-u" + i, i)));
+        var presentation = await Sign(new JsonObject { ["vct"] = Vct, ["a"] = placeholders });
+        var metadata = Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("a", null, new string('k', 32_000))))));
+
+        ShouldPass(await Verify(presentation, Options((Vct, metadata))));
     }
 
     [Fact]
