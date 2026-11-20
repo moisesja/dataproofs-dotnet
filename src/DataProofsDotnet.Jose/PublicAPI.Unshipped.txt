@@ -244,6 +244,71 @@ DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.KeyBindingVerified.get 
 DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadata.get -> System.Text.Json.Nodes.JsonObject?
 DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Vct.get -> string?
 DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Description.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Dir.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Label.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Locale.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.Display.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata!>!
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.Mandatory.get -> bool
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.Path.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent!>!
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.SelectiveDisclosure.get -> DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.SvgId.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent.Index.get -> int?
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent.IsAllElements.get -> bool
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent.Key.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure.Allowed = 0 -> DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure.Always = 1 -> DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure
+DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure.Never = 2 -> DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure
+DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataDocumentResolver
+DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataDocumentResolver.ResolveDocumentAsync(string! reference, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataDocumentResolver
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataDocumentResolver.LocalCacheTypeMetadataDocumentResolver(System.Collections.Generic.IReadOnlyDictionary<string!, byte[]!>! documents) -> void
+DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataDocumentResolver.ResolveDocumentAsync(string! reference, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Claims.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata!>!
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Description.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Display.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata!>!
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Documents.get -> System.Collections.Generic.IReadOnlyList<System.Text.Json.Nodes.JsonObject!>!
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Name.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Vct.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata.AltText.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata.Uri.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata.UriIntegrity.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.ProcessedTypeMetadata.get -> DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata?
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadataResolverFault.get -> System.Exception?
+DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.BackgroundColor.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.BackgroundImage.get -> DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata?
+DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.Logo.get -> DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata?
+DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.TextColor.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.ColorScheme.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.Contrast.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.Orientation.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.Uri.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.UriIntegrity.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Description.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Dir.get -> string?
+DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Locale.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Name.get -> string!
+DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Rendering.get -> DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata?
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.MaxDocumentSize.get -> int
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.MaxDocumentSize.init -> void
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.MaxExtendsDepth.get -> int
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.MaxExtendsDepth.init -> void
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.Resolver.get -> DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataDocumentResolver!
+DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.TypeMetadataProcessingOptions(DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataDocumentResolver! resolver) -> void
+DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata
+DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata.Simple.get -> DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata?
+DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata.SvgTemplates.get -> System.Collections.Generic.IReadOnlyList<DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata!>!
 DataProofsDotnet.Jose.VcJose
 const DataProofsDotnet.Jose.SdJwt.KeyBindingJwt.Type = "kb+jwt" -> string!
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.AkaVctsClaim = "aka_vcts" -> string!
@@ -252,6 +317,11 @@ const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.StatusClaim = "status" -> 
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.TransitionalMediaType = "vc+sd-jwt" -> string!
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctClaim = "vct" -> string!
 const DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctIntegrityClaim = "vct#integrity" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Sha256 = "sha256" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Sha384 = "sha384" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Sha512 = "sha512" -> string!
+const DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.DefaultMaxDocumentSize = 1048576 -> int
+const DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.DefaultMaxExtendsDepth = 8 -> int
 const DataProofsDotnet.Jose.VcJose.CredentialContentType = "vc" -> string!
 const DataProofsDotnet.Jose.VcJose.EnvelopeType = "vc+jwt" -> string!
 const DataProofsDotnet.Jose.VcJose.MediaType = "application/vc+jwt" -> string!
@@ -314,5 +384,9 @@ static DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.Verify(string! presentation, Sy
 static readonly DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MustNotBeSelectivelyDisclosed -> System.Collections.Generic.IReadOnlyList<string!>!
 static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer.IssueAsync(System.Text.Json.Nodes.JsonObject! claims, DataProofsDotnet.Jose.SdJwt.DisclosureFrame! frame, DataProofsDotnet.Jose.Signing.JwsSigner! signer, DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result!>!
 static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyAsync(string! presentation, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveIssuerPublicJwk, DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions? options = null, DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver? typeMetadataResolver = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult!>!
+static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer.IssueWithTypeMetadataAsync(System.Text.Json.Nodes.JsonObject! claims, DataProofsDotnet.Jose.SdJwt.DisclosureFrame! frame, DataProofsDotnet.Jose.Signing.JwsSigner! signer, DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions! typeMetadata, DataProofsDotnet.Jose.SdJwt.SdJwtIssuerOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.SdJwtIssuer.Result!>!
+static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyWithTypeMetadataAsync(string! presentation, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveIssuerPublicJwk, DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions! typeMetadata, DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions? options = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult!>!
+static DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Compute(System.ReadOnlySpan<byte> document, string! algorithm = "sha256") -> string!
+static DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Matches(string! integrityMetadata, System.ReadOnlySpan<byte> document) -> bool
 static DataProofsDotnet.Jose.VcJose.EnvelopeCredentialAsync(System.ReadOnlyMemory<byte> credentialJson, DataProofsDotnet.Jose.Signing.JwsSigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 static DataProofsDotnet.Jose.VcJose.VerifyCredential(string! envelope, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null) -> byte[]!
