@@ -12,6 +12,48 @@ internal static class SdJwtVcClaimRules
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     /// <summary>
+    /// The registered claims whose must-not-disclose rule (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3) the verifier
+    /// enforces by position, with <see cref="SelectiveDisclosureViolation"/>, rather than by matching Disclosure
+    /// names at any depth. Only <c>aka_vcts</c> so far; issue #48 moves the other names here.
+    /// </summary>
+    public static readonly IReadOnlySet<string> EnforcedByPosition = new HashSet<string>(StringComparer.Ordinal)
+    {
+        SdJwtVcConstants.AkaVctsClaim,
+    };
+
+    /// <summary>
+    /// Checks, by position, that the registered top-level claim <paramref name="name"/> and its sub-claims were not
+    /// made selectively disclosable (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3: "including any of their subclaims").
+    /// The claim may reach the processed payload only from the issuer-signed payload's clear top level, and its
+    /// signed value may hold no disclosure site at any depth: no <c>_sd</c> digest array and no
+    /// <c>{"...": digest}</c> array-element placeholder. The second test reads what the issuer signed, so it holds
+    /// whether the holder presents the matching Disclosure, withholds it, or none exists (a decoy).
+    /// A same-named claim nested in another claim is not the registered claim and is not affected.
+    /// </summary>
+    /// <param name="signedPayload">The issuer-signed JWT payload, before any Disclosure is applied.</param>
+    /// <param name="processedPayload">The payload after the presented Disclosures were applied.</param>
+    /// <param name="name">The registered claim name.</param>
+    /// <returns><c>null</c> when the rule holds; otherwise the reason it does not.</returns>
+    public static string? SelectiveDisclosureViolation(JsonObject signedPayload, JsonObject processedPayload, string name)
+    {
+        if (!signedPayload.TryGetPropertyValue(name, out var signedValue))
+            return processedPayload.ContainsKey(name) ? "MUST NOT be selectively disclosed" : null;
+
+        return HoldsDisclosureSite(signedValue) ? "MUST NOT have selectively disclosable sub-claims or elements" : null;
+    }
+
+    // Mirrors what SdJwtReconstructor resolves: an object's _sd member, and an array element that is an object
+    // whose only member is "...". The signed payload was parsed at the default depth limit, so recursion is bounded.
+    private static bool HoldsDisclosureSite(JsonNode? node) => node switch
+    {
+        JsonObject obj => obj.ContainsKey("_sd") || obj.Any(member => HoldsDisclosureSite(member.Value)),
+        JsonArray array => array.Any(element =>
+            (element is JsonObject placeholder && placeholder.Count == 1 && placeholder.ContainsKey("..."))
+            || HoldsDisclosureSite(element)),
+        _ => false,
+    };
+
+    /// <summary>
     /// Reads a credential type value (<c>vct</c>, or one element of <c>aka_vcts</c>): a non-empty JSON
     /// string that is well-formed UTF-16. Each such value MUST be a Collision-Resistant Name
     /// (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.1, §2.2.2.2), which cannot be checked syntactically; an
@@ -156,7 +198,10 @@ internal static class SdJwtVcClaimRules
     /// §2.2.2.2): when present, it MUST be a non-empty array of strings (each read by
     /// <see cref="ReadTypeValue"/>), and the array MUST NOT contain the <c>vct</c> value.
     /// </summary>
-    /// <param name="payload">The claims set (issuance) or the processed payload (verification).</param>
+    /// <param name="payload">
+    /// The claims set (issuance) or the issuer-signed payload (verification), never the processed payload: what
+    /// the holder presents must not change what is checked.
+    /// </param>
     /// <param name="vct">The credential's <c>vct</c> value, already read by <see cref="ReadTypeValue"/>.</param>
     /// <returns><c>null</c> when <c>aka_vcts</c> is absent or well formed; otherwise the reason it is not.</returns>
     public static string? AkaVctsViolation(JsonObject payload, string vct)

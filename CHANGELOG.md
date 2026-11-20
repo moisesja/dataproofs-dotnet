@@ -58,14 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ordinary claim that could take any value and be selectively disclosed, so both rules below refuse
   input that was valid then, including credentials `SdJwtVcIssuer` 2.0.0 would have issued:
   - it is on `SdJwtVcConstants.MustNotBeSelectivelyDisclosed`, so `SdJwtVcIssuer` throws
-    `MalformedJoseException` for a `DisclosureFrame` entry keyed `aka_vcts`, and `SdJwtVcVerifier` fails
-    a presentation carrying a Disclosure of `aka_vcts` or of any of its elements with
-    `VC_DISALLOWED_DISCLOSURE`. As for the other seven names, the rule follows the claim's position, so a
-    nested claim that only shares the name is not affected (see *Fixed*, issue
+    `MalformedJoseException` for a `DisclosureFrame` entry keyed `aka_vcts`, whole claim or elements.
+    `SdJwtVcVerifier` enforces the rule by position and fails with `VC_DISALLOWED_DISCLOSURE` when the
+    top-level `aka_vcts` comes from a Disclosure, or when its signed value holds any disclosure site (an
+    `{"...": digest}` element placeholder or an `_sd` array) whether the holder presents the Disclosure,
+    withholds it, or none exists. A claim named `aka_vcts` nested inside another claim, such as
+    `related.aka_vcts`, is an ordinary claim: it may be selectively disclosed and is not held to the
+    format below. The same positional rule now covers the other seven names (see *Fixed*, issue
     [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48));
   - when present it must be a non-empty array of non-empty strings that does not contain the `vct`
-    value. `SdJwtVcIssuer` throws `MalformedJoseException` otherwise, and `SdJwtVcVerifier` fails with
-    the new code `VC_AKA_VCTS_INVALID`.
+    value. `SdJwtVcIssuer` throws `MalformedJoseException` otherwise, and `SdJwtVcVerifier` checks the
+    value the issuer signed, so withholding an element cannot make a malformed array pass, and fails
+    with the new code `VC_AKA_VCTS_INVALID`.
 
   *What to do:* issuers put `aka_vcts` in the clear, as an array of the further types. Verifiers that
   match a credential's type use `vct` and the `aka_vcts` values, and only those: -27 says Type Metadata

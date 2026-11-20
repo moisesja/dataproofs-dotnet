@@ -93,8 +93,9 @@ public static class SdJwtVcVerifier
         }
 
         // 5. aka_vcts OPTIONAL; when present, a non-empty array of strings without the vct value (§2.2.2.2).
-        //    Step 3 has already refused a Disclosure of aka_vcts or of any of its elements.
-        if (SdJwtVcClaimRules.AkaVctsViolation(disclosed, vct) is { } akaVctsViolation)
+        //    Checked on the issuer-signed value, which step 3 left free of disclosure sites, so the holder's
+        //    choice of Disclosures cannot change what is checked.
+        if (SdJwtVcClaimRules.AkaVctsViolation(issuerJwt.Payload, vct) is { } akaVctsViolation)
         {
             return SdJwtVcVerificationResult.Failure(
                 $"VC_AKA_VCTS_INVALID: SD-JWT VC claim 'aka_vcts' {akaVctsViolation} ({SdJwtVcConstants.Revision} §2.2.2.2).");

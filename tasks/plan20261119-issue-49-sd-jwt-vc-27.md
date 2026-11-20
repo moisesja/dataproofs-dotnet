@@ -168,7 +168,7 @@ Section map used for every citation (old code cited §3.5 / §3.2.2.2 / §3.2.2.
 
 ## Adversarial pass
 
-One fresh agent, 30-minute budget, given the issue, the diff, -27 and RFC 9901; 48 probes. Attacked: `vc+sd-jwt`
+One fresh agent, given the issue, the diff, -27 and RFC 9901; 48 probes. Attacked: `vc+sd-jwt`
 through the default verifier by casing, `application/` prefix, whitespace, JSON escapes, look-alikes, `cty`,
 duplicate or non-string `typ`, `crit`, the KB-JWT header, JWS JSON serialization, default options and DI (none
 registered); top-level `aka_vcts` disclosure via every `DisclosureFrame` method and hand-built Disclosures with
@@ -188,10 +188,47 @@ No route got `vc+sd-jwt` accepted or a top-level `aka_vcts` disclosed.
 ## Follow-ups (not done here)
 
 - #47: -27 §5.3 identity check of a retrieved Type Metadata document's `vct`; `vct#integrity` verification (§6).
-- #48: scope the must-not-disclose match to the registered claims and their sub-claims (adversarial finding 2).
+- #48: scope the must-not-disclose match to the registered claims and their sub-claims for the seven names other than
+  `aka_vcts` (adversarial finding 2; `aka_vcts` moved to the positional rule in review round 1), generalizing
+  `SdJwtVcClaimRules.EnforcedByPosition` and `SelectiveDisclosureViolation`.
 - New: the generic `SdJwtIssuer` (and `JwsBuilder` payloads) silently sign U+FFFD for a lone surrogate in any
   caller-built claim, and throw `InvalidOperationException` for a parsed lone-surrogate escape.
+- New: the generic `SdJwtIssuer` (and so `SdJwtVcIssuer`) signs a caller-built claims set that already carries the
+  reserved `_sd` member, which lets a caller hide a top-level claim in a digest the frame guard never sees (round-1
+  adversarial note N1). RFC 9901 reserves `_sd`, `_sd_alg` and `...`; refusing them in input is generic SD-JWT work.
 
 ## Review
 
-(Filled in as review rounds happen.)
+### Round 1 — review comment 7027343504 on `58786eb`
+
+Two P2 findings, both reproduced first with tests that fail on `58786eb` (8 new cases, all failing there; the
+positive control passes):
+
+1. **Nested `related.aka_vcts` round trip regressed.** Issued by `SdJwtVcIssuer` with
+   `DiscloseObjectProperties("related", "aka_vcts")`, it failed with `VC_DISALLOWED_DISCLOSURE`; it passes on the
+   base. Cause: the verifier matched Disclosure names at any depth, and this PR put `aka_vcts` on that list. My
+   CHANGELOG had described the regression instead of fixing it.
+2. **Withholding an element Disclosure bypassed the `aka_vcts` format check.** The check read the processed payload,
+   after reconstruction had dropped the withheld element, so a signed `aka_vcts` containing the `vct` value verified.
+
+Decision (parent's direction): enforce the rule for `aka_vcts` by position, here, and leave the other seven names on
+the name-only check for #48 to replace. Alternatives: implement #48's general rule here (duplicates #48, which is in
+progress, and widens this PR); land #48 first (breaks the merge order #52 → #48). The helper is small so #48 can
+generalize it: `SdJwtVcClaimRules.EnforcedByPosition` names the positional claims, and
+`SelectiveDisclosureViolation(signed, processed, name)` refuses (a) a top-level claim absent from the signed payload
+but present in the processed one, which can only come from a top-level `_sd` Disclosure, and (b) any `_sd` member or
+`{"...": digest}` placeholder anywhere inside the signed value, presented, withheld or decoy. The placeholder test
+mirrors `SdJwtReconstructor`'s. The name-only loop skips the positional names. The `aka_vcts` format check now reads
+the issuer-signed value; once (b) holds it equals the processed value, so no test can tell the two apart, but the
+check no longer depends on that reasoning.
+
+Mutants, each caught: no site scan (7 failures), no nested skip (1), no top-level-from-Disclosure branch (1),
+placeholders not detected (6).
+
+A second adversarial agent reviewed the fix (64 probes, hand-built signed issuer JWTs with real digests, controls on
+`58786eb` reproducing both findings). No defect. Its notes, acted on:
+- F1: the `AkaVctsViolation` parameter doc still said "processed payload"; corrected.
+- N1: a whole top-level `aka_vcts` Disclosure the holder withholds is indistinguishable from a decoy, so that
+  credential verifies without `aka_vcts`. Inherent; `MustNotBeSelectivelyDisclosed` and the PRD now say so instead of
+  "must be signed in the clear". Its root, the issuer accepting a raw `_sd` in caller claims, is a follow-up.
+- N2: a decoy placeholder inside `aka_vcts` is refused; deliberate, since it cannot be told from a withheld element.

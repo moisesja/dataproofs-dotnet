@@ -58,12 +58,15 @@ public static class SdJwtVcConstants
     /// <c>status</c>. The names are those of top-level claims, and the rule covers each claim and
     /// everything inside it: a member of <c>status</c> or <c>cnf</c> at any depth, an element of
     /// <c>aka_vcts</c>. A <see cref="DisclosureFrame"/> entry on one of them, of any kind, is a
-    /// disallowed claim shape the Issuer rejects, and a presented Disclosure that resolves to one or
-    /// inside one is a Verifier failure (<c>VC_DISALLOWED_DISCLOSURE</c>), as is an <c>_sd</c> key or a
-    /// <c>...</c> placeholder inside one in the signed payload, whether its Disclosure is presented or
-    /// withheld. A claim deeper in the payload
-    /// that only shares a name, such as <c>credentialSubject.status</c>, is an ordinary claim and may be
-    /// selectively disclosed.
+    /// disallowed claim shape the Issuer rejects. The Verifier judges the rule by position, on what the
+    /// Issuer signed (<c>VC_DISALLOWED_DISCLOSURE</c>): it refuses a top-level reserved claim that a
+    /// presented Disclosure supplied, and a signed reserved claim holding any disclosure site (an <c>_sd</c>
+    /// digest or a <c>{"...": digest}</c> element placeholder) at any depth, whether its Disclosure is
+    /// presented, withheld or a decoy. A claim deeper in the payload that only shares a name, such as
+    /// <c>credentialSubject.status</c>, is an ordinary claim and may be selectively disclosed. A whole
+    /// reserved claim behind a top-level digest whose Disclosure the holder withholds cannot be told from a
+    /// decoy, so such a credential verifies without that claim: keeping these claims in the clear is the
+    /// Issuer's duty.
     /// </summary>
     public static readonly IReadOnlyList<string> MustNotBeSelectivelyDisclosed =
         ["iss", "nbf", "exp", "cnf", VctClaim, VctIntegrityClaim, AkaVctsClaim, StatusClaim];
