@@ -1,6 +1,6 @@
 {
-  "description": "User data comprising the Unsecured Payload of the main SD-JWT VC example (Figure 4).",
-  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Section 2.3.1, Figure 4",
+  "description": "User data comprising the Unsecured Payload of the main SD-JWT VC example (Figure 5).",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Section 2.3.1, Figure 5",
   "unsecured_payload": {
     "vct": "https://credentials.example.com/identity_credential",
     "given_name": "John",

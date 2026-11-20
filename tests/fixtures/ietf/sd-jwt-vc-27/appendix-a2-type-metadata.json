@@ -1,9 +1,9 @@
 {
-  "description": "Full Type Metadata example: an SD-JWT VC payload using vct https://betelgeuse.example.com/education_credential/v42 with vct#integrity (Figure 28), and the complete Type Metadata document with extends, display (simple + svg_templates renderings, en-US/de-DE locales) and claim metadata including claim paths with null array selectors and sd/mandatory flags (Figure 29).",
-  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Appendix B.2, Figures 28 and 29",
+  "description": "Full Type Metadata example: an SD-JWT VC payload using vct https://betelgeuse.example.com/education_credential/v42 with vct#integrity (Figure 29), and the complete Type Metadata document with extends, display (simple + svg_templates renderings, en-US/de-DE locales) and claim metadata including claim paths with null array selectors and sd/mandatory flags (Figure 30).",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Appendix A.2, Figures 29 and 30",
   "sd_jwt_vc_payload": {
     "vct": "https://betelgeuse.example.com/education_credential/v42",
-    "vct#integrity": "sha256-1odmyxoVQCuQx8SAym8rWHXba41fM/Iv/V1H8VHGN00=",
+    "vct#integrity": "sha256-dPPy/f63dtwl0FcbK8Pr9t2uCrF83zHnfInSPDdHaZc=",
     "name": "Zaphod Beeblebrox",
     "address": {
       "street_address": "42 Galaxy Way",
@@ -28,15 +28,15 @@
   },
   "type_metadata_document": {
     "vct": "https://betelgeuse.example.com/education_credential/v42",
-    "name": "Betelgeuse Education Credential - First Version",
-    "description": "This is our first version of the education credential. Don't panic.",
+    "name": "Betelgeuse Education Credential - Version 42",
+    "description": "This is our education credential. Don't panic.",
     "extends": "https://galaxy.example.com/galactic-education-credential/v2",
     "extends#integrity": "sha256-ilOUJsTultOwLfz7QUcFALaRa3BP/jelX1ds04kB9yU=",
     "display": [
       {
         "locale": "en-US",
         "name": "Betelgeuse Education Credential",
-        "description": "An education credential for all carbon-based life forms on Betelgeuse.",
+        "description": "Education credential for all carbon-based life forms on Betelgeuse.",
         "rendering": {
           "simple": {
             "logo": {
@@ -45,7 +45,7 @@
               "alt_text": "Betelgeuse Ministry of Education logo"
             },
             "background_image": {
-              "uri": "https://betelgeuse.example.com/public/credential-background.png",
+              "uri": "https://betelgeuse.example.com/public/cred-background.png",
               "uri#integrity": "sha256-5sBT7mMLylHLWrrS/qQ8aHpRAxoraWVmWX6eUVMlrrA="
             },
             "background_color": "#12107c",
@@ -67,7 +67,7 @@
       {
         "locale": "de-DE",
         "name": "Betelgeuse-Bildungsnachweis",
-        "description": "Ein Bildungsnachweis für alle kohlenstoffbasierten Lebensformen auf Betelgeuse.",
+        "description": "Ldungsnachweis für kohlenstoffbasierten Lebensformen auf Betelgeuse.",
         "rendering": {
           "simple": {
             "logo": {
@@ -76,8 +76,8 @@
               "alt_text": "Logo des Betelgeusischen Bildungsministeriums"
             },
             "background_image": {
-              "uri": "https://betelgeuse.example.com/public/credential-background-de.png",
-              "uri#integrity": "sha256-9cLlJNXN+TsMk+PmKjZ5t0WRL5ca/xGgX3c1ULmXfh="
+              "uri": "https://betelgeuse.example.com/public/cred-background-de.png",
+              "uri#integrity": "sha256-9c/mAd0G1WaZOkU+lJNN/dACk3L+PmjZ5t0W5caxXfh="
             },
             "background_color": "#12107c",
             "text_color": "#FFFFFF"

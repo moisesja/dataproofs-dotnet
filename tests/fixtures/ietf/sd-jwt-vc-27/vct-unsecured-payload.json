@@ -1,6 +1,6 @@
 {
   "description": "Example Unsecured Payload with a vct claim identifying the credential type https://credentials.example.com/identity_credential (Figure 3).",
-  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Section 2.2.2.1, Figure 3",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Section 2.2.2.1, Figure 3",
   "unsecured_payload": {
     "vct": "https://credentials.example.com/identity_credential",
     "given_name": "Russ",
@@ -12,7 +12,7 @@
       "region": "CA",
       "postal_code": "91007"
     },
-    "email": "sorryfolks@ww.example",
+    "email": "sorryfolks@parksclosed.example",
     "exp": 1777707000,
     "cnf": {
       "jwk": {

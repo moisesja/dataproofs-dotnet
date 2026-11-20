@@ -10,11 +10,12 @@ using Base64Url = DataProofsDotnet.Jose.Base64Url;
 // ============================================================
 // DataProofsDotnet Samples — SD-JWT VC profile
 // ============================================================
-// FR-17 (draft-ietf-oauth-sd-jwt-vc-16): the SD-JWT VC profile layered on generic SD-JWT.
+// FR-17 (draft-ietf-oauth-sd-jwt-vc-27): the SD-JWT VC profile layered on generic SD-JWT.
 // On top of the disclosure mechanics it adds, end to end:
 //   * a required `vct` (verifiable credential type) claim — rejected if missing/blank,
-//   * the `dc+sd-jwt` media type (with transitional `vc+sd-jwt` accepted on input),
-//   * registered claims that MUST NOT be selectively disclosed (iss/nbf/exp/cnf/vct/...),
+//   * an optional `aka_vcts` claim naming further types — a non-empty array without the vct value,
+//   * the `dc+sd-jwt` media type, and only that: the former `vc+sd-jwt` is rejected,
+//   * registered claims that MUST NOT be selectively disclosed (iss/nbf/exp/cnf/vct/aka_vcts/...),
 //   * offline-by-default Type Metadata (`vct`) resolution via a pluggable resolver hook —
 //     LocalCacheTypeMetadataResolver here, never the network (FR-10 posture).
 //
@@ -42,11 +43,12 @@ JsonObject VcClaims() => new()
 };
 
 Console.WriteLine("=== SD-JWT VC profile (end to end) ===");
-Console.WriteLine($"  media type: {SdJwtVcConstants.MediaType} (transitional input also accepted: {SdJwtVcConstants.TransitionalMediaType})");
-Console.WriteLine($"  vct claim: '{SdJwtVcConstants.VctClaim}', integrity: '{SdJwtVcConstants.VctIntegrityClaim}', status: '{SdJwtVcConstants.StatusClaim}'");
+Console.WriteLine($"  media type: {SdJwtVcConstants.MediaType}");
+Console.WriteLine($"  vct claim: '{SdJwtVcConstants.VctClaim}', other types: '{SdJwtVcConstants.AkaVctsClaim}', integrity: '{SdJwtVcConstants.VctIntegrityClaim}', status: '{SdJwtVcConstants.StatusClaim}'");
 Console.WriteLine($"  must-not-be-disclosed: {string.Join(", ", SdJwtVcConstants.MustNotBeSelectivelyDisclosed)}");
 Check(SdJwtVcConstants.MediaType == "dc+sd-jwt", "the SD-JWT VC media type is dc+sd-jwt");
 Check(SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains("vct"), "vct is in the must-not-disclose set");
+Check(SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(SdJwtVcConstants.AkaVctsClaim), "aka_vcts is in the must-not-disclose set");
 Console.WriteLine();
 
 // ----------------------------------------------------------- 1. Issuer + holder + verifier with KB
@@ -115,12 +117,36 @@ SdJwtVcVerificationResult genericResult = await SdJwtVcVerifier.VerifyAsync(gene
 Console.WriteLine($"  generic SD-JWT (no vct) rejected by VC verifier: {!genericResult.IsValid} ({genericResult.Errors.FirstOrDefault()})");
 Check(!genericResult.IsValid, "a non-VC SD-JWT is rejected by the VC verifier");
 
-// The transitional vc+sd-jwt typ is still accepted on input.
-SdJwtIssuer.Result transitional = await SdJwtIssuer.IssueAsync(
-    VcClaims(), frame, issuerSigner, typ: SdJwtVcConstants.TransitionalMediaType);
-SdJwtVcVerificationResult transitionalResult = await SdJwtVcVerifier.VerifyAsync(transitional.Issuance, resolveIssuer, cryptoProvider: joseCrypto);
-Console.WriteLine($"  transitional vc+sd-jwt accepted on input: {transitionalResult.IsValid}");
-Check(transitionalResult.IsValid && transitionalResult.Vct == vct, "the transitional media type is accepted on input");
+// The former vc+sd-jwt typ is rejected: draft -19 removed its transitional acceptance, and W3C
+// VC-JOSE-COSE uses vc+sd-jwt for a different format. The constant stays, marked [Obsolete].
+#pragma warning disable CS0618 // TransitionalMediaType is obsolete; this shows that the verifier refuses it.
+string formerTyp = SdJwtVcConstants.TransitionalMediaType;
+#pragma warning restore CS0618
+SdJwtIssuer.Result former = await SdJwtIssuer.IssueAsync(VcClaims(), frame, issuerSigner, typ: formerTyp);
+SdJwtVcVerificationResult formerResult = await SdJwtVcVerifier.VerifyAsync(former.Issuance, resolveIssuer, cryptoProvider: joseCrypto);
+Console.WriteLine($"  former {formerTyp} typ rejected: {!formerResult.IsValid} ({formerResult.Errors.FirstOrDefault()})");
+Check(!formerResult.IsValid, "the former vc+sd-jwt media type is rejected");
+
+// aka_vcts: further types the credential also has, signed in the clear like vct.
+JsonObject withAka = VcClaims();
+withAka[SdJwtVcConstants.AkaVctsClaim] = new JsonArray("https://credentials.example.com/general_credential");
+SdJwtIssuer.Result akaIssued = await SdJwtVcIssuer.IssueAsync(withAka, frame, issuerSigner);
+SdJwtVcVerificationResult akaResult = await SdJwtVcVerifier.VerifyAsync(akaIssued.Issuance, resolveIssuer, cryptoProvider: joseCrypto);
+Console.WriteLine($"  aka_vcts in the clear verifies: {akaResult.IsValid}");
+Check(akaResult.IsValid && akaResult.DisclosedPayload!.ContainsKey(SdJwtVcConstants.AkaVctsClaim), "a well-formed aka_vcts verifies");
+
+bool akaDisclosureRejected;
+try
+{
+    await SdJwtVcIssuer.IssueAsync(withAka, new DisclosureFrame().Disclose(SdJwtVcConstants.AkaVctsClaim), issuerSigner);
+    akaDisclosureRejected = false;
+}
+catch (MalformedJoseException)
+{
+    akaDisclosureRejected = true;
+}
+Console.WriteLine($"  making aka_vcts disclosable rejected: {akaDisclosureRejected}");
+Check(akaDisclosureRejected, "aka_vcts cannot be made selectively disclosable");
 Console.WriteLine();
 
 // ----------------------------------------------------------- 3. Type Metadata (offline, opt-in)

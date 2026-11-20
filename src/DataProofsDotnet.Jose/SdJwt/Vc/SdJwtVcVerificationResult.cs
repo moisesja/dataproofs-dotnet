@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 namespace DataProofsDotnet.Jose.SdJwt.Vc;
 
 /// <summary>
-/// The structured outcome of SD-JWT VC verification (draft-ietf-oauth-sd-jwt-vc-16 §3.5): the
+/// The structured outcome of SD-JWT VC verification (draft-ietf-oauth-sd-jwt-vc-27 §2.4): the
 /// generic SD-JWT verification result enriched with the profile-specific findings — the resolved
 /// <c>vct</c> and any retrieved Type Metadata document. Like the rest of the package, a valid
 /// structure that fails a check returns <see cref="IsValid"/> <c>false</c> rather than throwing
@@ -36,7 +36,12 @@ public sealed class SdJwtVcVerificationResult
     /// <summary>The processed (disclosed) SD-JWT VC payload; <c>null</c> on failure. A defensive clone is returned per access.</summary>
     public JsonObject? DisclosedPayload => _disclosedPayload?.DeepClone() as JsonObject;
 
-    /// <summary>The verified <c>vct</c> (credential type) value when present; <c>null</c> otherwise.</summary>
+    /// <summary>
+    /// The verified <c>vct</c> (credential type) value when present; <c>null</c> otherwise. For type matching,
+    /// a credential's types are this value and the values of the <c>aka_vcts</c> claim in
+    /// <see cref="DisclosedPayload"/>, and no others: Type Metadata and its <c>extends</c> chain do not add
+    /// types (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.2, §5.4).
+    /// </summary>
     public string? Vct { get; }
 
     /// <summary>
@@ -44,6 +49,11 @@ public sealed class SdJwtVcVerificationResult
     /// <c>null</c> when no resolver was supplied or the <c>vct</c> was not resolvable (offline
     /// default). A defensive clone is returned per access.
     /// </summary>
+    /// <remarks>
+    /// The document is returned as the resolver gave it. It is not processed: <c>extends</c> is not followed
+    /// and claim metadata is not validated against the credential. Before its contents are used for
+    /// validation, display or acceptance, draft-ietf-oauth-sd-jwt-vc-27 §5.7 requires full processing.
+    /// </remarks>
     public JsonObject? TypeMetadata => _typeMetadata?.DeepClone() as JsonObject;
 
     /// <summary>True when a Key Binding JWT was present and verified.</summary>

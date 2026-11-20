@@ -1,6 +1,6 @@
 {
   "description": "All 9 Disclosures belonging to the main SD-JWT VC example payload (given_name, family_name, email, phone_number, address, birthdate, is_over_18, is_over_21, is_over_65).",
-  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Section 2.3.1",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Section 2.3.1",
   "hash_algorithm": "sha-256",
   "disclosures": [
     {

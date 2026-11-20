@@ -13,6 +13,12 @@ namespace DataProofsDotnet.Jose.SdJwt;
 /// <see cref="SdJwtVerificationResult.IsValid"/> <c>false</c> rather than throwing
 /// (PRD FR-3/FR-23). Stateless and thread-safe.
 /// </summary>
+/// <remarks>
+/// The Issuer JWT's <c>typ</c> is not checked here: RFC 9901 §9.11 leaves explicit typing to the
+/// application profile, so this verifier accepts any kind of SD-JWT. A caller verifying one profile
+/// checks its <c>typ</c>; for SD-JWT VC use <see cref="Vc.SdJwtVcVerifier"/>, which accepts only
+/// <c>dc+sd-jwt</c>.
+/// </remarks>
 public static class SdJwtVerifier
 {
     /// <summary>
