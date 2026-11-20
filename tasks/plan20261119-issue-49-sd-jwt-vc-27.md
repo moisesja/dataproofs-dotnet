@@ -97,6 +97,14 @@ Section map used for every citation (old code cited §3.5 / §3.2.2.2 / §3.2.2.
    is the normative document contributors are told to keep current. Alternatives: `RELEASING.md` (about cutting
    releases, not tracking specifications), `CONTRIBUTING.md` (generic), a new `docs/` page (one more place to keep in
    sync), an issue (not in the repository, and filing issues is out of this run's remit).
+10. **`vct` and `aka_vcts` values must be well-formed UTF-16 at issuance** (added after the adversarial pass, finding
+    1). Two caller strings that differ only in lone surrogates both serialize as U+FFFD, so the issuer could sign an
+    `aka_vcts` holding the `vct` value and its own verifier then refused it. Alternatives: compare the serialized
+    forms (re-serializes the claims set to check two claims, and still signs content the caller did not pass); fix
+    lone surrogates for every claim in the generic `SdJwtIssuer` (right in the end, but outside this PR's files and
+    a behaviour change for every SD-JWT; listed as a follow-up). A JSON-parsed lone-surrogate escape in either claim
+    also now fails as `MalformedJoseException` instead of `InvalidOperationException`. Wire input cannot carry one
+    (issues #28, #30), so verification is unchanged.
 
 ## The issue's table, row by row
 
@@ -134,17 +142,55 @@ Section map used for every citation (old code cited §3.5 / §3.2.2.2 / §3.2.2.
 - [x] Worktree from fresh `origin/main`; merge #51's branch, then `origin/main` after #51 landed (fast-forward).
 - [x] Confirm -27 is the latest; read the sections above.
 - [x] Re-vendor fixtures to `sd-jwt-vc-27`.
-- [ ] `SdJwtVcConstants`: pin text, `AkaVctsClaim`, list, `[Obsolete]` on `TransitionalMediaType`, internal `Revision`.
-- [ ] `SdJwtVcVerifier`: `dc+sd-jwt` only; `aka_vcts` format; -27 citations; doc notes.
-- [ ] `SdJwtVcIssuer`: `aka_vcts` format; -27 citations.
-- [ ] `ITypeMetadataResolver`, `SdJwtVcVerificationResult`, `SdJwtVerifier` doc notes.
-- [ ] `PublicAPI.Unshipped.txt`.
-- [ ] Tests: `vc+sd-jwt` rejected (and variants), fixtures from -27, `aka_vcts` disclosure rejected on both sides,
+- [x] `SdJwtVcConstants`: pin text, `AkaVctsClaim`, list, `[Obsolete]` on `TransitionalMediaType`, internal `Revision`.
+- [x] `SdJwtVcVerifier`: `dc+sd-jwt` only; `aka_vcts` format; -27 citations; doc notes.
+- [x] `SdJwtVcIssuer`: `aka_vcts` format; -27 citations.
+- [x] `ITypeMetadataResolver`, `SdJwtVcVerificationResult`, `SdJwtVerifier` doc notes.
+- [x] `PublicAPI.Unshipped.txt`.
+- [x] Tests: `vc+sd-jwt` rejected (and variants), fixtures from -27, `aka_vcts` disclosure rejected on both sides,
       `aka_vcts` format both sides; regression tests fail on `origin/main`.
-- [ ] Sample, `samples/README.md`, PRD (FR-17, §9 AC-3 step 5, fixtures list, §12.2), concept table, CHANGELOG.
-- [ ] Build `/warnaserror`, full test run, `ac-7`, `ac-9` (+ every sample), `ac-12`.
-- [ ] Adversarial pass (30 min).
+- [x] Sample, `samples/README.md`, PRD (FR-17, §9 AC-3 step 5, fixtures list, §12.2), concept table, CHANGELOG.
+- [x] Build `/warnaserror`, full test run, `ac-7`, `ac-9` (+ every sample). `ac-12` left to CI: no serialization or
+      reflection change.
+- [x] Adversarial pass (30 min).
 - [ ] PR, CI green.
+
+## Verification
+
+- `Issue49SdJwtVcRepinTests` copied alone onto `c4bf7fb` (origin/main): 38 of 57 fail, which is every regression
+  test; the 19 that pass are guards (case and prefix variants 2.0.0 already refused, positive controls, round trips,
+  the generic verifier).
+- The four lone-surrogate tests fail when the strict UTF-8 check in `SdJwtVcClaimRules.ReadTypeValue` is removed.
+  Their inputs are built inside the test from code units: xUnit serializes theory arguments and turned lone
+  surrogates into U+FFFD, so the first version of that theory passed for the wrong reason.
+- The -27 fixtures: all five issuer-signed JWTs and both KB-JWTs verify through `SdJwtVcVerifier`
+  (`SdJwtVcProfileTests`, including two new Appendix A.1 tests).
+
+## Adversarial pass
+
+One fresh agent, 30-minute budget, given the issue, the diff, -27 and RFC 9901; 48 probes. Attacked: `vc+sd-jwt`
+through the default verifier by casing, `application/` prefix, whitespace, JSON escapes, look-alikes, `cty`,
+duplicate or non-string `typ`, `crit`, the KB-JWT header, JWS JSON serialization, default options and DI (none
+registered); top-level `aka_vcts` disclosure via every `DisclosureFrame` method and hand-built Disclosures with
+escaped names, collisions, recursion; the `aka_vcts` format rule on both sides; false refusals. Results:
+
+1. Reproduced, fixed (decision 10): the issuer could sign `aka_vcts` containing `vct` via lone surrogates.
+2. Reproduced, not fixed here: the verifier refuses a Disclosure on the must-not-disclose list at any depth, so a
+   nested `related.aka_vcts` or `employment.status` that the issuer accepted is refused. Pre-existing for the other
+   seven names; `aka_vcts` extends it. Path scoping is #48's, so it is listed as a follow-up for #48 and stated in
+   the CHANGELOG.
+3. Informational: `application/dc+sd-jwt` and case variants are refused (decision 4); now stated on `MediaType`.
+4. Informational: whitespace-only or NUL `aka_vcts` values pass; Collision-Resistant Name is not checkable, as for
+   `vct`.
+
+No route got `vc+sd-jwt` accepted or a top-level `aka_vcts` disclosed.
+
+## Follow-ups (not done here)
+
+- #47: -27 §5.3 identity check of a retrieved Type Metadata document's `vct`; `vct#integrity` verification (§6).
+- #48: scope the must-not-disclose match to the registered claims and their sub-claims (adversarial finding 2).
+- New: the generic `SdJwtIssuer` (and `JwsBuilder` payloads) silently sign U+FFFD for a lone surrogate in any
+  caller-built claim, and throw `InvalidOperationException` for a parsed lone-surrogate escape.
 
 ## Review
 
