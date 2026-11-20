@@ -52,7 +52,8 @@ There are no timing assertions left in the #47 tests: the wall-clock ones were r
   - the complete pass for every claim, with a copy of the array per path (a274a2a reverted): both indexed variants fail at 128,512,320 bytes;
   - a new list per step (c16e9bf reverted): the wildcard test fails at 16,283,824 bytes;
   - the pre-2c0e067 `TypeMetadataIntegrity.cs`: the integrity test fails at 9,159,880 bytes.
-- [ ] Stability: 200 consecutive full runs of the Jose test project
-- [ ] Full suite, PR, CI
+- [x] Stability: 200 consecutive full runs of the Jose test project (1,697 tests each), 200 passed, 0 failed
+- [x] Full suite: 3,668 passed, 0 skipped; build with `/warnaserror` clean
+- [ ] PR, CI
 
 ## Review
