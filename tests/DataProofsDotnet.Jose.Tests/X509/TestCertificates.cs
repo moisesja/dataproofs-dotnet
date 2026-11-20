@@ -49,7 +49,8 @@ internal static class TestCertificates
     // ------------------------------------------------------------------------------------------ platform-made chains
 
     /// <summary>Root → intermediate → end-entity, the end-entity certifying a fresh NetCrypto key of <paramref name="keyType"/>.</summary>
-    public static Pki CreatePki(KeyType keyType = KeyType.P256, string name = "Example", DateTimeOffset? leafNotAfter = null)
+    public static Pki CreatePki(KeyType keyType = KeyType.P256, string name = "Example", DateTimeOffset? leafNotAfter = null,
+        X509KeyUsageFlags? leafKeyUsage = X509KeyUsageFlags.DigitalSignature)
     {
         var now = DateTimeOffset.UtcNow;
         using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -69,7 +70,8 @@ internal static class TestCertificates
         using var leafPublic = PlatformPublicKey(key);
         var leafRequest = new CertificateRequest($"CN={name} Issuer", leafPublic, keyType == KeyType.P384 ? HashAlgorithmName.SHA384 : HashAlgorithmName.SHA256);
         leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
-        leafRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+        if (leafKeyUsage is { } usage)
+            leafRequest.CertificateExtensions.Add(new X509KeyUsageExtension(usage, true));
         using var leaf = leafRequest.Create(
             intermediate.SubjectName, X509SignatureGenerator.CreateForECDsa(intermediateKey),
             now.AddDays(-1), leafNotAfter ?? now.AddYears(1), NextSerial());
@@ -79,7 +81,9 @@ internal static class TestCertificates
 
     /// <summary>
     /// The recommended hook: RFC 5280 path validation by the platform, the caller's anchors in the custom trust store,
-    /// every <c>x5c</c> certificate only in the extra store (a certificate in <c>x5c</c> is never an anchor).
+    /// every <c>x5c</c> certificate only in the extra store (a certificate in <c>x5c</c> is never an anchor). The
+    /// end-entity Key Usage is not checked here: X509Chain does not check it, and the library refuses a certificate
+    /// without digitalSignature before any hook runs (X5C_KEY_USAGE, PR #56 review round 1).
     /// </summary>
     public static bool ValidateWithAnchors(X509CertificateChain chain, params X509Certificate2[] anchors)
     {
@@ -169,7 +173,8 @@ internal static class TestCertificates
     /// null omits the version field.
     /// </summary>
     public static byte[] Assemble(byte[] spki, string subject = "Leaf", string issuer = "Assembly CA", int? version = 2,
-        Action<AsnWriter>? tbsTail = null, bool withExtensions = true)
+        Action<AsnWriter>? tbsTail = null, bool withExtensions = true, byte[]? rawIssuer = null, byte[]? rawSubject = null,
+        byte[]? rawSignatureAlgorithm = null)
     {
         var tbs = new AsnWriter(AsnEncodingRules.DER);
         using (tbs.PushSequence())
@@ -180,14 +185,14 @@ internal static class TestCertificates
                     tbs.WriteInteger(v);
             }
             tbs.WriteInteger(new BigInteger(Interlocked.Increment(ref _serial)));
-            WriteEcdsaSha256(tbs);
-            WriteName(tbs, issuer);
+            if (rawSignatureAlgorithm is not null) tbs.WriteEncodedValue(rawSignatureAlgorithm); else WriteEcdsaSha256(tbs);
+            if (rawIssuer is not null) tbs.WriteEncodedValue(rawIssuer); else WriteName(tbs, issuer);
             using (tbs.PushSequence())
             {
                 tbs.WriteUtcTime(DateTimeOffset.UtcNow.AddDays(-1));
                 tbs.WriteUtcTime(DateTimeOffset.UtcNow.AddYears(1));
             }
-            WriteName(tbs, subject);
+            if (rawSubject is not null) tbs.WriteEncodedValue(rawSubject); else WriteName(tbs, subject);
             tbs.WriteEncodedValue(spki);
             if (withExtensions)
             {

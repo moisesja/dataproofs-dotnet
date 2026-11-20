@@ -82,13 +82,16 @@ public sealed class JwsSigner
     /// anchors (see <see cref="X509CertificateChain"/>).
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// When set to a chain whose end-entity public key is not <see cref="Signer"/>'s public key.
+    /// When set to a chain whose end-entity public key is not <see cref="Signer"/>'s public key, or whose end-entity
+    /// certificate has a Key Usage extension without <c>digitalSignature</c> (the message starts with <c>X5C_KEY_USAGE</c>).
     /// </exception>
     public X509CertificateChain? CertificateChain
     {
         get => _certificateChain;
         init
         {
+            if (value is not null && !value.EndEntityMaySign)
+                throw new ArgumentException(X509CertificateChain.KeyUsageMessage, nameof(CertificateChain));
             if (value is not null && !EndEntityKeyIsSignerKey(value))
                 throw new ArgumentException(
                     "The end-entity certificate's public key is not the signer's public key; a verifier taking the key "

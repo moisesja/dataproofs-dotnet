@@ -94,8 +94,11 @@ public static class JwsParser
     /// (draft-ietf-oauth-sd-jwt-vc-27 §2.5). Return <c>true</c> only when the chain validates to an anchor your
     /// policy permits for this signer: for example with <c>X509Chain</c> in <c>CustomRootTrust</c> mode, your
     /// anchors in <c>CustomTrustStore</c> and the <c>x5c</c> certificates in <c>ExtraStore</c> only. The library
-    /// checks no certificate signature, validity period, key usage, chain order, revocation or anchor (see
-    /// <see cref="X509CertificateChain"/>). An exception from the hook propagates unchanged.
+    /// checks no certificate signature, validity period, chain order, revocation or anchor (see
+    /// <see cref="X509CertificateChain"/>). It does refuse, before using the key and so before the hook, an end-entity
+    /// certificate whose Key Usage extension does not assert <c>digitalSignature</c>, since that is a restriction on the
+    /// library's own use of the key (RFC 5280 §4.2.1.3); Extended Key Usage, whose purposes are ecosystem-defined, is the
+    /// hook's to check. An exception from the hook propagates unchanged.
     /// </para>
     /// <para>
     /// <c>x5c</c> is read from the protected header, the only header compact serialization has. A <c>kid</c> there
@@ -118,8 +121,9 @@ public static class JwsParser
     /// </exception>
     /// <exception cref="JoseCryptoException">
     /// When the protected header has no <c>x5c</c> (<c>X5C_MISSING</c>), the end-entity key is of a type no supported
-    /// algorithm uses (<c>X5C_UNSUPPORTED_KEY</c>), the signature does not verify under the end-entity key, or the hook
-    /// returned <c>false</c> (<c>X5C_UNTRUSTED</c>).
+    /// algorithm uses (<c>X5C_UNSUPPORTED_KEY</c>), the end-entity certificate's Key Usage does not assert
+    /// <c>digitalSignature</c> (<c>X5C_KEY_USAGE</c>), the signature does not verify under the end-entity key, or the
+    /// hook returned <c>false</c> (<c>X5C_UNTRUSTED</c>).
     /// </exception>
     public static JwsParseResult ParseCompactWithCertificateChain(
         string compact,
@@ -139,6 +143,10 @@ public static class JwsParser
                 ? new MalformedJoseException(outcome.Message)
                 : new JoseCryptoException(outcome.Message);
         }
+
+        // A key whose certificate does not permit digital signatures is not used at all (RFC 5280 §4.2.1.3).
+        if (!chain.EndEntityMaySign)
+            throw new JoseCryptoException(X509CertificateChain.KeyUsageMessage);
 
         // The key is always the end-entity certificate's, built here from the chain's own copy: never a key the hook
         // or the caller supplies. The kid plays no part in selecting it.
