@@ -118,9 +118,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     directly; array positions count undisclosed elements. A withheld selectively disclosable claim is not a
     missing mandatory one; a mandatory claim is missing only where nothing could hide it. Two consequences to
     know: a verifier cannot tell a withheld `sd: never` member from a decoy, so it is detected only when the
-    claim is also mandatory; and an issuer that adds decoys to arrays shifts the positions -27 counts. The work
-    is bounded: claim metadata whose evaluation takes more than 1,000,000 path steps over one credential is refused with
-    `VC_CLAIM_METADATA_INVALID`.
+    claim is also mandatory; and an issuer that adds decoys to arrays shifts the positions -27 counts.
+  - *Resource bounds, beyond the two options.* An `extends` chain may hold at most 10,000 claim, path, display and
+    template entries, counted in every document of the chain; past that it fails with `VC_TYPE_METADATA_INVALID`.
+    A display element that is not an object is skipped, not counted.
+    Validation against one credential may spend at most 1,000,000 units of work, charged before the work. A path
+    step costs one unit; a key lookup costs one unit per 32 characters of its key. Past that it fails with
+    `VC_CLAIM_METADATA_INVALID`. Both are fixed limits: a rich real type holds a few thousand entries. The result
+    keeps the documents as octets and parses them again on each access, and an error message repeats at most 120
+    characters of a value.
   - *Issuance is checked by the same code:* the verifier's processing runs on the issued credential with every
     Disclosure, knowing every unresolved digest is a decoy, and the credential is not returned when it fails. It
     refuses whatever that verification refuses, and also a mandatory claim that only a decoy stands in for.

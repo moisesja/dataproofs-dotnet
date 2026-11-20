@@ -216,7 +216,7 @@ public static class SdJwtVcVerifier
             return SdJwtVcVerificationResult.Failure(error);
 
         return SdJwtVcVerificationResult.Success(
-            verified.Disclosed!, verified.Vct!, outcome.LeafDocument!, outcome.Metadata!, verified.KeyBindingVerified,
+            verified.Disclosed!, verified.Vct!, outcome.LeafOctets!, outcome.Metadata!, verified.KeyBindingVerified,
             verified.IssuerCertificateChain);
     }
 

@@ -15,6 +15,7 @@ public sealed class SdJwtVcVerificationResult
 {
     private readonly JsonObject? _disclosedPayload;
     private readonly JsonObject? _typeMetadata;
+    private readonly byte[]? _typeMetadataOctets;
 
     private SdJwtVcVerificationResult(
         bool isValid,
@@ -25,8 +26,10 @@ public sealed class SdJwtVcVerificationResult
         IReadOnlyList<string> errors,
         ProcessedTypeMetadata? processedTypeMetadata = null,
         Exception? typeMetadataResolverFault = null,
+        byte[]? typeMetadataOctets = null,
         X509CertificateChain? issuerCertificateChain = null)
     {
+        _typeMetadataOctets = typeMetadataOctets;
         IsValid = isValid;
         _disclosedPayload = disclosedPayload;
         Vct = vct;
@@ -64,7 +67,9 @@ public sealed class SdJwtVcVerificationResult
     /// processing, which <see cref="SdJwtVcVerifier.VerifyWithTypeMetadataAsync"/> performs; there this member holds
     /// the <c>vct</c>'s own document as parsed, and <see cref="ProcessedTypeMetadata"/> the processed result.
     /// </remarks>
-    public JsonObject? TypeMetadata => _typeMetadata?.DeepClone() as JsonObject;
+    public JsonObject? TypeMetadata => _typeMetadata is not null
+        ? _typeMetadata.DeepClone() as JsonObject
+        : _typeMetadataOctets is not null ? JsonNode.Parse(_typeMetadataOctets, documentOptions: Json.JoseJson.StrictDocument)!.AsObject() : null;
 
     /// <summary>
     /// The processed Type Metadata (draft-ietf-oauth-sd-jwt-vc-27 §5.7): the <c>extends</c> chain applied, claim
@@ -101,9 +106,9 @@ public sealed class SdJwtVcVerificationResult
         => new(true, disclosedPayload, vct, typeMetadata, keyBindingVerified, [], issuerCertificateChain: issuerCertificateChain);
 
     internal static SdJwtVcVerificationResult Success(
-        JsonObject disclosedPayload, string vct, JsonObject typeMetadata, ProcessedTypeMetadata processedTypeMetadata, bool keyBindingVerified,
+        JsonObject disclosedPayload, string vct, byte[] typeMetadataOctets, ProcessedTypeMetadata processedTypeMetadata, bool keyBindingVerified,
         X509CertificateChain? issuerCertificateChain = null)
-        => new(true, disclosedPayload, vct, typeMetadata, keyBindingVerified, [], processedTypeMetadata,
+        => new(true, disclosedPayload, vct, null, keyBindingVerified, [], processedTypeMetadata, typeMetadataOctets: typeMetadataOctets,
             issuerCertificateChain: issuerCertificateChain);
 
     internal static SdJwtVcVerificationResult Failure(IReadOnlyList<string> errors)
