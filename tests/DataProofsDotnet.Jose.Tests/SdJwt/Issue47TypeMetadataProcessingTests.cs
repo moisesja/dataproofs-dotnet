@@ -1411,6 +1411,29 @@ public sealed class Issue47TypeMetadataProcessingTests
     }
 
     [Fact]
+    public void A_wildcard_over_many_claims_reuses_its_selection_lists()
+    {
+        // Pass 3, F3: 490 claims ["a", null, "kN"] over 1,000 objects (about 981,000 units, under the work bound)
+        // allocated 20 MB, a new list per step and claim. The two lists are reused, so the memory is one selection.
+        var elements = new JsonArray();
+        for (var i = 0; i < 1_000; i++)
+            elements.Add((JsonNode)new JsonObject { ["x"] = 0 });
+        var trace = new ReconstructionTrace();
+        var root = SdJwtReconstructor.Reconstruct(new JsonObject { ["vct"] = Vct, ["a"] = elements }, [], SdAlg, trace);
+        var claims = Enumerable.Range(0, 490)
+            .Select(i => new ClaimMetadata(
+                [ClaimPathComponent.ForKey("a"), ClaimPathComponent.AllElements, ClaimPathComponent.ForKey("k" + i)], [], false, ClaimSelectiveDisclosure.Allowed, null))
+            .ToList();
+
+        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false).Should().BeNull();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: false).Should().BeNull();
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        allocated.Should().BeLessThan(256 * 1024);
+    }
+
+    [Fact]
     public void A_path_description_is_bounded_and_the_canonical_key_is_not_escaped()
     {
         var key = new string('<', 10_000);

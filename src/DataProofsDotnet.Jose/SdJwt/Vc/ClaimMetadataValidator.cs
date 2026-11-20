@@ -39,6 +39,14 @@ internal static class ClaimMetadataValidator
     {
         private long _remaining = WorkBudget;
 
+        /// <summary>
+        /// The two selection lists every path step of this validation reuses, so the memory is the largest selection
+        /// one step makes (at most 16 bytes per element), not the sum over all steps and claims.
+        /// </summary>
+        public List<Selected> Current { get; set; } = [];
+
+        public List<Selected> Next { get; set; } = [];
+
         /// <summary>Spends <paramref name="units"/>; <c>false</c> when the bound is exceeded, and the work must not be done.</summary>
         public bool Spend(long units)
         {
@@ -87,7 +95,9 @@ internal static class ClaimMetadataValidator
     {
         // Formatted only for a finding: a claim that holds costs no string.
         string Path() => ClaimPathComponent.Describe(claim.Path);
-        List<Selected> selection = [new(root, ReconstructionTrace.Origin.Clear)];
+        var selection = budget.Current;
+        selection.Clear();
+        selection.Add(new(root, ReconstructionTrace.Origin.Clear));
         var absent = false;
 
         for (var step = 0; step < claim.Path.Count && selection.Count > 0; step++)
@@ -95,7 +105,8 @@ internal static class ClaimMetadataValidator
             var component = claim.Path[step];
             var last = step == claim.Path.Count - 1;
             var cost = component.Key is { } costKey ? 1 + (long)costKey.Length / KeyCharsPerUnit : 1;
-            var next = new List<Selected>();
+            var next = budget.Next;
+            next.Clear();
             foreach (var selected in selection)
             {
                 if (!budget.Spend(cost))
@@ -182,6 +193,7 @@ internal static class ClaimMetadataValidator
                     }
                 }
             }
+            (budget.Current, budget.Next) = (next, selection);
             selection = next;
         }
 
