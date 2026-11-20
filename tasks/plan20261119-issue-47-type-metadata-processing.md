@@ -228,3 +228,23 @@ over six shapes in both directions; canonical base64 accepts every conformant sp
 exception type escapes. Two findings: the complete view judged `sd` and paths at shifted indices (issuer refused what
 the verifier accepts), and the residual fan-out cost. Both fixed in the next commit, with regression tests that fail
 on `d0554eb`.
+
+### Review round 1 (thorough review, issue comment 7030160237, on `ab389da`)
+
+Both findings reproduced before any change: six new tests fail on `ab389da`.
+
+- **[P1] quadratic complete pass.** `[.. trace.AsIssued(array).Where(...)]` copied the array for every indexed path;
+  allocation for 1,000 → 4,000 indexed claims grew 18 MB → 269 MB (15×), and the reviewer measured 2.66 GB at
+  10,000. Fix (`a274a2a`): the complete view indexes the processed array, which at issuance already leaves the decoys
+  out; the complete pass runs only for mandatory claims; the budget now charges each element a component is applied
+  to as well as each it selects, so every unit of work is charged (renamed "path steps", still 1,000,000). After: 0.31
+  MB / 1.25 MB / 3.1 MB (optional) and 0.62 / 2.5 / 6.2 MB (mandatory) at 1,000 / 4,000 / 10,000, linear. Test:
+  `Indexed_paths_cost_work_linear_in_the_claims_at_issuance`, both kinds, plus the reviewer's 10,000 × 10,000 issuance.
+- **[P2] a shifted shape error discarded absence.** The complete pass returned success at a non-object or non-array,
+  dropping an absence another branch proved, and skipping the branches after it. Fix: drop only that branch and keep
+  evaluating. Test: both row orders × key step and index step, each issuing on `ab389da` and refused now, plus a
+  control where the shape error is the only oddity and the credential is still issued.
+- **Same patterns elsewhere.** Searched the Type Metadata code, verifier side included: the as-issued view reads the
+  per-array list `ReconstructionTrace.AsIssued` builds once and caches, and every other per-claim cost is linear (the
+  path key, formatted once at parse; the error text, now formatted only for a finding). Every other early return in
+  the validator and the processor is itself a refusal, so it cannot discard evidence of another refusal.
