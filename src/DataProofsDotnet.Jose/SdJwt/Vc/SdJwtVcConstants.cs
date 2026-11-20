@@ -24,7 +24,7 @@ public static class SdJwtVcConstants
     /// <summary>
     /// The former SD-JWT VC <c>typ</c> value, <c>vc+sd-jwt</c>. Drafts up to -18 asked Verifiers to accept it
     /// for a transitional period; -19 removed that, and -27 §2.2.1 requires <c>dc+sd-jwt</c>.
-    /// <see cref="SdJwtVcVerifier"/> rejects it. This library has never issued it.
+    /// <see cref="SdJwtVcVerifier"/> rejects it. <see cref="SdJwtVcIssuer"/> has never issued it.
     /// </summary>
     [Obsolete("draft-ietf-oauth-sd-jwt-vc-19 removed the transitional vc+sd-jwt typ and SdJwtVcVerifier no longer accepts it. "
         + "Use MediaType (dc+sd-jwt). W3C VC-JOSE-COSE uses vc+sd-jwt for a different format.")]

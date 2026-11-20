@@ -23,6 +23,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<PackageReference Include="System.Formats.Cbor" Version="10.0.15" />` in the consuming project
   lifts the transitive version and clears the audit for all four packages.
 
+### Changed
+
+- **SD-JWT VC is re-pinned from `draft-ietf-oauth-sd-jwt-vc-16` to `-27`** (issue
+  [#49](https://github.com/moisesja/dataproofs-dotnet/issues/49)). -27, of 2026-11-16, is in IESG
+  Evaluation, the last stage before RFC publication. Error messages and XML docs now cite -27 and its
+  section numbers; the ones they cited before (§3.5, §3.2.2.2, §3.2.2.1.1) matched neither -16 nor -27.
+  The `VC_*` codes that start each message are unchanged; a consumer matching the rest of the text will
+  see it change. The vendored examples moved to `tests/fixtures/ietf/sd-jwt-vc-27/`: -27 re-signed every
+  example, and the library verifies all of them. The steps for the next move, to the RFC, are in PRD
+  §12.2. The behaviour changes follow.
+
+- **`SdJwtVcVerifier` no longer accepts `typ: vc+sd-jwt`. This narrows what it accepts.** -16 asked
+  Verifiers to accept the former `vc+sd-jwt` as well as `dc+sd-jwt` "for a reasonable transitional
+  period"; -19 removed that sentence, and -27 §2.2.1 says "The typ value MUST use dc+sd-jwt". An SD-JWT
+  whose issuer-JWT `typ` is anything other than exactly `dc+sd-jwt` now fails with
+  `VC_MEDIA_TYPE_INVALID` before its signature is checked. There is no opt-in. W3C VC-JOSE-COSE uses
+  `vc+sd-jwt` for a different format, a VCDM payload with no `vct`, and an alias, even one behind a
+  flag, would keep the two confusable inside the profile verifier.
+  - *This library's own output:* `SdJwtVcIssuer` has set `typ: dc+sd-jwt` in every release from
+    0.1.0-preview.1 to 2.0.0, so no SD-JWT VC it issued is affected. A token built with the generic
+    `SdJwtIssuer` and an explicit `typ: "vc+sd-jwt"`, as the 2.0.0 SD-JWT VC sample did with
+    `SdJwtVcConstants.TransitionalMediaType`, is now refused.
+  - *What to do:* issue SD-JWT VCs with `SdJwtVcIssuer`, or with `typ: dc+sd-jwt`. A verifier still
+    receiving `vc+sd-jwt` SD-JWT VCs from an issuer on a pre-November-2024 draft needs that issuer to
+    reissue them. A verifier receiving W3C VC-JOSE-COSE `vc+sd-jwt` credentials should not route them
+    here: they failed with `VC_VCT_MISSING` before and fail with `VC_MEDIA_TYPE_INVALID` now. The
+    generic `SdJwtVerifier` does not check `typ` (RFC 9901 §9.11 leaves explicit typing to the profile)
+    and is the layer to build that format on.
+  - `SdJwtVcConstants.TransitionalMediaType` keeps its value and is marked `[Obsolete]`. Using it raises
+    warning CS0618, which a build that treats warnings as errors reports as an error.
+
+- **`aka_vcts` is a registered SD-JWT VC claim** (-18; -27 §2.2.2.2 and §2.2.2.3). Under -16 it was an
+  ordinary claim that could take any value and be selectively disclosed, so both rules below refuse
+  input that was valid then, including credentials `SdJwtVcIssuer` 2.0.0 would have issued:
+  - it is on `SdJwtVcConstants.MustNotBeSelectivelyDisclosed`, so `SdJwtVcIssuer` throws
+    `MalformedJoseException` for a `DisclosureFrame` entry keyed `aka_vcts`, and `SdJwtVcVerifier` fails
+    a presentation carrying a Disclosure named `aka_vcts` with `VC_DISALLOWED_DISCLOSURE`. As for the
+    other seven names, the verifier matches the name at any depth, so a nested claim that only shares
+    the name is refused too; scoping the rule to the registered claims and their sub-claims is
+    [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48);
+  - when present it must be a non-empty array of non-empty strings that does not contain the `vct`
+    value. `SdJwtVcIssuer` throws `MalformedJoseException` otherwise, and `SdJwtVcVerifier` fails with
+    the new code `VC_AKA_VCTS_INVALID`.
+
+  *What to do:* issuers put `aka_vcts` in the clear, as an array of the further types. Verifiers that
+  match a credential's type use `vct` and the `aka_vcts` values, and only those: -27 says Type Metadata
+  and `extends` do not add types.
+
+- **`SdJwtVcIssuer` refuses a `vct` or `aka_vcts` value that is not well-formed UTF-16.** A lone surrogate
+  in a caller-built claims set was signed as U+FFFD, so the adversarial review could issue an `aka_vcts`
+  that differed from `vct` before signing and equalled it after, which the verifier then refused. Such a
+  value now throws `MalformedJoseException`, as does a claims set parsed from JSON that escapes a lone
+  surrogate in either claim, which threw `InvalidOperationException` before. Values decoded from the
+  wire cannot carry one, so verification is unchanged.
+
+### Added
+
+- **`SdJwtVcConstants.AkaVctsClaim`** (`"aka_vcts"`).
+- **Documentation for what the SD-JWT VC verifier leaves to the caller:** `ITypeMetadataResolver` lists
+  the -27 retrieval rules an HTTP-backed resolver must carry (https only, redirects, time and size
+  bounds, server-side request forgery checks on every URL, the `vct` identity check and `vct#integrity`);
+  `SdJwtVcVerificationResult.TypeMetadata` says the document is returned unprocessed (-27 §5.7);
+  `SdJwtVcConstants.StatusClaim` and the verifier say `status` is carried, not checked; `SdJwtVerifier`
+  says it does not check `typ`.
+
 ## [2.0.0] - 2026-11-02
 
 **This is a major release.** The four RDFC constructor changes under Changed remove actual

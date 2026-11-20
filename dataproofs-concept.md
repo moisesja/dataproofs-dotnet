@@ -59,7 +59,7 @@ Statuses verified 2026-06-10.
 | COSE | RFC 9052 | IETF RFC (final) | `COSE_Sign1` in v1. |
 | CWT | RFC 8392 | IETF RFC (final) | |
 | SD-JWT | RFC 9901 | IETF RFC (final) | Including Key Binding JWT. |
-| SD-JWT VC | `draft-ietf-oauth-sd-jwt-vc-16` | IETF Internet-Draft (2026-04-24) | Pre-final ("Verifiable Digital Credentials" retitle, references RFC 9901). Pinned at -16; re-pin verified 2026-06-10 (-16 is still the latest); Phase-C re-verify checkpoint. |
+| SD-JWT VC | `draft-ietf-oauth-sd-jwt-vc-27` | IETF Internet-Draft (2026-11-16) | In IESG Evaluation, the last stage before RFC publication ("Verifiable Digital Credentials", references RFC 9901). Pinned at -16 on 2026-06-10; re-pinned to -27 on 2026-11-19 (issue #49). The move to the RFC follows PRD §12.2. |
 
 ---
 

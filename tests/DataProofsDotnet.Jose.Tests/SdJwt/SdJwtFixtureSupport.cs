@@ -7,7 +7,7 @@ namespace DataProofsDotnet.Jose.Tests.SdJwt;
 
 /// <summary>
 /// Shared helpers for the SD-JWT / SD-JWT VC conformance suites (AC-3 steps 1, 5, 7). Reads the
-/// vendored RFC 9901 and draft-ietf-oauth-sd-jwt-vc-16 fixtures and supplies the issuer-key
+/// vendored RFC 9901 and draft-ietf-oauth-sd-jwt-vc-27 fixtures and supplies the issuer-key
 /// resolver and the order-insensitive JSON comparison the reconstruction theories need.
 /// </summary>
 internal static class SdJwtFixtureSupport
