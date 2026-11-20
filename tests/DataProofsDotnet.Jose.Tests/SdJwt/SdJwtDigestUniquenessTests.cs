@@ -32,6 +32,13 @@ public sealed class SdJwtDigestUniquenessTests
         return SdJwtVerifier.Verify(jwt + "~" + string.Concat(disclosures.Select(d => d.Encoded + "~")), _ => Issuer.PublicJwk);
     }
 
+    /// <summary>For repeats 2.0.0 already refused, under another message: only the refusal is pinned.</summary>
+    private static void ShouldBeRefused(SdJwtVerificationResult result)
+    {
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("DISCLOSURE_INVALID");
+    }
+
     private static void ShouldBeRefusedAsRepeated(SdJwtVerificationResult result)
     {
         result.IsValid.Should().BeFalse();
@@ -79,7 +86,7 @@ public sealed class SdJwtDigestUniquenessTests
     [Fact]
     public async Task A_repeat_within_one_sd_array_is_still_refused()
     {
-        ShouldBeRefusedAsRepeated(await SignAndVerify(new JsonObject { ["_sd"] = new JsonArray(Decoy, Decoy) }));
+        ShouldBeRefused(await SignAndVerify(new JsonObject { ["_sd"] = new JsonArray(Decoy, Decoy) }));
     }
 
     [Fact]
@@ -89,7 +96,7 @@ public sealed class SdJwtDigestUniquenessTests
         var digest = shared.ComputeDigest(SdAlg);
         var payload = new JsonObject { ["_sd"] = new JsonArray(digest), ["address"] = new JsonObject { ["_sd"] = new JsonArray(digest) } };
 
-        ShouldBeRefusedAsRepeated(await SignAndVerify(payload, shared));
+        ShouldBeRefused(await SignAndVerify(payload, shared));
     }
 
     [Fact]
