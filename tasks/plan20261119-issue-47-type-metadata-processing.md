@@ -248,3 +248,58 @@ Both findings reproduced before any change: six new tests fail on `ab389da`.
   per-array list `ReconstructionTrace.AsIssued` builds once and caches, and every other per-claim cost is linear (the
   path key, formatted once at parse; the error text, now formatted only for a finding). Every other early return in
   the validator and the processor is itself a refusal, so it cannot discard evidence of another refusal.
+
+### Review round 2 (thorough review 5987613088, on `fa34704`)
+
+**[P2] Long path keys bypassed the work bound.** Reproduced first (three new tests fail on `fa34704`): one optional
+claim `["a", null, K]` with a 900,000-character `K`, over 2,000 objects, verified as valid; the reviewer measured 14.2 s
+over 80,000 objects at 160,003 charged steps. Fix (`fdc0255`): the bound is in units of work charged before the work,
+and a key component costs 1 + ⌊length/32⌋ units per object it is applied to (the member lookup and the Disclosure
+lookup both hash the key); a path stops once nothing is selected.
+
+**Every size-dependent operation, and its bound** (the parent asked for the full list, not line 98 alone). Defaults:
+`MaxDocumentSize` 1 MiB, `MaxExtendsDepth` 8 (9 documents), JSON depth 64, `EntryBudget` 10,000 per chain, `WorkBudget`
+1,000,000 per validation.
+
+| # | Operation | Cost driver | Bound |
+|---|---|---|---|
+| 1 | Copy of the resolver's octets | octets | `MaxDocumentSize`, checked before the copy; once per document |
+| 2 | Integrity: two character passes, stack-buffer decode, canonical re-encode, one hash | value + octets | linear, no allocation per expression; once per hop |
+| 3 | UTF-8 / surrogate-escape scan, `JsonDocument.Parse` (strict) | octets | `MaxDocumentSize`; once per document |
+| 4 | `vct`, `extends`, `extends#integrity`, `name`, `description` reads; ordinal `vct` comparison | value length | once per document |
+| 5 | `visited` set (hash of each reference) | reference length | once per hop |
+| 6 | Path components read, `CanonicalKey` built (length-prefixed, unescaped) | path text | `EntryBudget` on the component count; linear in the text |
+| 7 | Duplicate-path set and `extends` merge dictionary, keyed by `CanonicalKey` | key length | once per entry |
+| 8 | Display, rendering, SVG template reads; `OneOf` (`ValueEquals` against 2–3 constants) | string lengths | `EntryBudget` on entry counts; each string read once |
+| 9 | `svg_id` GroupBy and syntax check | `svg_id` length | once per effective entry |
+| 10 | Read-only result lists | counts | `EntryBudget` |
+| 11 | `ProcessedTypeMetadata.Documents`, `SdJwtVcVerificationResult.TypeMetadata` | octets | the result keeps octets only; each access parses them once, at the caller's choice |
+| 12 | Traced reconstruction (a second walk at verification; a second after #54's self-check at issuance) | credential | linear, once |
+| 13 | `AsIssued` per array | array length | built once per array, cached |
+| 14 | Key lookups (`TryGetPropertyValue`, `IsDisclosedMember`) | key length × selections | `WorkBudget`: 1 + ⌊len/32⌋ each, charged first |
+| 15 | Index, null and `sd` checks; selection lists | counts | `WorkBudget`: 1 per element applied to and per element selected, charged first |
+| 16 | Error messages | value sizes | at most 120 characters of a value; a path described by at most 4 components of 32 characters |
+
+**Adversarial pass 3** (fresh agent; only task: disproportionate CPU or memory under the default limits; given the
+list above as it stood at `fdc0255`). No CPU finding (worst 1.27 s within the limits) and no crash; three memory
+findings, all linear but with large constants, and two observations:
+- F1: dense entries (one claim with about 524,000 two-octet index components per 1 MiB document, 9 documents)
+  allocated 99× and the result kept 55× alive (`JsonNode` materialization of the path array, a `ClaimPathComponent` per
+  component, `Format` building a second `JsonArray`, the result holding the document trees).
+- F2: a path error echoed the escaped path, 12× the document (6,290,870 characters).
+- F3: the wildcard product allocates up to about 28 MB before the work bound stops it (capped; low).
+- Observations: `Documents` deep-cloned the trees on every access (264 MB for the F1 chain); an integrity value of
+  10,400 expressions allocated 28× its size.
+
+Fixed in `2c0e067`: documents are read through `JsonElement` and no tree is built; the 10,000-entry bound is charged
+from parsed array lengths before anything is read; the result keeps octets and parses on access; the canonical key is
+length-prefixed; messages echo bounded text; the integrity check allocates nothing per expression. F3 stays capped by
+the work bound (about 28 MB worst). The tests: `A_document_of_dense_path_components_is_refused_before_it_is_built`,
+`Display_and_template_arrays_count_against_the_entry_bound` (three arrays), `Error_messages_repeat_a_bounded_part_of_a_document_value`
+(four codes), `An_integrity_value_with_many_expressions_is_checked_without_allocating_per_expression`,
+`The_result_keeps_octets_and_hands_out_documents_the_caller_owns`,
+`A_path_description_is_bounded_and_the_canonical_key_is_not_escaped`; and two tests rescaled to the entry bound
+(the review-1 10,000-index case and the pass-1 large-claims case now assert the refusal past the bound and success
+within it). Twelve fail on `fa34704`.
+
+PASS4_PLACEHOLDER

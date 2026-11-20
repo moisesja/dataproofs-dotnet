@@ -165,7 +165,11 @@ The data-loss audit only decides whether to refuse, so it changes no bytes, and 
 - *Resource bounds.* Processing works within four bounds:
   - **Per document.** At most `MaxDocumentSize` octets (default 1 MiB). Each document is copied once, hashed once and parsed once into a `JsonDocument`, and read through `JsonElement`, so no `JsonNode` tree is built.
   - **Per chain.** At most `MaxExtendsDepth` hops (default 8), so at most 9 documents.
-  - **Entries.** At most 10,000 per chain: claim metadata objects, path components, and type display, claim display and SVG template entries. Each array's parsed length is charged before any element is read, and past the bound the chain fails with `VC_TYPE_METADATA_INVALID`.
+  - **Entries.** At most 10,000 per chain: claim metadata objects, path components, and type display, claim display and SVG template entries. Past the bound the chain fails with `VC_TYPE_METADATA_INVALID`.
+    - Claims and path components, which must all be well formed, are charged from the parsed array lengths before any is read.
+    - Display and template entries are charged as each object is read. An element that is not an object is skipped without being built and is not charged, so a malformed display still never rejects.
+    - Every document in the chain counts, including entries a child overrides.
+    - A realistic rich type fits: 300 claims with display in 24 locales is about 8,100 entries.
   - **Validation work.** At most 1,000,000 units, each charged before its work is done:
     - an index or null component applied to an element costs 1 unit;
     - a key component applied to an object costs 1 + ⌊key length / 32⌋, because the member lookup and the Disclosure lookup both hash the whole key;
