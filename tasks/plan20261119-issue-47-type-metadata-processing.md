@@ -199,6 +199,16 @@ Error codes (stable prefixes, as the existing `VC_*` ones): `VC_TYPE_METADATA_UN
 
 ## Review
 
+### Merge of #54's head `5881d62` (merge `20a71c1`)
+
+#54 now refuses a nested `_sd_alg` in the reconstructor (in the clear, in a disclosed value, or as a Disclosure's
+name) and makes `SdJwtIssuer` reconstruct the bytes it is about to sign, refusing to sign what would not verify. The
+merge was clean: the new throws sit beside the trace calls and do not touch them. The two issuance checks are layered,
+not duplicated in purpose: `SdJwtIssuer`'s runs before signing, untraced, and decides whether the SD-JWT verifies at
+all; `IssueWithTypeMetadataAsync`'s runs after, traced, on the signed bytes, and decides whether it satisfies its Type
+Metadata. The second reconstruction therefore cannot fail; it repeats the walk only for the positions (a comment says
+so). Full suite after the merge: 3,617 passed, 0 skipped; `git diff 5881d62 HEAD` holds only this issue's files.
+
 ### Adversarial pass 1 (fresh agent; issue, diff and -27 text only), on `e4b6743`
 
 Five findings, all reproduced in its test file and then by a regression test of mine that fails on `e4b6743`:
