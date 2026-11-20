@@ -191,8 +191,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Pack all five packages to a local feed
-        run: dotnet pack DataProofsDotnet.sln --configuration Release --output ./local-feed
+      # Packed at a version no release uses, unique to the run. The dev-default DataProofsVersion is
+      # the last published version once a release ships, and a package cache that already holds the
+      # published package at that version serves it in place of the packed one (issue #50).
+      - name: Pack all six packages to a local feed
+        run: dotnet pack DataProofsDotnet.sln --configuration Release --output ./local-feed -p:DataProofsVersion=0.0.0-smoke.${{ github.run_id }}.${{ github.run_attempt }}
       - name: ac-10 clean-room install + smoke per package
         shell: bash
         run: |
@@ -220,6 +223,9 @@ jobs:
           declare -A prereq=(
             [DataProofsDotnet.Extensions.DependencyInjection]="Microsoft.Extensions.DependencyInjection:10.0.8"
           )
+          # The smoke app treats warnings as errors, as downstream consumers do, so a dependency with a
+          # known advisory fails restore here with NU1901-NU1904 instead of passing with a warning
+          # (issue #50: System.Formats.Cbor 10.0.8 broke every such consumer).
           for id in "${!smoke[@]}"; do
             echo "=== clean-room install + smoke: ${id} ==="
             tmp="$(mktemp -d)"
@@ -228,7 +234,7 @@ jobs:
             ( cd "$tmp/SmokeApp" \
               && dotnet add package "$id" --version "$version" --source "$feed" \
               && { [ -z "${prereq[$id]:-}" ] || dotnet add package "${prereq[$id]%%:*}" --version "${prereq[$id]##*:}"; } \
-              && dotnet run -c Release )
+              && dotnet run -c Release -p:TreatWarningsAsErrors=true )
           done
 
   ac-12:

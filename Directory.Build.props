@@ -5,10 +5,10 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <!-- GA line: v2.0.0 (CHANGELOG [2.0.0]). A new, unpublished version (1.5.0 is on NuGet.org),
-         so the AC-10 clean-room install resolves these unpublished packages from the local pack
-         feed and NetCrypto 1.7.1 from NuGet.org, with no collision with any published version.
-         Release CI overrides this from the git tag (e.g. v2.0.0 -> 2.0.0). -->
+    <!-- GA line: v2.0.0 (CHANGELOG [2.0.0]), now published on NuGet.org. Release CI overrides
+         this from the git tag (e.g. v2.0.0 -> 2.0.0). The AC-10 clean-room install does not use
+         it: it packs at a run-unique 0.0.0-smoke version, so it can never install a published
+         package of the same version in place of the one just packed (issue #50). -->
     <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">2.0.0</DataProofsVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>

@@ -12,17 +12,23 @@ exits non-zero). These are the programs the AC-10 clean-room install job builds 
 | `Rdfc/` | `DataProofsDotnet.Rdfc` | RDFC-1.0 canonicalization of a bundled JSON-LD credential through the **offline** loader (no network); asserts non-empty, deterministic N-Quads. |
 | `DependencyInjection/` | `DataProofsDotnet.Extensions.DependencyInjection` | `AddDataProofs(...)` composition: resolve the pipeline + registry from the built provider and confirm the JCS suites registered. |
 
-## The AC-10 clean-room procedure (run in `publish.yml`, and on `main` in `ci.yml`)
+## The AC-10 clean-room procedure (the `ac-10` job in `ci.yml`, on every push to `main` and every pull request)
 
 For each package the CI job does, in a clean temp directory:
 
 ```bash
-dotnet pack <package> -o ./local-feed              # all five packed to a local folder feed
+dotnet pack DataProofsDotnet.sln -o ./local-feed -p:DataProofsVersion=0.0.0-smoke.<run>.<attempt>
 dotnet new console -n SmokeApp && cd SmokeApp
-dotnet add package <package-id> --source ../local-feed   # plus the documented prerequisite only
+dotnet add package <package-id> --version 0.0.0-smoke.<run>.<attempt> --source ../local-feed   # plus the documented prerequisite only
 # replace the generated Program.cs with this folder's Program.cs (each smoke is self-contained — one file)
-dotnet run                                          # must print "OK — … smoke passed." and exit 0
+dotnet run -c Release -p:TreatWarningsAsErrors=true   # must print "OK — … smoke passed." and exit 0
 ```
+
+The packages are packed at a version no release uses, unique to the CI run, so the install can only
+take the packages just packed: at the dev-default version, which equals the last published release
+once one ships, a package cache that already holds the published package serves it instead. The
+smoke app treats warnings as errors, as downstream consumers do, so a dependency with a known
+advisory fails its restore (`NU1901`-`NU1904`) rather than passing with a warning (issue #50).
 
 Documented per-package prerequisites (the only extra `dotnet add package` allowed):
 
