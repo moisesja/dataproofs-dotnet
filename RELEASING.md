@@ -70,8 +70,11 @@ One-time owner actions (cannot be automated):
 
 The package version is derived from the tag (`v0.1.0-preview.1` → `0.1.0-preview.1`; `v1.0.0` →
 `1.0.0`), overriding the dev-default `DataProofsVersion` in `Directory.Build.props` via
-`-p:DataProofsVersion=`. The dev default is itself a `-preview` prerelease so local/CI packs are
-never mistaken for a stable release.
+`-p:DataProofsVersion=`. The dev default is the version being prepared: the release PR sets it,
+with the CHANGELOG section, before the tag. It is not a prerelease, so a local pack carries the
+release's own version. CI's `ac-10` clean-room install does not use it: it packs at a run-unique
+`0.0.0-smoke` version, so a smoke pack can never be confused with, or replaced by, a published
+package (issue #50).
 
 ## Versioning policy
 
@@ -207,6 +210,31 @@ shape**, because the consumers this project can see are not all of them. The sam
 accept-set for spec-valid proofs (those the CHANGELOG lists as newly refused), which is minor or major
 material by itself, and which a version number alone cannot soften: read that list before upgrading.
 
+**Worked example — 2.1.0 (issues #45 to #50).** The public API only adds, and no emitted byte changes, so the
+version is set by the accept-set rule. Most of what it newly refuses was invalid under the governing RFC: expired
+SD-JWTs (RFC 9901 §7.1 step 6), a repeated digest, a nested `_sd_alg`. That alone is a patch. Five narrowings are
+spec-valid, so the release is a minor:
+- two under an RFC: a NumericDate past the year 9999, which RFC 7519 allows, and decoy digests inside a reserved
+  claim, which RFC 9901 §4.2.5 allows;
+- three under the SD-JWT VC draft that 2.0.0 pinned. The pin moved from -16 to -27, and -16 allowed `typ:
+  vc+sd-jwt` and a selectively disclosable `aka_vcts`, which -27 forbids.
+
+The question the re-pin raised is which draft "governs" when the accept-set rule asks whether the refused input
+was valid. The answer recorded here: **the draft the previous release pinned.** A consumer of 2.0.0 was promised
+-16, and a peer conforming to -16 could send these shapes. Input that the old pin allowed and the new pin forbids
+is therefore a spec-valid narrowing, minor or major material and never a patch, even though the new pin calls it
+invalid.
+
+It stays minor by the 1.3.0 test applied to accepting: **a spec-valid narrowing earns a major only when a peer
+conforming to the spec the release pins could plausibly still be sending the refused input.** A -27 peer, and
+-19 already, sends none of the three draft shapes. The two RFC shapes have no conformant producer this project
+knows of, and the decoy case is refused because a verifier cannot tell it from the withheld Disclosure -27
+forbids. The SD-JWT VC pin moves once more, to the RFC (PRD §12.2), and that move is judged the same way.
+
+`[Obsolete]` on a public constant came closest to forcing a major. It is not one: the member and its `PublicAPI`
+entry stay, SemVer §7 makes a deprecation a minor, and the CS0618 it raises reaches only consumers who use the
+constant.
+
 ## Downstream consumers
 
 Other repositories pin this package family and move in lockstep with it, so a release here is what
@@ -215,6 +243,7 @@ unblocks their work:
 | Repository | Packages | Open dependency on a release |
 | --- | --- | --- |
 | [moisesja/zcap-dotnet](https://github.com/moisesja/zcap-dotnet) (`ZcapLd.Core`, `ZcapLd.AspNetCore`) | `Core`, `Rdfc`, `Legacy` | [#154](https://github.com/moisesja/zcap-dotnet/issues/154) (native AOT) waits for the release that closes [#27](https://github.com/moisesja/dataproofs-dotnet/issues/27) — v1.4.0 — and then bumps to it. The follow-up to [#159](https://github.com/moisesja/zcap-dotnet/issues/159) adopts `LegacyVariantVerification.ConstructedVariantOnly`, new in v2.0.0; a test there pins its absence and fails on the bump by design. |
+| [moisesja/credentials-dotnet](https://github.com/moisesja/credentials-dotnet) | `Core`, `Rdfc`, `Jose`, `Cose`, `Extensions.DependencyInjection` | Four issues wait for v2.1.0: [#33](https://github.com/moisesja/credentials-dotnet/issues/33) (`x5c` issuer keys, issue [#46](https://github.com/moisesja/dataproofs-dotnet/issues/46)), [#35](https://github.com/moisesja/credentials-dotnet/issues/35) (W3C `vc+sd-jwt`, which `SdJwtVcVerifier` no longer accepts, issue [#49](https://github.com/moisesja/dataproofs-dotnet/issues/49)), [#37](https://github.com/moisesja/credentials-dotnet/issues/37) (Type Metadata processing, issue [#47](https://github.com/moisesja/dataproofs-dotnet/issues/47)) and [#38](https://github.com/moisesja/credentials-dotnet/issues/38) (the re-pin to -27, issue #49). It treats warnings as errors, so the bump also meets the `[Obsolete]` on `SdJwtVcConstants.TransitionalMediaType` if it uses that constant, and the expiry check of issue [#45](https://github.com/moisesja/dataproofs-dotnet/issues/45) in any test that verifies a fixed credential. |
 
 When a CHANGELOG entry names a downstream issue, tagging the release is the signal that issue waits
 for: after the publish job succeeds, note the released version on the downstream issue. A release
