@@ -12,22 +12,23 @@ internal static class SdJwtVcClaimRules
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     /// <summary>
-    /// The registered claims whose must-not-disclose rule (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3) the verifier
-    /// enforces by position, with <see cref="SelectiveDisclosureViolation"/>, rather than by matching Disclosure
-    /// names at any depth. Only <c>aka_vcts</c> so far; issue #48 moves the other names here.
+    /// Whether <paramref name="topLevelClaim"/>, the name of a member of the top-level claims set, is one of the
+    /// registered claims that, "including any of their subclaims", MUST NOT be included in Disclosures
+    /// (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3, <see cref="SdJwtVcConstants.MustNotBeSelectivelyDisclosed"/>).
+    /// The list names JWT claims, which are top-level members: a claim deeper in the payload that has one of
+    /// these names is an ordinary claim.
     /// </summary>
-    public static readonly IReadOnlySet<string> EnforcedByPosition = new HashSet<string>(StringComparer.Ordinal)
-    {
-        SdJwtVcConstants.AkaVctsClaim,
-    };
+    public static bool IsReserved(string topLevelClaim)
+        => SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(topLevelClaim, StringComparer.Ordinal);
 
     /// <summary>
     /// Checks, by position, that the registered top-level claim <paramref name="name"/> and its sub-claims were not
     /// made selectively disclosable (draft-ietf-oauth-sd-jwt-vc-27 §2.2.2.3: "including any of their subclaims").
+    /// The verifier runs it for every name in <see cref="SdJwtVcConstants.MustNotBeSelectivelyDisclosed"/>.
     /// The claim may reach the processed payload only from the issuer-signed payload's clear top level, and its
-    /// signed value may hold no disclosure site at any depth: no <c>_sd</c> digest array and no
-    /// <c>{"...": digest}</c> array-element placeholder. The second test reads what the issuer signed, so it holds
-    /// whether the holder presents the matching Disclosure, withholds it, or none exists (a decoy).
+    /// signed value may hold no disclosure site at any depth (<see cref="HoldsDisclosureSite"/>). The second test
+    /// reads what the issuer signed, so it holds whether the holder presents the matching Disclosure, withholds it,
+    /// or none exists (a decoy): withholding would otherwise change the claim under the same signature.
     /// A same-named claim nested in another claim is not the registered claim and is not affected.
     /// </summary>
     /// <param name="signedPayload">The issuer-signed JWT payload, before any Disclosure is applied.</param>
@@ -42,16 +43,41 @@ internal static class SdJwtVcClaimRules
         return HoldsDisclosureSite(signedValue) ? "MUST NOT have selectively disclosable sub-claims or elements" : null;
     }
 
-    // Mirrors what SdJwtReconstructor resolves: an object's _sd member, and an array element that is an object
-    // whose only member is "...". The signed payload was parsed at the default depth limit, so recursion is bounded.
-    private static bool HoldsDisclosureSite(JsonNode? node) => node switch
+    /// <summary>
+    /// Whether <paramref name="root"/> holds a disclosure site anywhere inside it, as SdJwtReconstructor would find
+    /// one (RFC 9901 §7.1 step 3.b): an object's <c>_sd</c> member, or an array element that is an object whose
+    /// only member is <c>...</c>. An empty <c>_sd</c> array is not a site: it carries no digest, so nothing behind it
+    /// can be disclosed or withheld, and RFC 9901 §4.2.4.1 allows it. Any other <c>_sd</c> value is a site, so a
+    /// shape the reconstructor ignores (<c>null</c>) fails closed here. The walk is iterative, so a deep caller-built
+    /// claims set cannot exhaust the stack.
+    /// </summary>
+    public static bool HoldsDisclosureSite(JsonNode? root)
     {
-        JsonObject obj => obj.ContainsKey("_sd") || obj.Any(member => HoldsDisclosureSite(member.Value)),
-        JsonArray array => array.Any(element =>
-            (element is JsonObject placeholder && placeholder.Count == 1 && placeholder.ContainsKey("..."))
-            || HoldsDisclosureSite(element)),
-        _ => false,
-    };
+        var pending = new Stack<JsonNode?>();
+        pending.Push(root);
+        while (pending.TryPop(out var node))
+        {
+            switch (node)
+            {
+                case JsonObject obj:
+                    if (obj.TryGetPropertyValue("_sd", out var sd) && sd is not JsonArray { Count: 0 })
+                        return true;
+                    foreach (var (_, member) in obj)
+                        pending.Push(member);
+                    break;
+
+                case JsonArray array:
+                    foreach (var element in array)
+                    {
+                        if (element is JsonObject { Count: 1 } placeholder && placeholder.ContainsKey("..."))
+                            return true;
+                        pending.Push(element);
+                    }
+                    break;
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// Reads a credential type value (<c>vct</c>, or one element of <c>aka_vcts</c>): a non-empty JSON

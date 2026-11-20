@@ -33,8 +33,8 @@ internal static class SdJwtReconstructor
     /// <param name="disclosures">The Disclosures presented alongside the SD-JWT.</param>
     /// <param name="sdAlg">The resolved <c>_sd_alg</c> hash algorithm name.</param>
     /// <exception cref="MalformedJoseException">
-    /// On a duplicate digest in an <c>_sd</c> array, a Disclosure whose digest is referenced more
-    /// than once, a Disclosure of the wrong shape for its placement, or a Disclosure that is
+    /// On a digest that appears more than once in the payload, directly or through a Disclosure, whether or
+    /// not a Disclosure matches it; a Disclosure of the wrong shape for its placement; or a Disclosure that is
     /// presented but never referenced (RFC 9901 §7.1 / §10).
     /// </exception>
     public static JsonObject Reconstruct(JsonObject payload, IReadOnlyList<Disclosure> disclosures, string sdAlg)
@@ -53,15 +53,15 @@ internal static class SdJwtReconstructor
                     "Two SD-JWT Disclosures share the same digest; the presentation is malformed (RFC 9901 §7.1).");
         }
 
-        var used = new HashSet<string>(StringComparer.Ordinal);
-        var result = (JsonObject)ProcessNode(payload.DeepClone(), byDigest, used, depth: 0)!;
+        var walk = new Walk(byDigest);
+        var result = (JsonObject)ProcessNode(payload.DeepClone(), walk, depth: 0)!;
 
         // RFC 9901 §7.1 step 4.3.4: every presented Disclosure MUST be referenced exactly once by
         // a digest found in the payload. A leftover Disclosure means the Holder sent something the
         // SD-JWT does not account for — reject (defends against Disclosure injection).
-        if (used.Count != byDigest.Count)
+        if (walk.Used.Count != byDigest.Count)
         {
-            var unused = byDigest.Keys.Where(d => !used.Contains(d)).Count();
+            var unused = byDigest.Keys.Where(d => !walk.Used.Contains(d)).Count();
             throw new MalformedJoseException(
                 $"{unused} presented SD-JWT Disclosure(s) were not referenced by any digest in the payload (RFC 9901 §7.1).");
         }
@@ -69,7 +69,38 @@ internal static class SdJwtReconstructor
         return result;
     }
 
-    private static JsonNode? ProcessNode(JsonNode? node, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used, int depth)
+    /// <summary>
+    /// The state of one reconstruction: the Disclosures by digest, and every digest encountered and resolved so far.
+    /// </summary>
+    private sealed class Walk(IReadOnlyDictionary<string, Disclosure> byDigest)
+    {
+        public IReadOnlyDictionary<string, Disclosure> ByDigest { get; } = byDigest;
+
+        public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> Used { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Records an embedded digest found in an <c>_sd</c> array or a <c>...</c> placeholder. RFC 9901 §7.1 step 4: "If
+        /// any digest value is encountered more than once in the Issuer-signed JWT payload (directly or recursively via
+        /// other Disclosures), the SD-JWT MUST be rejected" — decoys and withheld digests included, not only those a
+        /// Disclosure resolves.
+        /// </summary>
+        public void Encounter(string digest)
+        {
+            if (!Seen.Add(digest))
+                throw new MalformedJoseException(
+                    "An SD-JWT digest appears more than once in the payload, directly or through a Disclosure (RFC 9901 §7.1 step 4).");
+        }
+
+        /// <summary>Marks <paramref name="digest"/> resolved; <see cref="Encounter"/> has refused any second occurrence.</summary>
+        public void Resolve(string digest) => Used.Add(digest);
+    }
+
+    private const string NestedSdAlg =
+        "SD-JWT '_sd_alg' MUST NOT be used in any object nested within the payload, in the clear or through a Disclosure (RFC 9901 §4.1.1).";
+
+    private static JsonNode? ProcessNode(JsonNode? node, Walk walk, int depth)
     {
         // Bound the recursion. A chained recursive-disclosure presentation (RFC 9901 §6.3) adds one
         // frame per link; without this guard a deep chain overflows the stack and crashes the host
@@ -82,24 +113,34 @@ internal static class SdJwtReconstructor
         switch (node)
         {
             case JsonObject obj:
-                return ProcessObject(obj, byDigest, used, depth);
+                return ProcessObject(obj, walk, depth);
             case JsonArray arr:
-                return ProcessArray(arr, byDigest, used, depth);
+                return ProcessArray(arr, walk, depth);
             default:
                 return node;
         }
     }
 
-    private static JsonObject ProcessObject(JsonObject obj, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used, int depth)
+    private static JsonObject ProcessObject(JsonObject obj, Walk walk, int depth)
     {
         var output = new JsonObject();
 
         // First copy non-control members, recursing into them.
         foreach (var (key, value) in obj.ToList())
         {
-            if (key is "_sd" or "_sd_alg")
+            if (key is "_sd")
                 continue;
-            output[key] = ProcessNode(value?.DeepClone(), byDigest, used, depth + 1);
+            if (key is "_sd_alg")
+            {
+                // RFC 9901 §4.1.1: _sd_alg "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used
+                // in any object nested within the payload." Only the top-level one is a control claim (§7.1 step
+                // 3.f); a nested one, in the clear or in a disclosed value, makes the SD-JWT invalid. Skipping it, as
+                // releases up to 2.0.0 did, dropped its value unread, digests included.
+                if (depth == 0)
+                    continue;
+                throw new MalformedJoseException(NestedSdAlg);
+            }
+            output[key] = ProcessNode(value?.DeepClone(), walk, depth + 1);
         }
 
         // Then resolve the _sd digest array into disclosed object properties.
@@ -108,41 +149,42 @@ internal static class SdJwtReconstructor
             if (sdNode is not JsonArray sdArray)
                 throw new MalformedJoseException("SD-JWT '_sd' must be an array of digest strings (RFC 9901 §4.2.4.1).");
 
-            var seenDigests = new HashSet<string>(StringComparer.Ordinal);
             foreach (var digestNode in sdArray)
             {
                 if (digestNode is not JsonValue dv || dv.GetValueKind() != JsonValueKind.String)
                     throw new MalformedJoseException("SD-JWT '_sd' entries must be base64url digest strings (RFC 9901 §4.2.4.1).");
                 var digest = dv.GetValue<string>();
+                walk.Encounter(digest);
 
-                // RFC 9901 §7.1: a digest MUST NOT appear more than once within an _sd array.
-                if (!seenDigests.Add(digest))
-                    throw new MalformedJoseException("SD-JWT '_sd' array contains a duplicate digest (RFC 9901 §7.1).");
-
-                if (!byDigest.TryGetValue(digest, out var disclosure))
+                if (!walk.ByDigest.TryGetValue(digest, out var disclosure))
                     continue; // No matching Disclosure: a decoy. Ignore it (RFC 9901 §4.2.7).
 
                 if (disclosure.IsArrayElement)
                     throw new MalformedJoseException("An '_sd' digest resolved to an array-element Disclosure (RFC 9901 §7.1).");
 
-                if (!used.Add(digest))
-                    throw new MalformedJoseException("An SD-JWT Disclosure is referenced by more than one digest (RFC 9901 §7.1).");
-
+                walk.Resolve(digest);
                 var name = disclosure.ClaimName!;
-                // RFC 9901 §7.1: a disclosed claim name MUST NOT clash with a name already present
-                // in the object (no overwriting a clear claim via a Disclosure).
-                if (output.ContainsKey(name))
+
+                // A Disclosure named _sd_alg would put the claim into this object: below the top level that is the
+                // nested use §4.1.1 forbids; at the top level it meets the clear _sd_alg below, or stands in for it.
+                if (name is "_sd_alg" && depth > 0)
+                    throw new MalformedJoseException(NestedSdAlg);
+
+                // RFC 9901 §7.1 step 3.c.ii.3: "If the claim name already exists at the level of the _sd key, the
+                // SD-JWT MUST be rejected" (no overwriting a clear claim via a Disclosure). The signed object counts as
+                // well as the output, so the top-level _sd_alg, which the output omits, is covered.
+                if (output.ContainsKey(name) || obj.ContainsKey(name))
                     throw new MalformedJoseException(
                         $"Disclosed SD-JWT claim '{name}' collides with a claim already present in the object (RFC 9901 §7.1).");
 
-                output[name] = ProcessNode(disclosure.ClaimValueNode?.DeepClone(), byDigest, used, depth + 1);
+                output[name] = ProcessNode(disclosure.ClaimValueNode?.DeepClone(), walk, depth + 1);
             }
         }
 
         return output;
     }
 
-    private static JsonArray ProcessArray(JsonArray arr, IReadOnlyDictionary<string, Disclosure> byDigest, HashSet<string> used, int depth)
+    private static JsonArray ProcessArray(JsonArray arr, Walk walk, int depth)
     {
         var output = new JsonArray();
         foreach (var element in arr)
@@ -150,20 +192,19 @@ internal static class SdJwtReconstructor
             // An array-element placeholder is an object with exactly one member named "...".
             if (element is JsonObject elemObj && IsArrayDisclosurePlaceholder(elemObj, out var digest))
             {
-                if (!byDigest.TryGetValue(digest!, out var disclosure))
+                walk.Encounter(digest!);
+                if (!walk.ByDigest.TryGetValue(digest!, out var disclosure))
                     continue; // Decoy / undisclosed element: drop it (RFC 9901 §4.2.4.2 / §7.1).
 
                 if (!disclosure.IsArrayElement)
                     throw new MalformedJoseException("An array '...' placeholder resolved to an object-property Disclosure (RFC 9901 §7.1).");
 
-                if (!used.Add(digest!))
-                    throw new MalformedJoseException("An SD-JWT Disclosure is referenced by more than one digest (RFC 9901 §7.1).");
-
-                output.Add(ProcessNode(disclosure.ClaimValueNode?.DeepClone(), byDigest, used, depth + 1));
+                walk.Resolve(digest!);
+                output.Add(ProcessNode(disclosure.ClaimValueNode?.DeepClone(), walk, depth + 1));
             }
             else
             {
-                output.Add(ProcessNode(element?.DeepClone(), byDigest, used, depth + 1));
+                output.Add(ProcessNode(element?.DeepClone(), walk, depth + 1));
             }
         }
         return output;

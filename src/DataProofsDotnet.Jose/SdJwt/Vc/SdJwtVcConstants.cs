@@ -52,16 +52,21 @@ public static class SdJwtVcConstants
     public const string StatusClaim = "status";
 
     /// <summary>
-    /// The registered JWT claims that MUST NOT be placed in Disclosures, i.e. MUST stay in the
-    /// clear in the SD-JWT payload (§2.2.2.3): <c>iss</c>, <c>nbf</c>, <c>exp</c>, <c>cnf</c>,
-    /// <c>vct</c>, <c>vct#integrity</c>, <c>aka_vcts</c>, <c>status</c>. Marking any of these in a
-    /// <see cref="DisclosureFrame"/> is a disallowed claim shape the Issuer rejects, and finding
-    /// any of them disclosed in a presentation is a Verifier failure. The Verifier checks <c>aka_vcts</c> by
-    /// position: it refuses a top-level <c>aka_vcts</c> that reaches the payload through a Disclosure, and a
-    /// signed top-level value holding any disclosure site, whether or not its Disclosure is presented; a claim of
-    /// the same name nested in another claim is ordinary. A whole-claim Disclosure the holder withholds cannot be
-    /// told from a decoy digest, so such a credential verifies without <c>aka_vcts</c>. The Verifier checks the
-    /// other names by refusing any Disclosure that carries one, at any depth.
+    /// The registered JWT claims that, "including any of their subclaims", MUST NOT be placed in
+    /// Disclosures, i.e. MUST stay in the clear in the SD-JWT payload (§2.2.2.3): <c>iss</c>,
+    /// <c>nbf</c>, <c>exp</c>, <c>cnf</c>, <c>vct</c>, <c>vct#integrity</c>, <c>aka_vcts</c>,
+    /// <c>status</c>. The names are those of top-level claims, and the rule covers each claim and
+    /// everything inside it: a member of <c>status</c> or <c>cnf</c> at any depth, an element of
+    /// <c>aka_vcts</c>. A <see cref="DisclosureFrame"/> entry on one of them, of any kind, is a
+    /// disallowed claim shape the Issuer rejects. The Verifier judges the rule by position, on what the
+    /// Issuer signed (<c>VC_DISALLOWED_DISCLOSURE</c>): it refuses a top-level reserved claim that a
+    /// presented Disclosure supplied, and a signed reserved claim holding any disclosure site (an <c>_sd</c>
+    /// digest or a <c>{"...": digest}</c> element placeholder) at any depth, whether its Disclosure is
+    /// presented, withheld or a decoy. A claim deeper in the payload that only shares a name, such as
+    /// <c>credentialSubject.status</c>, is an ordinary claim and may be selectively disclosed. A whole
+    /// reserved claim behind a top-level digest whose Disclosure the holder withholds cannot be told from a
+    /// decoy, so such a credential verifies without that claim: keeping these claims in the clear is the
+    /// Issuer's duty.
     /// </summary>
     public static readonly IReadOnlyList<string> MustNotBeSelectivelyDisclosed =
         ["iss", "nbf", "exp", "cnf", VctClaim, VctIntegrityClaim, AkaVctsClaim, StatusClaim];

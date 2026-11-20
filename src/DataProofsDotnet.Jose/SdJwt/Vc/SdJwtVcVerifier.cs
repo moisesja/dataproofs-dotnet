@@ -7,7 +7,8 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// SD-JWT verification (FR-16) and then enforces the profile rules — the issuer-JWT <c>typ</c> is
 /// exactly <c>dc+sd-jwt</c> (§2.2.1; the former <c>vc+sd-jwt</c> is rejected), the REQUIRED
 /// <c>vct</c> claim (§2.2.2.1), a well-formed <c>aka_vcts</c> claim when present (§2.2.2.2), and
-/// the rule that no registered must-not-disclose claim was selectively disclosed (§2.2.2.3). When
+/// the rule that no registered must-not-disclose claim, nor anything inside one, was selectively
+/// disclosed (§2.2.2.3; a nested claim that only shares a reserved name is not affected). When
 /// an <see cref="ITypeMetadataResolver"/> is supplied, the <c>vct</c> Type Metadata is retrieved
 /// through it (offline/local-cache by default — never the network unless the consumer's resolver
 /// opts in, FR-17). Returns a structured result; never throws on a structurally valid but failing
@@ -73,29 +74,19 @@ public static class SdJwtVcVerifier
         if (!inner.IsValid || inner.DisclosedPayload is not { } disclosed)
             return SdJwtVcVerificationResult.Failure(inner.Errors.Count > 0 ? inner.Errors : ["VERIFICATION_FAILED"]);
 
-        // 3. No registered must-not-disclose claim may have been selectively disclosed (§2.2.2.3).
-        //    a. By position, for the claims in EnforcedByPosition (aka_vcts): the claim comes from the signed
-        //       payload's clear top level, and its signed value holds no disclosure site, presented or not.
-        //       A same-named claim nested elsewhere is an ordinary claim.
-        foreach (var name in SdJwtVcClaimRules.EnforcedByPosition)
+        // 3. No registered must-not-disclose claim, nor any of its subclaims, may have been selectively disclosed
+        //    (§2.2.2.3). The rule is positional and reads what the issuer signed: each reserved claim comes from the
+        //    signed payload's clear top level, and its signed value holds no disclosure site at any depth, whether
+        //    the Disclosure is presented, withheld or a decoy (a member of status or cnf under any name, an element
+        //    of aka_vcts, and so on down). A claim elsewhere that only shares a reserved name, such as
+        //    credentialSubject.status, is an ordinary claim. issuerJwt is the JWT whose signature step 2 verified:
+        //    both parsed the same presentation string.
+        foreach (var name in SdJwtVcConstants.MustNotBeSelectivelyDisclosed)
         {
             if (SdJwtVcClaimRules.SelectiveDisclosureViolation(issuerJwt.Payload, disclosed, name) is { } violation)
             {
                 return SdJwtVcVerificationResult.Failure(
                     $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{name}' {violation} ({SdJwtVcConstants.Revision} §2.2.2.3).");
-            }
-        }
-
-        //    b. By name, for the others: a presented Disclosure that names one fails at any depth. Issue #48
-        //       replaces this with the positional rule above.
-        foreach (var disclosure in components.Disclosures)
-        {
-            if (disclosure.ClaimName is { } name
-                && !SdJwtVcClaimRules.EnforcedByPosition.Contains(name)
-                && SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(name, StringComparer.Ordinal))
-            {
-                return SdJwtVcVerificationResult.Failure(
-                    $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{name}' MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3).");
             }
         }
 
@@ -108,7 +99,7 @@ public static class SdJwtVcVerifier
         }
 
         // 5. aka_vcts OPTIONAL; when present, a non-empty array of strings without the vct value (§2.2.2.2).
-        //    Checked on the issuer-signed value, which step 3a left free of disclosure sites, so the holder's
+        //    Checked on the issuer-signed value, which step 3 left free of disclosure sites, so the holder's
         //    choice of Disclosures cannot change what is checked.
         if (SdJwtVcClaimRules.AkaVctsViolation(issuerJwt.Payload, vct) is { } akaVctsViolation)
         {

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.Jose.Signing;
 
@@ -28,7 +29,11 @@ public static class SdJwtIssuer
     /// <param name="options">Issuance options (hash algorithm, decoys, holder cnf key).</param>
     /// <param name="typ">The issuer-JWT <c>typ</c> protected-header value (e.g. <c>example+sd-jwt</c>, <c>dc+sd-jwt</c>).</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
-    /// <exception cref="MalformedJoseException">When the frame references a claim shape the claims set does not have.</exception>
+    /// <exception cref="MalformedJoseException">
+    /// When the frame references a claim shape the claims set does not have, or the SD-JWT would not verify: an
+    /// <c>_sd_alg</c> below the top level (RFC 9901 §4.1.1), a duplicate member name, a Disclosure named <c>_sd</c> or
+    /// <c>...</c>, or anything else <see cref="SdJwtVerifier"/> refuses when every Disclosure is presented.
+    /// </exception>
     public static async Task<Result> IssueAsync(
         JsonObject claims,
         DisclosureFrame frame,
@@ -57,6 +62,7 @@ public static class SdJwtIssuer
             payload["cnf"] = BuildConfirmation(options.HolderConfirmationKey);
 
         var payloadBytes = CompactJwt.SerializePayload(payload);
+        EnsureReconstructs(payloadBytes, disclosures, options.HashAlgorithm);
         var issuerJwt = await JwsBuilder.BuildCompactAsync(payloadBytes, signer, typ: typ, detachedPayload: false, cancellationToken)
             .ConfigureAwait(false);
 
@@ -165,6 +171,35 @@ public static class SdJwtIssuer
         }
 
         return obj;
+    }
+
+    /// <summary>
+    /// Refuses to sign an SD-JWT that <see cref="SdJwtVerifier"/> would refuse to reconstruct with every Disclosure
+    /// presented: the payload bytes and the encoded Disclosures are parsed back and reconstructed as a verifier would.
+    /// A caller's claims set can carry what RFC 9901 forbids, such as an <c>_sd_alg</c> below the top level (§4.1.1),
+    /// a member name twice (RFC 7519 §4), or a Disclosure named <c>_sd</c> or <c>...</c>; the frame copies it as given,
+    /// and a .NET object inside a <see cref="JsonValue"/> only shows it once serialized, which is why the serialized
+    /// form is checked.
+    /// </summary>
+    /// <exception cref="MalformedJoseException">When the SD-JWT would not reconstruct.</exception>
+    private static void EnsureReconstructs(byte[] payloadBytes, IReadOnlyList<Disclosure> disclosures, string sdAlg)
+    {
+        try
+        {
+            var signed = JsonNode.Parse(payloadBytes, documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false })
+                as JsonObject ?? throw new MalformedJoseException("The SD-JWT payload is not a JSON object.");
+            var parsed = disclosures.Select(d => Disclosure.Parse(d.Encoded)).ToList();
+            SdJwtReconstructor.Reconstruct(signed, parsed, sdAlg);
+        }
+        catch (JsonException ex)
+        {
+            throw new MalformedJoseException(
+                "The SD-JWT payload does not serialize to a JSON object with unique member names (RFC 7519 §4); it is not issued.", ex);
+        }
+        catch (MalformedJoseException ex)
+        {
+            throw new MalformedJoseException($"The SD-JWT would not verify, so it is not issued: {ex.Message}", ex);
+        }
     }
 
     private static string GenerateDecoyDigest(string sdAlg, JoseCryptoProvider crypto)
