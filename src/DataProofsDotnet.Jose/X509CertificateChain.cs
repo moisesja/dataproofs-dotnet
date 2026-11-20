@@ -260,7 +260,11 @@ public sealed class X509CertificateChain
         var spki = tbs.ReadSequence();
         var algorithm = spki.ReadSequence();
         var oid = algorithm.ReadObjectIdentifier();
-        ReadOnlyMemory<byte>? parameters = algorithm.HasData ? algorithm.ReadEncodedValue() : null;
+        // Not a conditional expression: `cond ? memory : null` types as ReadOnlyMemory<byte> and turns the null into an
+        // empty memory, so absent parameters would read as present.
+        ReadOnlyMemory<byte>? parameters = null;
+        if (algorithm.HasData)
+            parameters = algorithm.ReadEncodedValue();
         if (algorithm.HasData)
             throw new AsnContentException("the public key algorithm has more than two fields.");
         var key = spki.ReadBitString(out var unusedBits);
