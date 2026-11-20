@@ -24,8 +24,8 @@ public static class SdJwtVcIssuer
     /// (<see cref="MalformedJoseException"/>) — the disallowed claim shape the profile rejects. A nested entry
     /// that only shares a reserved name, such as <c>DiscloseObjectProperties("credentialSubject", "status")</c>,
     /// is an ordinary claim and is issued. A reserved claim in <paramref name="claims"/> must also be plain JSON:
-    /// an <c>_sd</c> key or a <c>...</c> array placeholder the caller built inside one is refused, as the verifier
-    /// would refuse it.
+    /// an <c>_sd</c> digest array or a <c>...</c> array placeholder the caller built inside one, read as it will be
+    /// signed, is refused, as the verifier would refuse it.
     /// </summary>
     /// <param name="claims">The input claims set (a JSON object). Not mutated.</param>
     /// <param name="frame">Which claims are selectively disclosable (must not target registered claims or their subclaims).</param>
