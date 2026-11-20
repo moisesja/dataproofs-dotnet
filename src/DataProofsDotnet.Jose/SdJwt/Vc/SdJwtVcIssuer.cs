@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.Jose.Signing;
 
@@ -72,11 +73,29 @@ public static class SdJwtVcIssuer
         }
 
         // The same rule for the claims set itself: a reserved claim must reach the signer as plain JSON. A disclosure
-        // site the caller built inside one would be signed as it is, and the verifier refuses it. The check reads the
-        // claims as SdJwtIssuer will sign them, cloned and serialized, because a JsonValue can wrap a .NET object that
-        // only becomes a JSON object or array there. The frame cannot change a reserved claim: the check above refused
-        // every entry on one.
-        var asSigned = JsonNode.Parse(CompactJwt.SerializePayload((JsonObject)claims.DeepClone()))!.AsObject();
+        // site the caller built inside one would be signed as it is, and the verifier refuses it. A JsonValue can wrap
+        // a .NET object that only becomes a JSON object or array when serialized, and could serialize differently the
+        // next time, so the claims are serialized once, that JSON is checked, and that JSON is what SdJwtIssuer signs.
+        // The frame cannot change a reserved claim: the check above refused every entry on one.
+        JsonObject asSigned;
+        try
+        {
+            asSigned = JsonNode.Parse(
+                CompactJwt.SerializePayload((JsonObject)claims.DeepClone()),
+                documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false })!.AsObject();
+        }
+        catch (JsonException ex)
+        {
+            throw new MalformedJoseException(
+                "The SD-JWT VC claims set does not serialize to a JSON object with unique member names (RFC 7519 §4).", ex);
+        }
+        catch (Exception ex)
+        {
+            // A claims set the serializer cannot write (too deep, a non-finite number, a throwing getter) failed inside
+            // SdJwtIssuer's task before this check existed; it still fails there, not at the call.
+            return Task.FromException<SdJwtIssuer.Result>(ex);
+        }
+
         foreach (var (claim, value) in asSigned)
         {
             if (SdJwtVcClaimRules.IsReserved(claim) && SdJwtVcClaimRules.HoldsDisclosureSite(value))
@@ -87,8 +106,9 @@ public static class SdJwtVcIssuer
             }
         }
 
-        // typ is fixed to the SD-JWT VC media type; everything else is the generic SD-JWT pipeline.
+        // typ is fixed to the SD-JWT VC media type; everything else is the generic SD-JWT pipeline, over the JSON
+        // that was checked.
         return SdJwtIssuer.IssueAsync(
-            claims, frame, signer, options, typ: SdJwtVcConstants.MediaType, cancellationToken);
+            asSigned, frame, signer, options, typ: SdJwtVcConstants.MediaType, cancellationToken);
     }
 }

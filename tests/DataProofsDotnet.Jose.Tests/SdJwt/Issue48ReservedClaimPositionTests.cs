@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using DataProofsDotnet.Jose.SdJwt;
 using DataProofsDotnet.Jose.SdJwt.Vc;
 using DataProofsDotnet.Jose.Signing;
@@ -559,6 +560,71 @@ public sealed class Issue48ReservedClaimPositionTests
         Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
 
         await act.Should().ThrowAsync<MalformedJoseException>().WithMessage("*'status' carries an '_sd' digest array*");
+    }
+
+    /// <summary>Serializes without an <c>_sd</c> member the first <c>hiddenReads</c> times, then with one.</summary>
+    public sealed class FlipStatus(int hiddenReads, string digest)
+    {
+        private int _reads;
+
+        [JsonPropertyName("idx")]
+        public int Idx => 1;
+
+        [JsonPropertyName("_sd")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string[]? Sd => ++_reads <= hiddenReads ? null : [digest];
+    }
+
+    [Fact]
+    public async Task Issuer_signs_the_json_it_checked_not_a_second_serialization()
+    {
+        // Third adversarial pass, P3_06: a value that serializes differently on its second read passed the check and
+        // was signed with an '_sd'. The issuer now signs the one serialization it checked.
+        var hidden = Disclosure.ForObjectProperty("salt-flip", "idx", JsonValue.Create(2));
+        var claims = CredentialWithReservedClaims();
+        claims["status"] = JsonValue.Create(new FlipStatus(1, hidden.ComputeDigest(SdAlg)));
+
+        var issued = await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+
+        Base64Url.DecodeUtf8(issued.IssuerJwt.Split('.')[1]).Should().Contain("\"status\":{\"idx\":1}");
+        (await VerifyVc(issued.Issuance)).IsValid.Should().BeTrue();
+    }
+
+    /// <summary>Serializes with a duplicate member name through extension data.</summary>
+    public sealed class DuplicatingStatus
+    {
+        [JsonPropertyName("idx")]
+        public int Idx => 1;
+
+        [JsonExtensionData]
+        public Dictionary<string, object> Extra { get; } = new() { ["idx"] = 2 };
+    }
+
+    [Fact]
+    public async Task Issuer_refuses_a_claims_set_that_serializes_with_a_duplicate_member_name()
+    {
+        // RFC 7519 §4: "The Claim Names within a JWT Claims Set MUST be unique." The verifier refuses such a payload.
+        var claims = CredentialWithReservedClaims();
+        claims["status"] = JsonValue.Create(new DuplicatingStatus());
+
+        Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer);
+
+        await act.Should().ThrowAsync<MalformedJoseException>().WithMessage("*unique member names*");
+    }
+
+    [Fact]
+    public async Task A_claims_set_the_serializer_cannot_write_still_fails_through_the_task()
+    {
+        // As before the claims-set check: the call returns, and the serializer's exception arrives when awaited.
+        JsonNode inner = "leaf";
+        for (var i = 0; i < 70; i++)
+            inner = new JsonObject { ["n"] = inner };
+        var claims = CredentialWithReservedClaims();
+        claims["deep"] = inner;
+
+        var task = SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer);
+
+        await FluentActions.Awaiting(() => task).Should().ThrowAsync<InvalidOperationException>();
     }
 
     [Fact]
