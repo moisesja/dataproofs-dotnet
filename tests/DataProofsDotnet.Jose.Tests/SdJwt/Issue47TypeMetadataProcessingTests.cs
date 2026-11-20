@@ -1134,9 +1134,10 @@ public sealed class Issue47TypeMetadataProcessingTests
     [Fact]
     public async Task Claim_metadata_evaluation_is_bounded()
     {
-        // Adversarial pass 2: the work is claims times selected elements; a 27,000-leaf credential against 27,000 claims
-        // took 22 s. Here 5,000 elements: 150 claims select 750,000 elements and pass, 300 would select 1.5 million and
-        // are refused at the bound. Deterministic: the refusal is asserted, not a duration.
+        // Adversarial pass 2: the work is claims times the elements each path reaches; a 27,000-leaf credential against
+        // 27,000 claims took 22 s. Here 5,000 elements: each claim ["a", null, "kN"] takes about 10,000 path steps (the
+        // array's 5,000 elements selected, then each tried for its key), so 90 claims pass and 300 are refused at the
+        // bound. Deterministic: the refusal is asserted, not a duration.
         var elements = new JsonArray();
         for (var i = 0; i < 5_000; i++)
             elements.Add((JsonNode)new JsonObject { ["v"] = i });
@@ -1149,11 +1150,115 @@ public sealed class Issue47TypeMetadataProcessingTests
             return Bytes(SimpleDocument(claims));
         }
 
-        ShouldPass(await Verify(presentation, Options((Vct, Document(150)))));
+        ShouldPass(await Verify(presentation, Options((Vct, Document(90)))));
         var refused = await Verify(presentation, Options((Vct, Document(300))));
 
         ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
-        refused.Errors.Single().Should().Contain("selects more than 1000000 elements");
+        refused.Errors.Single().Should().Contain("takes more than 1000000 path steps");
+    }
+
+    // ------------------------------------------------------------------ PR #55 review (comment 7030160237)
+
+    /// <summary>The bytes the validator allocates on this thread for <paramref name="count"/> paths <c>["a", i]</c> over a <paramref name="count"/>-element array.</summary>
+    private static long IndexedPathAllocations(int count, bool mandatory)
+    {
+        var elements = new JsonArray();
+        for (var i = 0; i < count; i++)
+            elements.Add((JsonNode)i);
+        var trace = new ReconstructionTrace();
+        var root = SdJwtReconstructor.Reconstruct(new JsonObject { ["vct"] = Vct, ["a"] = elements }, [], SdAlg, trace);
+        var claims = Enumerable.Range(0, count)
+            .Select(i => new ClaimMetadata([ClaimPathComponent.ForKey("a"), ClaimPathComponent.ForIndex(i)], [], mandatory, ClaimSelectiveDisclosure.Allowed, null))
+            .ToList();
+
+        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: true).Should().BeNull();
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        ClaimMetadataValidator.Validate(root, trace, claims, allDisclosuresPresent: true).Should().BeNull();
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Indexed_paths_cost_work_linear_in_the_claims_at_issuance(bool mandatory)
+    {
+        // Review finding 1: the complete-payload pass copied the whole array for every ["a", i], so 10,000 such claims
+        // over a 10,000-element array allocated 2.66 GB. Four times the claims over four times the array must cost about
+        // four times as much, not sixteen.
+        var small = IndexedPathAllocations(1_000, mandatory);
+        var large = IndexedPathAllocations(4_000, mandatory);
+
+        large.Should().BeLessThan(small * 6, $"allocation grew from {small} to {large} bytes");
+        large.Should().BeLessThan(4_000L * 2_000, "a few hundred bytes per indexed claim at most");
+    }
+
+    [Fact]
+    public async Task The_reviewers_indexed_issuance_is_issued_and_verifies()
+    {
+        var elements = new JsonArray();
+        var claims = new JsonArray();
+        for (var i = 0; i < 10_000; i++)
+        {
+            elements.Add((JsonNode)i);
+            claims.Add((JsonNode)ClaimEntry(Path("a", i), mandatory: i % 2 == 0));
+        }
+        var metadata = Bytes(SimpleDocument(claims));
+        var options = Options((Vct, metadata));
+
+        var issued = await SdJwtVcIssuer.IssueWithTypeMetadataAsync(new JsonObject { ["vct"] = Vct, ["a"] = elements }, new DisclosureFrame(), Issuer.Signer, options);
+
+        ShouldPass(await Verify(issued.Issuance, options));
+    }
+
+    private static JsonObject DecoyNumbered(int n) => Placeholder(Disclosure.ForArrayElement("salt-decoy-" + n, "never disclosed " + n));
+
+    public static TheoryData<string, bool> ShiftedShapeBesideAbsence => new()
+    {
+        // which row comes first, and whether the complete view's shape error is a string where an object (key x) or an
+        // array (index 0) is expected
+        { "missing first", false },
+        { "shape error first", false },
+        { "missing first", true },
+        { "shape error first", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(ShiftedShapeBesideAbsence))]
+    public async Task At_issuance_a_shifted_shape_error_does_not_discard_a_missing_mandatory_claim(string order, bool arrayStep)
+    {
+        // Review finding 2: in a=[[D1, X, missing], [D2, X, "s"]] the as-issued element 1 of each row is X; the complete
+        // payload's element 1 is `missing` in one row and "s" in the other. "s" is a shifted shape error, which the
+        // complete pass must skip without dropping the absence the other row proved (-27 §5.6.1.2, §5.6).
+        JsonNode Present() => arrayStep ? new JsonArray(5) : new JsonObject { ["x"] = 1 };
+        JsonNode Missing() => arrayStep ? new JsonArray() : new JsonObject();
+        var withAbsence = new JsonArray(DecoyNumbered(1), Present(), Missing());
+        var withShapeError = new JsonArray(DecoyNumbered(2), Present(), "s");
+        var rows = order == "missing first" ? new JsonArray(withAbsence, withShapeError) : new JsonArray(withShapeError, withAbsence);
+        var claims = new JsonObject { ["vct"] = Vct, ["a"] = rows };
+        var path = arrayStep ? Path("a", null, 1, 0) : Path("a", null, 1, "x");
+        var metadata = Bytes(SimpleDocument(new JsonArray(ClaimEntry(path, mandatory: true))));
+
+        // As a verifier numbers the elements, every row's element 1 holds the claim.
+        var plain = await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer);
+        ShouldPass(await Verify(plain.Issuance, Options((Vct, metadata))));
+
+        var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, metadata)));
+        (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_CLAIM_MANDATORY_MISSING:");
+    }
+
+    [Fact]
+    public async Task At_issuance_a_shifted_shape_error_alone_is_not_a_finding()
+    {
+        // The control: with the claim present in both complete rows' element 1 except a shifted shape error, nothing is missing.
+        var rows = new JsonArray(
+            new JsonArray(DecoyNumbered(1), new JsonObject { ["x"] = 1 }, new JsonObject { ["x"] = 1 }),
+            new JsonArray(DecoyNumbered(2), new JsonObject { ["x"] = 1 }, "s"));
+        var metadata = Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("a", null, 1, "x"), mandatory: true))));
+
+        var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(
+            new JsonObject { ["vct"] = Vct, ["a"] = rows }, new DisclosureFrame(), Issuer.Signer, Options((Vct, metadata)));
+
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
