@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.Jose.SdJwt;
@@ -966,6 +967,145 @@ public sealed class Issue47TypeMetadataProcessingTests
 
         var unavailable = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(IssuanceClaims(Bytes(IssuanceDocument)), Conforming, Issuer.Signer, Options());
         (await unavailable.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_TYPE_METADATA_UNAVAILABLE:");
+    }
+
+    // ------------------------------------------------------------------ adversarial pass (findings fixed in this PR)
+
+    [Fact]
+    public void A_non_canonical_base64_digest_does_not_match()
+    {
+        // The last character of a 32-octet digest carries two unused bits; flipping one spells the same octets differently.
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        var good = Expression("sha256", Document);
+        var body = good["sha256-".Length..].TrimEnd('=');
+        var tweaked = "sha256-" + body[..^1] + alphabet[alphabet.IndexOf(body[^1]) ^ 1] + "=";
+
+        TypeMetadataIntegrity.Matches(good, Document).Should().BeTrue();
+        TypeMetadataIntegrity.Matches(tweaked, Document).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_large_claims_array_is_processed_in_linear_time()
+    {
+        // Before the fix, the duplicate-path check and the merge compared every pair of paths: 8,000 claims took 2.5 s and
+        // 53,000 (1 MiB, the default limit) took 113 s. Two documents, so the merge runs over every entry as well.
+        const int count = 50_000;
+        static byte[] Claims(string vct, string? extends, int offset)
+            => Encoding.UTF8.GetBytes(
+                $"{{\"vct\":\"{vct}\"" + (extends is null ? "" : $",\"extends\":\"{extends}\"") + ",\"claims\":["
+                + string.Join(",", Enumerable.Range(offset, count).Select(i => $"{{\"path\":[\"k{i}\"]}}")) + "]}");
+        var options = Options((Vct, Claims(Vct, "urn:parent", count / 2)), ("urn:parent", Claims("urn:parent", null, 0)));
+        var presentation = await SimpleCredential();
+
+        var watch = Stopwatch.StartNew();
+        var result = await Verify(presentation, options);
+        watch.Stop();
+
+        ShouldPass(result);
+        result.ProcessedTypeMetadata!.Claims.Should().HaveCount(count + count / 2);
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
+    }
+
+    private sealed class FlippingResolver(byte[] a, byte[] b) : ITypeMetadataDocumentResolver, IDisposable
+    {
+        private readonly byte[] _shared = (byte[])a.Clone();
+        private readonly CancellationTokenSource _stop = new();
+        private Task? _flipper;
+
+        public Task<byte[]?> ResolveDocumentAsync(string reference, CancellationToken cancellationToken = default)
+        {
+            _flipper ??= Task.Run(() =>
+            {
+                var toggle = false;
+                while (!_stop.IsCancellationRequested)
+                {
+                    (toggle ? a : b).AsSpan().CopyTo(_shared);
+                    toggle = !toggle;
+                }
+            });
+            return Task.FromResult<byte[]?>(_shared);
+        }
+
+        public void Dispose()
+        {
+            _stop.Cancel();
+            _flipper?.Wait();
+            _stop.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task The_octets_hashed_are_the_octets_parsed_even_when_the_resolver_keeps_writing()
+    {
+        var a = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\",\"name\":\"AAAA\"}");
+        var b = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\",\"name\":\"BBBB\"}");
+        var presentation = await SimpleCredential(TypeMetadataIntegrity.Compute(a));
+        using var resolver = new FlippingResolver(a, b);
+
+        for (var i = 0; i < 500; i++)
+        {
+            var result = await Verify(presentation, new TypeMetadataProcessingOptions(resolver));
+            if (result.IsValid)
+                result.ProcessedTypeMetadata!.Name.Should().Be("AAAA", "only the document whose octets matched vct#integrity is processed");
+        }
+    }
+
+    [Fact]
+    public async Task A_resolver_that_keeps_writing_cannot_make_an_exception_escape()
+    {
+        // Equal lengths; b carries unpaired surrogate escapes, built from their code unit (lesson 2026-10-27).
+        var escape = "\\u" + 0xD800.ToString("X4");
+        var a = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\",\"abcdef\":1,\"x\":\"abcdef\"}");
+        var b = Encoding.UTF8.GetBytes("{\"vct\":\"" + Vct + "\",\"" + escape + "\":1,\"x\":\"" + escape + "\"}");
+        a.Length.Should().Be(b.Length);
+        var presentation = await SimpleCredential();
+        using var resolver = new FlippingResolver(a, b);
+
+        for (var i = 0; i < 500; i++)
+        {
+            var result = await Verify(presentation, new TypeMetadataProcessingOptions(resolver));
+            if (!result.IsValid)
+                result.Errors.Single().Should().StartWith("VC_TYPE_METADATA_INVALID:");
+        }
+    }
+
+    [Fact]
+    public async Task At_issuance_an_array_decoy_does_not_stand_in_for_a_mandatory_element()
+    {
+        // A placeholder no Disclosure resolves is, at issuance, a decoy (RFC 9901 §4.2.5 allows them in arrays): the
+        // complete Unsecured Payload's deg has one element, so the mandatory deg[1] was not included.
+        var metadata = Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("deg", 1), mandatory: true))));
+        var decoy = Disclosure.ForArrayElement("salt-decoy", "never disclosed");
+        var claims = new JsonObject { ["vct"] = Vct, ["deg"] = new JsonArray("a", Placeholder(decoy)) };
+
+        // A Verifier cannot tell the decoy from a withheld element, so it accepts the credential.
+        var plain = await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame(), Issuer.Signer);
+        ShouldPass(await Verify(plain.Issuance, Options((Vct, metadata))));
+
+        var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, metadata)));
+        (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_CLAIM_MANDATORY_MISSING:");
+
+        // And issuance still refuses what that Verifier refuses: sd: never on the elements, the decoy counted as one.
+        var never = Bytes(SimpleDocument(new JsonArray(ClaimEntry(Path("deg", null), sd: "never"))));
+        ShouldFail(await Verify(plain.Issuance, Options((Vct, never))), "VC_CLAIM_SD_VIOLATION");
+        var refused = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, new DisclosureFrame(), Issuer.Signer, Options((Vct, never)));
+        (await refused.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_CLAIM_SD_VIOLATION:");
+    }
+
+    [Fact]
+    public async Task The_processed_metadata_cannot_be_changed_through_a_cast()
+    {
+        var metadata = Bytes(EducationDocument());
+        var credential = Education(metadata);
+        var result = await Verify(await Sign(credential.Payload, credential.All), Options((EducationVct, metadata)));
+
+        var processed = result.ProcessedTypeMetadata!;
+        IEnumerable<object> lists =
+        [
+            processed.Claims, processed.Display, processed.Documents, processed.Claims[0].Path, processed.Claims[0].Display,
+            processed.Display[0].Rendering!.SvgTemplates,
+        ];
+        lists.Should().AllSatisfy(list => list.Should().BeAssignableTo<System.Collections.IList>().Which.IsReadOnly.Should().BeTrue());
     }
 
     // ------------------------------------------------------------------ local cache

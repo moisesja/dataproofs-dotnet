@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Nodes;
 
 namespace DataProofsDotnet.Jose.SdJwt.Vc;
@@ -25,8 +26,8 @@ public sealed class ProcessedTypeMetadata
         Vct = vct;
         Name = name;
         Description = description;
-        Display = display;
-        Claims = claims;
+        Display = ReadOnly(display);
+        Claims = ReadOnly(claims);
         _documents = documents;
     }
 
@@ -53,7 +54,10 @@ public sealed class ProcessedTypeMetadata
     public IReadOnlyList<ClaimMetadata> Claims { get; }
 
     /// <summary>The documents processed, as parsed, the <c>vct</c>'s first and each parent after its child. A clone per access.</summary>
-    public IReadOnlyList<JsonObject> Documents => [.. _documents.Select(d => (JsonObject)d.DeepClone())];
+    public IReadOnlyList<JsonObject> Documents => ReadOnly([.. _documents.Select(d => (JsonObject)d.DeepClone())]);
+
+    /// <summary>A copy no caller can change, even through a cast.</summary>
+    internal static ReadOnlyCollection<T> ReadOnly<T>(IEnumerable<T> items) => new([.. items]);
 }
 
 /// <summary>Display metadata for a type in one locale (draft-ietf-oauth-sd-jwt-vc-27 §5.5).</summary>
@@ -90,7 +94,7 @@ public sealed class TypeRenderingMetadata
     internal TypeRenderingMetadata(SimpleRenderingMetadata? simple, IReadOnlyList<SvgTemplateMetadata> svgTemplates)
     {
         Simple = simple;
-        SvgTemplates = svgTemplates;
+        SvgTemplates = ProcessedTypeMetadata.ReadOnly(svgTemplates);
     }
 
     /// <summary>The <c>simple</c> rendering method (§5.5.1.1), or <c>null</c> when absent or not an object.</summary>
@@ -186,8 +190,8 @@ public sealed class ClaimMetadata
         ClaimSelectiveDisclosure selectiveDisclosure,
         string? svgId)
     {
-        Path = path;
-        Display = display;
+        Path = ProcessedTypeMetadata.ReadOnly(path);
+        Display = ProcessedTypeMetadata.ReadOnly(display);
         Mandatory = mandatory;
         SelectiveDisclosure = selectiveDisclosure;
         SvgId = svgId;
@@ -235,9 +239,6 @@ public sealed class ClaimPathComponent
 
     /// <summary>Whether this component is <c>null</c>: every element of the selected arrays.</summary>
     public bool IsAllElements => Key is null && Index is null;
-
-    internal bool SameAs(ClaimPathComponent other)
-        => string.Equals(Key, other.Key, StringComparison.Ordinal) && Index == other.Index;
 
     internal static string Format(IReadOnlyList<ClaimPathComponent> path)
     {

@@ -30,6 +30,7 @@ internal sealed class ReconstructionTrace
 
     private readonly Dictionary<JsonObject, ObjectRecord> _objects = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<JsonArray, List<Origin>> _arrays = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<JsonArray, List<(Origin, int)>> _asIssued = new(ReferenceEqualityComparer.Instance);
 
     internal void AddObject(JsonObject output) => _objects[output] = new ObjectRecord();
 
@@ -54,13 +55,22 @@ internal sealed class ReconstructionTrace
     /// </summary>
     public IReadOnlyList<(Origin Origin, int ProcessedIndex)> AsIssued(JsonArray array)
     {
-        if (!_arrays.TryGetValue(array, out var origins))
-            return [.. array.Select((_, i) => (Origin.Clear, i))];
+        if (_asIssued.TryGetValue(array, out var cached))
+            return cached;
 
-        var result = new List<(Origin, int)>(origins.Count);
-        var processed = 0;
-        foreach (var origin in origins)
-            result.Add(origin == Origin.Undisclosed ? (origin, -1) : (origin, processed++));
+        List<(Origin, int)> result;
+        if (!_arrays.TryGetValue(array, out var origins))
+        {
+            result = [.. array.Select((_, i) => (Origin.Clear, i))];
+        }
+        else
+        {
+            result = new List<(Origin, int)>(origins.Count);
+            var processed = 0;
+            foreach (var origin in origins)
+                result.Add(origin == Origin.Undisclosed ? (origin, -1) : (origin, processed++));
+        }
+        _asIssued[array] = result;
         return result;
     }
 

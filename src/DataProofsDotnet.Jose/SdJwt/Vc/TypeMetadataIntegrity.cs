@@ -136,10 +136,17 @@ public static class TypeMetadataIntegrity
             && body.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/');
     }
 
+    /// <summary>
+    /// Decodes standard base64, padded or not, and only its canonical spelling (RFC 4648 §3.5 lets a decoder refuse
+    /// non-zero pad bits): one digest then has one integrity string, as a cache keyed by it (-27 §5.3.4) assumes.
+    /// </summary>
     private static byte[]? Decode(string value)
     {
         var padded = value.Contains('=') ? value : value.PadRight((value.Length + 3) / 4 * 4, '=');
         var buffer = new byte[padded.Length / 4 * 3];
-        return Convert.TryFromBase64String(padded, buffer, out var written) ? buffer[..written] : null;
+        if (!Convert.TryFromBase64String(padded, buffer, out var written))
+            return null;
+        var digest = buffer[..written];
+        return string.Equals(Convert.ToBase64String(digest), padded, StringComparison.Ordinal) ? digest : null;
     }
 }

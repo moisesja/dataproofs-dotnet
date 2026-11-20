@@ -22,21 +22,28 @@ internal static class ClaimMetadataValidator
     /// <param name="trace">The reconstruction trace.</param>
     /// <param name="claims">The effective claim metadata.</param>
     /// <param name="allDisclosuresPresent">
-    /// Every Disclosure is present (issuance), so an unresolved digest is a decoy and a missing key is absent. A
-    /// Verifier cannot know that, and §5.6 forbids it to "treat absence of a selectively disclosable claim from a
-    /// presentation as evidence that the Issuer failed to include a mandatory claim".
+    /// Every Disclosure is present (issuance), so an unresolved digest or element placeholder is a decoy. A Verifier
+    /// cannot know that, and §5.6 forbids it to "treat absence of a selectively disclosable claim from a presentation as
+    /// evidence that the Issuer failed to include a mandatory claim". The issuance check then runs twice: once on the
+    /// credential as a Verifier sees it (array decoys counted as undisclosed elements, as -27 counts them), so it refuses
+    /// whatever that Verifier would, and once on the complete Unsecured Payload (§5.6: "Whether a mandatory claim was
+    /// included can be determined by a Holder that has all Disclosures by evaluating the path against the complete
+    /// Unsecured Payload"), where array decoys are not elements, so a decoy cannot stand in for a mandatory element.
     /// </param>
     public static string? Validate(JsonObject root, ReconstructionTrace trace, IReadOnlyList<ClaimMetadata> claims, bool allDisclosuresPresent)
     {
         foreach (var claim in claims)
         {
-            if (ValidateOne(root, trace, claim, allDisclosuresPresent) is { } violation)
+            if (ValidateOne(root, trace, claim, allDisclosuresPresent, complete: false) is { } violation)
                 return violation;
+            if (allDisclosuresPresent && ValidateOne(root, trace, claim, allDisclosuresPresent, complete: true) is { } incomplete)
+                return incomplete;
         }
         return null;
     }
 
-    private static string? ValidateOne(JsonObject root, ReconstructionTrace trace, ClaimMetadata claim, bool allDisclosuresPresent)
+    private static string? ValidateOne(
+        JsonObject root, ReconstructionTrace trace, ClaimMetadata claim, bool allDisclosuresPresent, bool complete)
     {
         var path = ClaimPathComponent.Format(claim.Path);
         List<Selected> selection = [new(root, ReconstructionTrace.Origin.Clear)];
@@ -78,7 +85,9 @@ internal static class ClaimMetadataValidator
                     if (selected.Node is not JsonArray array)
                         return PathError(path, step, "an array");
 
-                    var asIssued = trace.AsIssued(array);
+                    var asIssued = complete
+                        ? [.. trace.AsIssued(array).Where(e => e.Origin != ReconstructionTrace.Origin.Undisclosed)]
+                        : trace.AsIssued(array);
                     if (component.Index is { } index)
                     {
                         if (index < asIssued.Count)

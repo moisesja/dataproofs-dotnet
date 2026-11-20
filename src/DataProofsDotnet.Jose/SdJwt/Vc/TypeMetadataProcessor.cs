@@ -117,6 +117,10 @@ internal static class TypeMetadataProcessor
                 return Outcome.Failure(
                     $"VC_TYPE_METADATA_INVALID: the Type Metadata document for '{reference}' is {octets.Length} octets, above the {options.MaxDocumentSize}-octet limit.");
 
+            // One copy, taken before anything reads it, so the octets hashed are the octets parsed even if the resolver
+            // keeps writing to the buffer it returned (a pooled or refreshed buffer).
+            octets = octets.ToArray();
+
             // §6: "the Consumer verifies that the retrieved document matches it before processing that document".
             if (integrity is not null && TypeMetadataIntegrity.Check(integrity, octets) != TypeMetadataIntegrity.Outcome.Match)
                 return Outcome.Failure(
@@ -145,10 +149,11 @@ internal static class TypeMetadataProcessor
 
         // §5.4: each parent is processed before the type that extends it, so merge from the root down.
         var claims = new List<ClaimEntry>();
+        var byKey = new Dictionary<string, ClaimEntry>(StringComparer.Ordinal);
         IReadOnlyList<TypeDisplayMetadata> display = [];
         for (var i = documents.Count - 1; i >= 0; i--)
         {
-            if (Merge(claims, documents[i]) is { } mergeError)
+            if (Merge(claims, byKey, documents[i]) is { } mergeError)
                 return Outcome.Failure(mergeError);
             if (documents[i].Display is { } own)
                 display = own;
@@ -171,6 +176,9 @@ internal static class TypeMetadataProcessor
     private sealed class ClaimEntry
     {
         public required IReadOnlyList<ClaimPathComponent> Path { get; init; }
+
+        /// <summary>The path as canonical JSON text: equal paths, and only equal paths, have equal keys.</summary>
+        public required string Key { get; init; }
 
         public bool? Mandatory { get; set; }
 
@@ -236,6 +244,7 @@ internal static class TypeMetadataProcessor
         }
 
         var claims = new List<ClaimEntry>();
+        var keys = new HashSet<string>(StringComparer.Ordinal);
         if (json.TryGetPropertyValue("claims", out var claimsNode))
         {
             if (claimsNode is not JsonArray claimsArray)
@@ -248,8 +257,8 @@ internal static class TypeMetadataProcessor
                 var (entry, claimError) = ParseClaim(claim);
                 if (entry is null)
                     return (null, ClaimMetadataInvalid(reference, claimError!));
-                if (claims.Any(c => SamePath(c.Path, entry.Path)))
-                    return (null, ClaimMetadataInvalid(reference, $"two claim metadata objects have the path {ClaimPathComponent.Format(entry.Path)}"));
+                if (!keys.Add(entry.Key))
+                    return (null, ClaimMetadataInvalid(reference, $"two claim metadata objects have the path {entry.Key}"));
                 claims.Add(entry);
             }
         }
@@ -292,7 +301,7 @@ internal static class TypeMetadataProcessor
             }
         }
 
-        var entry = new ClaimEntry { Path = path };
+        var entry = new ClaimEntry { Path = path, Key = ClaimPathComponent.Format(path) };
 
         // §5.6.3: a boolean. §5.6.4: one of three strings.
         if (claim.TryGetPropertyValue("mandatory", out var mandatoryNode))
@@ -409,30 +418,28 @@ internal static class TypeMetadataProcessor
 
     // ------------------------------------------------------------------ merging
 
-    private static bool SamePath(IReadOnlyList<ClaimPathComponent> a, IReadOnlyList<ClaimPathComponent> b)
-        => a.Count == b.Count && a.Zip(b).All(pair => pair.First.SameAs(pair.Second));
-
     /// <summary>
     /// Applies one document's claim metadata over the effective claim metadata of the types it extends (§5.6.5): an entry
     /// with the same path is combined, the child's properties taking precedence within the limits of §5.6.5.1; any other
     /// entry is appended.
     /// </summary>
-    private static string? Merge(List<ClaimEntry> effective, ParsedDocument document)
+    private static string? Merge(List<ClaimEntry> effective, Dictionary<string, ClaimEntry> byKey, ParsedDocument document)
     {
         var reference = ReadString(document.Json[SdJwtVcConstants.VctClaim]);
         foreach (var child in document.Claims)
         {
-            var parent = effective.FirstOrDefault(e => SamePath(e.Path, child.Path));
-            if (parent is null)
+            if (!byKey.TryGetValue(child.Key, out var parent))
             {
-                effective.Add(new ClaimEntry
+                var added = new ClaimEntry
                 {
-                    Path = child.Path, Mandatory = child.Mandatory, Sd = child.Sd, Display = child.Display, SvgId = child.SvgId,
-                });
+                    Path = child.Path, Key = child.Key, Mandatory = child.Mandatory, Sd = child.Sd, Display = child.Display, SvgId = child.SvgId,
+                };
+                effective.Add(added);
+                byKey.Add(added.Key, added);
                 continue;
             }
 
-            var path = ClaimPathComponent.Format(child.Path);
+            var path = child.Key;
             if (parent.Sd is (ClaimSelectiveDisclosure.Always or ClaimSelectiveDisclosure.Never) && child.Sd is { } sd && sd != parent.Sd)
                 return $"VC_CLAIM_METADATA_OVERRIDE_INVALID: '{reference}' changes 'sd' of {path} from {Name(parent.Sd.Value)} to {Name(sd)}; "
                     + $"an extending type MUST NOT change always or never ({Revision} §5.6.5.1).";
