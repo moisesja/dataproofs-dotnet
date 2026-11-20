@@ -200,7 +200,7 @@ public static class SdJwtVerifier
 
         // 4a. The validity window (RFC 9901 §7.1 step 6): the top-level nbf and exp "in the processed payload, if
         //     present", against CurrentTime with ClockSkew. Before Key Binding (§7.3 step 4 runs §7.1 first), and so
-        //     before the SD-JWT VC profile rules and any Type Metadata retrieval. A nested member of the same name is an
+        //     before the SD-JWT VC claim rules and any Type Metadata retrieval. A nested member of the same name is an
         //     ordinary claim. For an SD-JWT VC the value read here is the issuer-signed clear member whenever the
         //     credential can be accepted: a Disclosure cannot add a top-level exp beside a clear one (step 3.c.ii.3,
         //     refused above), and one that adds it where none was clear is refused by the profile's positional rule.

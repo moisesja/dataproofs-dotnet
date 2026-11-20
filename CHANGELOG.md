@@ -212,17 +212,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the error message, as every SD-JWT code does.
   - *Where.* `SdJwtVerifier.Verify` and `VerifyWithCertificateChain`, and `SdJwtVcVerifier.VerifyAsync`,
     `VerifyWithTypeMetadataAsync` and `VerifyWithCertificateChainAsync`: the check is in the verification all five
-    share, after the Disclosures are processed and before the Key Binding JWT, the SD-JWT VC profile rules and any Type
-    Metadata retrieval, so an expired credential never makes a resolver fetch. The generic verifier enforces it too,
+    share, after the Disclosures are processed and before the Key Binding JWT, the SD-JWT VC claim rules (`vct`,
+    `aka_vcts`, the must-not-disclose rule) and any Type Metadata retrieval, so an expired credential never makes a
+    resolver fetch. The SD-JWT VC media-type check (`VC_MEDIA_TYPE_INVALID`) still comes first. The generic verifier enforces it too,
     because RFC 9901 §7.1 does: it reads the processed payload, so an `exp` an Issuer made selectively disclosable is
     checked when disclosed (RFC 9901 §9.7 says Issuers must not do this). An SD-JWT VC that verifies has had the value
-    the Issuer signed in the clear at the top level judged, and no other: a Disclosure cannot add an `exp` beside it
-    (the name clash is `DISCLOSURE_INVALID`) or where there is none (`VC_DISALLOWED_DISCLOSURE`, or `SD_JWT_EXPIRED`
-    first when its value has passed), so a disclosed value can only make a presentation fail. A nested claim such as `credentialSubject.exp` is an ordinary claim and is not judged.
+    the Issuer signed in the clear at the top level judged, and no other. A Disclosure cannot add an `nbf` or `exp`
+    beside it (the name clash is `DISCLOSURE_INVALID`), and one that adds it where there is none is always refused: with
+    the window's code (`SD_JWT_EXPIRED`, `SD_JWT_NOT_YET_VALID`, `SD_JWT_EXP_INVALID`, `SD_JWT_NBF_INVALID`) when its
+    value fails the window, and with `VC_DISALLOWED_DISCLOSURE` otherwise. A nested claim such as
+    `credentialSubject.exp` is an ordinary claim and is not judged.
   - *The Key Binding JWT's own `nbf` and `exp`*, when present, are judged the same way (RFC 9901 §7.3 step 5.h: "a valid
-    JWT in all other respects, per [RFC7519]"), with `KB_JWT_NOT_YET_VALID`, `KB_JWT_EXPIRED` (the code the `iat` age
-    bound already used), `KB_JWT_NBF_INVALID` and `KB_JWT_EXP_INVALID`. They never stand in for the Issuer's. This
-    library's Key Binding JWTs carry neither claim, so none it made is affected.
+    JWT in all other respects, per [RFC7519]"), with the new codes `KB_JWT_NOT_YET_VALID`, `KB_JWT_EXP_PASSED`,
+    `KB_JWT_NBF_INVALID` and `KB_JWT_EXP_INVALID`. `KB_JWT_EXPIRED` keeps its one meaning, the `iat` age bound
+    (`MaxKeyBindingAge`), and one result can carry it beside `KB_JWT_EXP_PASSED`. The KB-JWT's claims never stand in
+    for the Issuer's. This library's Key Binding JWTs carry neither claim, so none it made is affected.
   - *This narrows what the verifiers accept.* An expired or not-yet-valid credential, and a non-number `nbf`/`exp`, are
     invalid under RFC 9901 and RFC 7519. A NumericDate before year 1 or after year 9999 (such as `1e20`) is valid under
     RFC 7519 and is now refused as `*_INVALID`: no conformant Issuer has a use for it, and refusing is the fail-closed

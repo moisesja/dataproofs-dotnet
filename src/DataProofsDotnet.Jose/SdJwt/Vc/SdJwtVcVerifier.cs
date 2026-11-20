@@ -21,13 +21,15 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// <b>Validity window (§2.2.2.3: <c>nbf</c> is "The time before which the Verifiable Digital Credential MUST NOT be
 /// accepted", <c>exp</c> the time "after which the Verifiable Digital Credential is no longer valid").</b> Every method
 /// here judges both, as <see cref="SdJwtVerifier"/> does, at <see cref="SdJwtVerificationOptions.CurrentTime"/> with
-/// <see cref="SdJwtVerificationOptions.ClockSkew"/>, after the signature (and, under <c>x5c</c>, the certificate hook)
-/// and before the Key Binding JWT, the profile rules and any Type Metadata retrieval: <c>SD_JWT_EXPIRED</c>, <c>SD_JWT_NOT_YET_VALID</c>, and <c>SD_JWT_EXP_INVALID</c>
-/// or <c>SD_JWT_NBF_INVALID</c> for a present value that is not a NumericDate. Both claims are optional. A credential
-/// that verifies had the top-level member the Issuer signed in the clear judged, and no other: a Disclosure cannot add
-/// one beside it (RFC 9901 §7.1 step 3.c.ii.3) or where there is none (the positional rule,
-/// <c>VC_DISALLOWED_DISCLOSURE</c>, after the window has refused a past one), so a disclosed value can only make it
-/// fail. A nested member such as <c>credentialSubject.exp</c> is an ordinary claim.
+/// <see cref="SdJwtVerificationOptions.ClockSkew"/>: after the media-type check and the signature (and, under
+/// <c>x5c</c>, the certificate hook), and before the Key Binding JWT, the claim rules (<c>vct</c>, <c>aka_vcts</c>, the
+/// must-not-disclose rule) and any Type Metadata retrieval. The codes are <c>SD_JWT_EXPIRED</c>,
+/// <c>SD_JWT_NOT_YET_VALID</c>, and <c>SD_JWT_EXP_INVALID</c> or <c>SD_JWT_NBF_INVALID</c> for a present value that is
+/// not a NumericDate. Both claims are optional. A credential that verifies had the top-level member the Issuer signed
+/// in the clear judged, and no other. A Disclosure cannot add one beside it (RFC 9901 §7.1 step 3.c.ii.3), and one
+/// that adds it where there is none is always refused: with the window's code when its value fails the window, and by
+/// the positional rule (<c>VC_DISALLOWED_DISCLOSURE</c>) otherwise. A nested member such as
+/// <c>credentialSubject.exp</c> is an ordinary claim.
 /// </para>
 /// <para>
 /// Not done here, and left to the caller: checking <c>status</c> (§2.4 says a Verifier SHOULD), and the

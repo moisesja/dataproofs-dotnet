@@ -111,11 +111,13 @@ RFC 7519 (https://www.rfc-editor.org/rfc/rfc7519.txt):
    that is not repeated here. The number is first read at `decimal` precision (28-29 significant digits, rounded to
    nearest), so a fraction beyond that, about 1e-18 s at today's dates, is not exact (first adversarial pass, F3: the
    doc now says so; exact handling is not worth the code).
-   - A `JsonValue` that wraps a .NET number (not parsed JSON) does not convert to `decimal`, so it is read as the JSON
-     text it serializes to, the bytes that would be signed; a non-finite `double` has none and is refused. Unreachable
-     through the public API, which reads parsed JSON on both sides, but the first adversarial pass (F4) showed a
-     `long` refused, a trap for the next caller. Considered: `TryGetValue<long>` / `<double>` fallbacks. Lost: they miss
-     `int`, `uint`, `float` and the rest, where the text covers every type the serializer writes.
+   - Parsed JSON (every payload the verifier and the issuer's check read) is read from its `JsonElement`, with no
+     second parse: a number `decimal` cannot hold fails there, and the second adversarial pass found no spelling a
+     re-parse would accept (S4). A `JsonValue` that wraps a .NET number does not convert to `decimal`, so it is read as
+     the JSON text it serializes to, and any failure to serialize it (a non-finite `double`, a throwing converter) makes
+     it not a NumericDate. Unreachable through the public API, which reads parsed JSON on both sides, but the first
+     pass (F4) showed a `long` refused and the second (S4) a converter's `FormatException` escaping. Considered:
+     `TryGetValue<long>` / `<double>` fallbacks. Lost: they miss `int`, `uint`, `float` and the rest.
 6. **The boundary.** `nbf` fails when `nbf - now > ClockSkew`, the same comparison as the KB-JWT's
    `iat - now > ClockSkew`, so a value exactly at now + skew is accepted, as RFC 7519 §4.1.5 ("after or equal") says.
    `exp` fails when `now - exp >= ClockSkew`: RFC 7519 §4.1.4 says the current time "MUST be before" `exp`, so with no
@@ -138,15 +140,17 @@ RFC 7519 (https://www.rfc-editor.org/rfc/rfc7519.txt):
 9. **The Key Binding JWT `iat` age bound no longer overflows.** `maxAge + ClockSkew` threw `OverflowException` out of
    the never-throws verifiers when both are large (`ClockSkew = TimeSpan.MaxValue`). It is now compared in 128-bit
    ticks. Same options, same entry points, so it is fixed here.
-10. **The Key Binding JWT's own `nbf` and `exp` are judged too (this decision moved).** The first draft left them
+10. **The Key Binding JWT's own `nbf` and `exp` are judged too (this decision moved twice).** The first draft left them
     out as outside the issue. The first adversarial pass reproduced a KB-JWT whose `exp` had passed and whose `nbf`
     was ahead verifying on both verifiers (F2). RFC 9901 §7.3 step 5.h: "Check that the Key Binding JWT is a valid JWT
     in all other respects, per [RFC7519] and [RFC8725]", and `KeyBindingJwt.Verify` is code this PR already touches
     (decision 9), so by the repository's rule the defect is fixed here. Same function, same options, codes
-    `KB_JWT_NOT_YET_VALID`, `KB_JWT_EXPIRED`, `KB_JWT_NBF_INVALID`, `KB_JWT_EXP_INVALID`. `KB_JWT_EXPIRED` is shared
-    with the `iat` age bound on purpose: both mean the KB-JWT is too old to accept, with the same remedy (present
-    again); the messages differ. This library's KB-JWTs carry neither claim.
-    - Considered: a separate code such as `KB_JWT_EXP_PASSED`. Lost: two codes for one verdict, and an awkward name.
+    `KB_JWT_NOT_YET_VALID`, `KB_JWT_EXP_PASSED`, `KB_JWT_NBF_INVALID`, `KB_JWT_EXP_INVALID`. This library's KB-JWTs
+    carry neither claim.
+    - First choice: `KB_JWT_EXPIRED`, shared with the `iat` age bound (same verdict, same remedy). The second
+      adversarial pass (S3) showed one result carrying `KB_JWT_EXPIRED` twice, which no result could before (a caller
+      keying errors by code would throw), and the code losing its one meaning. So the KB-JWT's `exp` got its own code,
+      `KB_JWT_EXP_PASSED`, and `KB_JWT_EXPIRED` stays the age bound's.
 11. **Not done, deliberately:** a policy that requires `exp` to be present (RFC 9901 §9.7, "required
     validity-controlling claim"; `JwtValidationOptions.RequireExpirationTime` is the precedent); the Issuer JWT's `aud`
     and `iat`; refusing `nbf` later than `exp` at issuance; `JwtHandler`, whose `exp + skew` can overflow and whose `exp`
@@ -200,3 +204,18 @@ Findings and what was done:
 - F5 (P3) issuer docs: non-finite doubles fail in the serializer (pre-existing), the range stated in seconds; `nbf` >
   `exp` at issuance left as decision 7.
 - F6 (P3) `Verify("")` throws `ArgumentException`: pre-existing, outside the change, reported as a follow-up.
+
+## Adversarial pass 2 (the same agent, over the fixes, at `9183c99`)
+
+No P1 or P2. F2 and F4 hold; the 448 extreme combinations still throw nothing. Findings and what was done:
+- S1 (P3) the docs said the window runs "before the profile rules", false for the media-type check, which runs
+  first: the CHANGELOG, XML docs and PRD now say "after the media-type check, before the claim rules".
+- S2 (P3) the docs listed too few codes for a top-level `nbf`/`exp` a Disclosure supplies: reworded (the window's code
+  when it fails the window, else `VC_DISALLOWED_DISCLOSURE`), and the six cases are a theory.
+- S3 (P3) `KB_JWT_EXPIRED` could appear twice in one result: the KB-JWT's `exp` now has `KB_JWT_EXP_PASSED` (decision
+  10), with a test that both codes appear once each.
+- S4 (P3, latent) the reader re-parsed element-backed values for nothing, and a throwing converter escaped: parsed JSON
+  is read from its element only, and every non-fatal serialization failure is "not a NumericDate" (decision 5). The
+  converter test fails against the previous reader.
+- Also from its claim check: the KB-JWT window is now tested on all six entry points, and the PRD FR-16 sentence carries
+  the `decimal` precision caveat.
