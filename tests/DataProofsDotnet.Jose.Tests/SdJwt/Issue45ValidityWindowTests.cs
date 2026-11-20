@@ -503,6 +503,42 @@ public sealed class Issue45ValidityWindowTests
         await ShouldFailOnBoth(stale, options with { MaxKeyBindingAge = TimeSpan.FromMinutes(5) }, "KB_JWT_EXPIRED");
     }
 
+    public static TheoryData<string, string, string?> KeyBindingWindows => new()
+    {
+        // KB-JWT claims (JSON members, Now = 1795089600), the code it fails with, or null when it verifies.
+        { "exp", "1795086000", "KB_JWT_EXPIRED" },            // an hour ago
+        { "exp", "1795089600", "KB_JWT_EXPIRED" },            // exactly now, no skew: RFC 7519 §4.1.4
+        { "exp", "1795089601", null },
+        { "nbf", "1795093200", "KB_JWT_NOT_YET_VALID" },      // in an hour
+        { "nbf", "1795089600", null },                        // exactly now: §4.1.5 "after or equal"
+        { "exp", "\"1795093200\"", "KB_JWT_EXP_INVALID" },
+        { "nbf", "null", "KB_JWT_NBF_INVALID" },
+        { "nbf", "1e400", "KB_JWT_NBF_INVALID" },
+    };
+
+    [Theory]
+    [MemberData(nameof(KeyBindingWindows))]
+    public async Task A_Key_Binding_JWTs_own_nbf_and_exp_are_judged_with_KB_JWT_codes(string claim, string json, string? code)
+    {
+        // RFC 9901 §7.3 step 5.h: "Check that the Key Binding JWT is a valid JWT in all other respects, per [RFC7519]".
+        // The issuer JWT is inside its window, so only the KB-JWT's claim can fail.
+        NowSeconds.Should().Be(1795089600);
+        var holder = TestKeyMaterial.Generate(KeyType.P256, "holder");
+        var issued = await SdJwtVcIssuer.IssueAsync(
+            VcPayload(("exp", NowSeconds + 3600)), new DisclosureFrame().Disclose("given_name"), Issuer.Signer,
+            new SdJwtIssuerOptions { HolderConfirmationKey = holder.PublicJwk });
+        var presentation = await PresentWithKeyBindingPayload(issued.Issuance, holder, new JsonObject
+        {
+            ["nonce"] = Nonce, ["aud"] = Audience, ["iat"] = NowSeconds, [claim] = JsonNode.Parse(json),
+        });
+        var options = At(Now, TimeSpan.Zero) with { ExpectedAudience = Audience, ExpectedNonce = Nonce, RequireKeyBinding = true };
+
+        if (code is null)
+            await ShouldPassOnBoth(presentation, options);
+        else
+            await ShouldFailOnBoth(presentation, options, code);
+    }
+
     [Fact]
     public async Task The_window_is_checked_before_the_Key_Binding_JWT()
     {

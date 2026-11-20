@@ -36,7 +36,8 @@ public static class SdJwtIssuer
     /// §4.1; a <see cref="DateTimeOffset"/> serializes as a string), or anything else in its content that
     /// <see cref="SdJwtVerifier"/> refuses when every Disclosure is presented. The time is not judged: an SD-JWT whose
     /// <c>nbf</c> is in the future, or whose <c>exp</c> has passed, is issued, and fails verification until, or from,
-    /// then.
+    /// then. A value the serializer cannot write at all, such as a non-finite <see cref="double"/>, fails as it always
+    /// has, with the serializer's exception.
     /// </exception>
     public static async Task<Result> IssueAsync(
         JsonObject claims,

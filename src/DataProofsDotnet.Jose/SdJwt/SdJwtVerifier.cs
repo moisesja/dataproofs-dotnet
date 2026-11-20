@@ -23,14 +23,17 @@ namespace DataProofsDotnet.Jose.SdJwt;
 /// </para>
 /// <para>
 /// <b>Validity window.</b> <c>nbf</c> and <c>exp</c> are both optional; a present one must be a JSON number of
-/// seconds since the epoch (an RFC 7519 NumericDate, fractions allowed) between 0001-01-01 and 9999-12-31, or the
-/// presentation fails with <c>SD_JWT_NBF_INVALID</c> or <c>SD_JWT_EXP_INVALID</c>. They are judged at
-/// <see cref="SdJwtVerificationOptions.CurrentTime"/> (default: now) with <see cref="SdJwtVerificationOptions.ClockSkew"/>:
-/// <c>SD_JWT_NOT_YET_VALID</c> when the time is before <c>nbf</c> − skew, <c>SD_JWT_EXPIRED</c> when it is at or
-/// after <c>exp</c> + skew (RFC 7519 §4.1.4: the time "MUST be before" <c>exp</c>). Only the top-level members are
-/// read, from the processed payload (§7.1 step 6), so an <c>exp</c> the Issuer made selectively disclosable is
-/// checked when it is disclosed and absent when it is withheld; a verifier that needs <c>exp</c> checks its presence
-/// (RFC 9901 §9.7). To judge a credential at another instant, set <see cref="SdJwtVerificationOptions.CurrentTime"/>.
+/// seconds since the epoch (an RFC 7519 NumericDate, fractions allowed) from -62135596800 to 253402300799
+/// (0001-01-01T00:00:00Z to 9999-12-31T23:59:59Z), or the presentation fails with <c>SD_JWT_NBF_INVALID</c> or
+/// <c>SD_JWT_EXP_INVALID</c>. They are judged at <see cref="SdJwtVerificationOptions.CurrentTime"/> (default: now) with
+/// <see cref="SdJwtVerificationOptions.ClockSkew"/>: <c>SD_JWT_NOT_YET_VALID</c> when the time is before <c>nbf</c> −
+/// skew, <c>SD_JWT_EXPIRED</c> when it is at or after <c>exp</c> + skew (RFC 7519 §4.1.4: the time "MUST be before"
+/// <c>exp</c>). Only the top-level members are read, from the processed payload (§7.1 step 6), so an <c>exp</c> the
+/// Issuer made selectively disclosable is checked when it is disclosed and absent when it is withheld; a verifier
+/// that needs <c>exp</c> checks its presence (RFC 9901 §9.7). The window is checked before the Key Binding JWT, whose
+/// own <c>nbf</c> and <c>exp</c>, when present, are judged the same way with <c>KB_JWT_</c> codes (§7.3 step 5.h) and
+/// never stand in for the Issuer's. To judge a presentation at another instant, set
+/// <see cref="SdJwtVerificationOptions.CurrentTime"/>.
 /// </para>
 /// </remarks>
 public static class SdJwtVerifier
@@ -201,7 +204,8 @@ public static class SdJwtVerifier
         //     ordinary claim. For an SD-JWT VC the value read here is the issuer-signed clear member whenever the
         //     credential can be accepted: a Disclosure cannot add a top-level exp beside a clear one (step 3.c.ii.3,
         //     refused above), and one that adds it where none was clear is refused by the profile's positional rule.
-        var windowErrors = ValidityWindow.Check(disclosedPayload, options.CurrentTime ?? DateTimeOffset.UtcNow, options.ClockSkew);
+        var windowErrors = ValidityWindow.Check(
+            disclosedPayload, options.CurrentTime ?? DateTimeOffset.UtcNow, options.ClockSkew, ValidityWindow.SdJwt);
         if (windowErrors.Count > 0)
             return SdJwtVerificationResult.Failure(windowErrors, issuerJwt.Algorithm);
 
