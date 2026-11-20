@@ -56,7 +56,10 @@ public static class SdJwtVcConstants
     /// clear in the SD-JWT payload (§2.2.2.3): <c>iss</c>, <c>nbf</c>, <c>exp</c>, <c>cnf</c>,
     /// <c>vct</c>, <c>vct#integrity</c>, <c>aka_vcts</c>, <c>status</c>. Marking any of these in a
     /// <see cref="DisclosureFrame"/> is a disallowed claim shape the Issuer rejects, and finding
-    /// any of them disclosed in a presentation is a Verifier failure.
+    /// any of them disclosed in a presentation is a Verifier failure. The Verifier checks <c>aka_vcts</c> by
+    /// position: the top-level claim and every element of it must be signed in the clear, while a claim of the
+    /// same name nested in another claim is ordinary. It checks the other names by refusing any Disclosure that
+    /// carries one, at any depth.
     /// </summary>
     public static readonly IReadOnlyList<string> MustNotBeSelectivelyDisclosed =
         ["iss", "nbf", "exp", "cnf", VctClaim, VctIntegrityClaim, AkaVctsClaim, StatusClaim];

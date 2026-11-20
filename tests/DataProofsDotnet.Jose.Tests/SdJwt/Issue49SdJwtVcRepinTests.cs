@@ -200,6 +200,106 @@ public sealed class Issue49SdJwtVcRepinTests
             .Should().Equal("urn:example:general", "urn:example:other");
     }
 
+    // ---- aka_vcts is enforced by position, not by Disclosure name (PR #52 review) ----
+
+    /// <summary>
+    /// Replaces the issuer JWT's payload with <paramref name="edit"/>'s result and signs it again with
+    /// typ dc+sd-jwt, keeping every Disclosure: a correctly signed credential from an issuer that put
+    /// disclosure sites where the VC issuer would not.
+    /// </summary>
+    private static async Task<string> ResignWithPayload(string issuance, Action<JsonObject> edit)
+    {
+        var tilde = issuance.IndexOf('~', StringComparison.Ordinal);
+        var payload = JsonNode.Parse(Base64Url.DecodeUtf8(issuance[..tilde].Split('.')[1]))!.AsObject();
+        edit(payload);
+        var header = Base64Url.Encode(Encoding.UTF8.GetBytes("""{"alg":"EdDSA","typ":"dc+sd-jwt"}"""));
+        var signingInput = $"{header}.{Base64Url.Encode(Encoding.UTF8.GetBytes(payload.ToJsonString()))}";
+        var signature = await Issuer.Signer.Signer.SignAsync(Encoding.ASCII.GetBytes(signingInput), CancellationToken.None);
+        return $"{signingInput}.{Base64Url.Encode(signature)}{issuance[tilde..]}";
+    }
+
+    [Fact]
+    public async Task Nested_claim_named_aka_vcts_round_trips_disclosed_and_withheld()
+    {
+        // related.aka_vcts is an ordinary claim, not the registered top-level one: the VC issuer lets it be
+        // selectively disclosed, and the verifier must accept that, with the Disclosure presented or withheld.
+        // Nested values outside the registered claim are not held to its format either.
+        var claims = new JsonObject
+        {
+            ["iss"] = "https://example.com/issuer",
+            ["vct"] = Vct,
+            ["related"] = new JsonObject { [AkaVcts] = new JsonArray("urn:example:related"), ["name"] = "n" },
+            ["other"] = new JsonObject { [AkaVcts] = "not an array" },
+        };
+        var issued = await SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame().DiscloseObjectProperties("related", AkaVcts), Issuer.Signer);
+
+        var disclosed = await VerifyVc(issued.Issuance);
+        var withheld = await VerifyVc(SdJwtHolder.CreatePresentation(issued.Issuance, []));
+
+        disclosed.IsValid.Should().BeTrue(string.Join("; ", disclosed.Errors));
+        disclosed.DisclosedPayload!["related"]![AkaVcts]!.AsArray().Single()!.GetValue<string>().Should().Be("urn:example:related");
+        withheld.IsValid.Should().BeTrue(string.Join("; ", withheld.Errors));
+        withheld.DisclosedPayload!["related"]!.AsObject().Should().NotContainKey(AkaVcts);
+    }
+
+    [Theory]
+    // Element 1 of a well-formed array is disclosable: refused with the Disclosure presented and withheld.
+    [InlineData("[\"urn:example:visible\", \"urn:example:other\"]", new[] { 1 }, true)]
+    [InlineData("[\"urn:example:visible\", \"urn:example:other\"]", new[] { 1 }, false)]
+    // The review's invalid-to-valid transition: element 1 is the vct value. Presented, the array is malformed;
+    // withheld, what remains looked well formed and verified on 58786eb.
+    [InlineData("[\"urn:example:visible\", \"" + Vct + "\"]", new[] { 1 }, true)]
+    [InlineData("[\"urn:example:visible\", \"" + Vct + "\"]", new[] { 1 }, false)]
+    // Every element disclosable, all withheld.
+    [InlineData("[\"urn:example:a\", \"urn:example:b\"]", new[] { 0, 1 }, false)]
+    public async Task Verifier_rejects_disclosable_aka_vcts_elements_presented_or_withheld(string akaVctsJson, int[] indices, bool present)
+    {
+        // A generic issuer (the VC issuer refuses this frame) signed aka_vcts with disclosable elements.
+        var claims = Claims(JsonNode.Parse(akaVctsJson), withAkaVcts: true);
+        var issued = await SdJwtIssuer.IssueAsync(claims, new DisclosureFrame().DiscloseArrayElements(AkaVcts, indices), Issuer.Signer, typ: "dc+sd-jwt");
+        var presentation = present
+            ? issued.Issuance
+            : SdJwtHolder.CreatePresentation(issued.Issuance, issued.Disclosures.Where(d => !d.IsArrayElement).Select(d => d.Encoded));
+
+        var result = await VerifyVc(presentation);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE")
+            .And.Contain("'aka_vcts'").And.Contain("§2.2.2.3");
+    }
+
+    [Theory]
+    [InlineData("decoy-placeholder")]
+    [InlineData("sd-digest-array")]
+    public async Task Verifier_rejects_a_disclosure_site_inside_the_signed_aka_vcts_with_no_disclosure_behind_it(string site)
+    {
+        // A decoy {"...": digest} element, or an object carrying _sd, has no Disclosure at all; reconstruction
+        // drops the decoy, so only the signed representation shows it.
+        var issued = await IssueGeneric(Claims(new JsonArray("urn:example:general"), withAkaVcts: true),
+            new DisclosureFrame().Disclose("given_name"), "dc+sd-jwt");
+        const string fakeDigest = "c2lnbmVkLWJ1dC1ub3QtYmFja2VkLWJ5LWEtZGlzY2xvc3VyZQ";
+        var presentation = await ResignWithPayload(issued, payload => payload[AkaVcts]!.AsArray().Add(site == "decoy-placeholder"
+            ? new JsonObject { ["..."] = fakeDigest }
+            : new JsonObject { ["_sd"] = new JsonArray(fakeDigest) }));
+
+        var result = await VerifyVc(presentation);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_DISALLOWED_DISCLOSURE").And.Contain("'aka_vcts'");
+    }
+
+    [Fact]
+    public async Task Resigned_payload_control_verifies()
+    {
+        // Positive control for the hand-built payloads above: the same re-signing with nothing added verifies.
+        var issued = await IssueGeneric(Claims(new JsonArray("urn:example:general"), withAkaVcts: true),
+            new DisclosureFrame().Disclose("given_name"), "dc+sd-jwt");
+
+        var result = await VerifyVc(await ResignWithPayload(issued, _ => { }));
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+    }
+
     // ---- aka_vcts format (-27 §2.2.2.2) ----
 
     public static TheoryData<string> MalformedAkaVcts() => new()

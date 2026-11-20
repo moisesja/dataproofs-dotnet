@@ -73,11 +73,26 @@ public static class SdJwtVcVerifier
         if (!inner.IsValid || inner.DisclosedPayload is not { } disclosed)
             return SdJwtVcVerificationResult.Failure(inner.Errors.Count > 0 ? inner.Errors : ["VERIFICATION_FAILED"]);
 
-        // 3. No registered must-not-disclose claim may have been selectively disclosed (§2.2.2.3):
-        //    if any presented Disclosure names one, the profile is violated.
+        // 3. No registered must-not-disclose claim may have been selectively disclosed (§2.2.2.3).
+        //    a. By position, for the claims in EnforcedByPosition (aka_vcts): the claim comes from the signed
+        //       payload's clear top level, and its signed value holds no disclosure site, presented or not.
+        //       A same-named claim nested elsewhere is an ordinary claim.
+        foreach (var name in SdJwtVcClaimRules.EnforcedByPosition)
+        {
+            if (SdJwtVcClaimRules.SelectiveDisclosureViolation(issuerJwt.Payload, disclosed, name) is { } violation)
+            {
+                return SdJwtVcVerificationResult.Failure(
+                    $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{name}' {violation} ({SdJwtVcConstants.Revision} §2.2.2.3).");
+            }
+        }
+
+        //    b. By name, for the others: a presented Disclosure that names one fails at any depth. Issue #48
+        //       replaces this with the positional rule above.
         foreach (var disclosure in components.Disclosures)
         {
-            if (disclosure.ClaimName is { } name && SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(name, StringComparer.Ordinal))
+            if (disclosure.ClaimName is { } name
+                && !SdJwtVcClaimRules.EnforcedByPosition.Contains(name)
+                && SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Contains(name, StringComparer.Ordinal))
             {
                 return SdJwtVcVerificationResult.Failure(
                     $"VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim '{name}' MUST NOT be selectively disclosed ({SdJwtVcConstants.Revision} §2.2.2.3).");
@@ -93,9 +108,9 @@ public static class SdJwtVcVerifier
         }
 
         // 5. aka_vcts OPTIONAL; when present, a non-empty array of strings without the vct value (§2.2.2.2).
-        //    Step 3 refuses a Disclosure that names aka_vcts; it does not yet see one that hides an element
-        //    of the array, which the sub-claim rule of §2.2.2.3 also forbids.
-        if (SdJwtVcClaimRules.AkaVctsViolation(disclosed, vct) is { } akaVctsViolation)
+        //    Checked on the issuer-signed value, which step 3a left free of disclosure sites, so the holder's
+        //    choice of Disclosures cannot change what is checked.
+        if (SdJwtVcClaimRules.AkaVctsViolation(issuerJwt.Payload, vct) is { } akaVctsViolation)
         {
             return SdJwtVcVerificationResult.Failure(
                 $"VC_AKA_VCTS_INVALID: SD-JWT VC claim 'aka_vcts' {akaVctsViolation} ({SdJwtVcConstants.Revision} §2.2.2.2).");
