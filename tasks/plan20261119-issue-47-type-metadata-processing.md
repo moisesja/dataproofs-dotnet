@@ -314,3 +314,29 @@ entry bound charging display arrays by length, so 10,001 numbers in a display ar
 unbuilt). Documented by design: a chain over 10,000 entries is refused, every document in the chain counts, and
 `Documents` parses all documents on each access (13× for a deep-junk chain, 0.4 s), which the XML docs tell the caller
 to read once. Tests for the last two fixes fail on `2c0e067` / `c16e9bf` respectively.
+
+### Review round 3 (thorough review 5993588801, inline comment 4643121901, on `ff001fd`)
+
+**[P2] Display objects were charged before they were validated.** Reproduced first: 15 of the new cases fail on
+`ff001fd`. A claim display of 10,001 empty objects (30 KB) refused the credential at both entry points, while 10,001
+numbers passed; the same in type display and SVG templates, and with required members missing or of the wrong kind.
+Fix: each reader checks the required string members first without allocating (`HasStrings`), then charges one entry,
+then builds it; an entry skipped is neither built nor charged (and a skipped type display entry's rendering is not
+read). The entry limit itself stays, with a control that 10,001 accepted entries still fail and 10,000 pass, at both
+entry points and in all three readers.
+
+**Every charge checked for the same order** (the parent's sweep):
+- `TypeMetadataProcessor` claims (`claims` array length) and path components (path length): charged up front, and
+  that stays, with a code comment: every element must be well formed or the document fails (§5.6, §5.6.1), so an element
+  that would not be kept cannot cause a false refusal; charging first only decides which refusal is reported, and
+  means nothing is built for a chain over the bound.
+- The three display readers: fixed as above.
+- `ClaimMetadataValidator`: the per-element charge was 1 + ⌊len/32⌋ before the element was known to be an object that
+  would be searched, so an undisclosed element, or a shifted shape in the complete pass, paid for a lookup it never
+  made. 2,000 undisclosed elements under a 32,000-character key were charged about 2 million units and refused. Now 1
+  unit is charged for applying the component (constant work), and the key's ⌊len/32⌋ only right before the lookup. The
+  selection charges stay before each element is added: they pay for the selection being built.
+Tests: `Skipped_display_elements_do_not_count_against_the_entry_bound` (27 cases: five non-object kinds × three readers
+and twelve objects with missing or mistyped required members, issued and verified),
+`Too_many_accepted_display_entries_still_fail_at_both_entry_points` (three readers, with the at-bound control), and
+`An_undisclosed_element_is_not_charged_for_a_key_lookup_it_does_not_make`.
