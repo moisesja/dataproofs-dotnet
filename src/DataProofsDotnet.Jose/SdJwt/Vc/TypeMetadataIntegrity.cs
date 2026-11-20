@@ -13,8 +13,8 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// that matches none of them, or names no supported algorithm, is a failure. SHA-256, SHA-384 and SHA-512 are supported
 /// (<c>sha256</c>, <c>sha384</c>, <c>sha512</c>, compared case-insensitively as the ABNF grammar SRI uses reads them).
 /// Other algorithms, such as <c>md5</c> or <c>sha1</c>, are ignored as SRI ignores them, so they can neither satisfy
-/// nor weaken the check. A value that does not follow the SRI grammar, or a supported expression whose digest has the
-/// wrong length, is refused as a whole. The SD-JWT VC verifier runs this check on <c>vct#integrity</c> and every
+/// nor weaken the check. A token that is not <c>alg-value</c> with an alphanumeric <c>alg</c>, or a supported expression
+/// whose value is not standard base64 of the algorithm's digest length, makes the whole value refused. The SD-JWT VC verifier runs this check on <c>vct#integrity</c> and every
 /// <c>extends#integrity</c> before it parses a document; a wallet runs <see cref="Matches"/> on a logo, background
 /// image or SVG template it retrieved, since the library never retrieves those.
 /// </remarks>
@@ -83,14 +83,16 @@ public static class TypeMetadataIntegrity
 
             var algorithm = expression[..dash];
             var value = expression[(dash + 1)..];
-            if (!algorithm.All(char.IsAsciiLetterOrDigit) || !IsBase64Value(value))
+            if (!algorithm.All(char.IsAsciiLetterOrDigit))
                 return Outcome.Malformed;
 
+            // An algorithm this consumer does not support is ignored with whatever follows it (SRI §3.3.3), so a
+            // future name such as sha3-256 neither fails nor satisfies the check.
             var rank = Rank(algorithm);
             if (rank == 0)
-                continue; // An algorithm this consumer does not support is ignored (SRI §3.3.3).
+                continue;
 
-            if (Decode(value) is not { } digest || digest.Length != DigestLength(rank))
+            if (!IsBase64Value(value) || Decode(value) is not { } digest || digest.Length != DigestLength(rank))
                 return Outcome.Malformed;
             expressions.Add((rank, digest));
         }
