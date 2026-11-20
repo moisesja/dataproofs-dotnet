@@ -87,14 +87,11 @@ public static class SdJwtVcVerifier
 
         // 4. vct REQUIRED, a non-empty string, present in the (cleared) disclosed payload (§2.2.2.1).
         if (!disclosed.TryGetPropertyValue(SdJwtVcConstants.VctClaim, out var vctNode)
-            || vctNode is not JsonValue vctValue
-            || vctValue.GetValueKind() != JsonValueKind.String
-            || string.IsNullOrEmpty(vctValue.GetValue<string>()))
+            || SdJwtVcClaimRules.ReadTypeValue(vctNode) is not { } vct)
         {
             return SdJwtVcVerificationResult.Failure(
                 $"VC_VCT_MISSING: SD-JWT VC payload has no non-empty string 'vct' claim ({SdJwtVcConstants.Revision} §2.2.2.1).");
         }
-        var vct = vctValue.GetValue<string>();
 
         // 5. aka_vcts OPTIONAL; when present, a non-empty array of strings without the vct value (§2.2.2.2).
         //    Step 3 refuses a Disclosure that names aka_vcts; it does not yet see one that hides an element

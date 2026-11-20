@@ -244,6 +244,62 @@ public sealed class Issue49SdJwtVcRepinTests
         result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_AKA_VCTS_INVALID").And.Contain("§2.2.2.2");
     }
 
+    /// <summary>
+    /// (vct, aka_vcts value) pairs with lone surrogates, built from code units at run time. They are looked up
+    /// by index inside the test, because xUnit serializes theory arguments and would hand the test U+FFFD in
+    /// place of each lone surrogate, which is exactly the substitution under test.
+    /// </summary>
+    private static (string Vct, string AkaVctsValue) IllFormedCase(int index)
+    {
+        var high = ((char)0xD800).ToString();
+        var low = ((char)0xDC00).ToString();
+        return index switch
+        {
+            // The adversarial pass's case: vct and the aka_vcts value differ as .NET strings, but the JSON
+            // writer turns each lone surrogate into U+FFFD, so the signed aka_vcts would contain the vct value.
+            0 => ("urn:t:" + high, "urn:t:" + low),
+            1 => (Vct, "urn:t:" + high),
+            2 => ("urn:t:" + low, "urn:example:general"),
+            3 => (Vct, "urn:t:" + low + high),
+            _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        };
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Issuer_rejects_a_type_string_that_is_not_well_formed_utf16(int caseIndex)
+    {
+        // What the issuer signs must be what it checked. A lone surrogate is not text; JSON serialization would
+        // replace it, so the type claims are refused before signing instead.
+        var (vct, akaVctsValue) = IllFormedCase(caseIndex);
+        (vct + akaVctsValue).Should().Contain(((char)(caseIndex == 2 ? 0xDC00 : 0xD800)).ToString(), "the case carries a lone surrogate");
+        var claims = Claims(new JsonArray(akaVctsValue), withAkaVcts: true);
+        claims["vct"] = vct;
+
+        Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+
+        await act.Should().ThrowAsync<MalformedJoseException>().WithMessage("*well-formed*");
+    }
+
+    [Fact]
+    public async Task Issuer_rejects_a_parsed_lone_surrogate_escape_in_the_type_claims_through_the_contract()
+    {
+        // A JsonNode parsed from text that escapes a lone surrogate throws InvalidOperationException when its
+        // string is read; the issuer reports it as MalformedJoseException instead.
+        var escape = @"\u" + 0xD800.ToString("X4");
+        var inAka = JsonNode.Parse("{\"vct\":\"" + Vct + "\",\"given_name\":\"x\",\"aka_vcts\":[\"" + escape + "\"]}")!.AsObject();
+        var inVct = JsonNode.Parse("{\"vct\":\"urn:t:" + escape + "\",\"given_name\":\"x\"}")!.AsObject();
+
+        Func<Task> aka = () => SdJwtVcIssuer.IssueAsync(inAka, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+        Func<Task> vct = () => SdJwtVcIssuer.IssueAsync(inVct, new DisclosureFrame().Disclose("given_name"), Issuer.Signer);
+
+        await aka.Should().ThrowAsync<MalformedJoseException>();
+        await vct.Should().ThrowAsync<MalformedJoseException>();
+    }
+
     [Theory]
     [InlineData("[\"urn:example:general\"]")]
     [InlineData("[\"urn:example:general\", \"https://credentials.example.com/general\"]")]

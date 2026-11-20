@@ -39,18 +39,16 @@ public static class SdJwtVcIssuer
         ArgumentNullException.ThrowIfNull(claims);
         ArgumentNullException.ThrowIfNull(frame);
 
-        // vct REQUIRED and a non-empty string, in the clear (§2.2.2.1).
+        // vct REQUIRED and a non-empty, well-formed string, in the clear (§2.2.2.1).
         if (!claims.TryGetPropertyValue(SdJwtVcConstants.VctClaim, out var vctNode)
-            || vctNode is not JsonValue vctValue
-            || vctValue.GetValueKind() != JsonValueKind.String
-            || string.IsNullOrEmpty(vctValue.GetValue<string>()))
+            || SdJwtVcClaimRules.ReadTypeValue(vctNode) is not { } vct)
         {
             throw new MalformedJoseException(
-                $"SD-JWT VC requires a non-empty string 'vct' claim in the clear ({SdJwtVcConstants.Revision} §2.2.2.1).");
+                $"SD-JWT VC requires a non-empty, well-formed string 'vct' claim in the clear ({SdJwtVcConstants.Revision} §2.2.2.1).");
         }
 
         // aka_vcts OPTIONAL; when present, a non-empty array of strings without the vct value (§2.2.2.2).
-        if (SdJwtVcClaimRules.AkaVctsViolation(claims, vctValue.GetValue<string>()) is { } akaVctsViolation)
+        if (SdJwtVcClaimRules.AkaVctsViolation(claims, vct) is { } akaVctsViolation)
         {
             throw new MalformedJoseException(
                 $"SD-JWT VC claim 'aka_vcts' {akaVctsViolation} ({SdJwtVcConstants.Revision} §2.2.2.2).");

@@ -15,7 +15,9 @@ public static class SdJwtVcConstants
     /// <summary>
     /// The SD-JWT VC issuer-JWT <c>typ</c> header value (§2.2.1), the subtype of the
     /// <c>application/dc+sd-jwt</c> media type (§2.1): <c>dc+sd-jwt</c>. This is what the Issuer
-    /// produces and the only value the Verifier accepts.
+    /// produces and the only value the Verifier accepts. The Verifier compares it exactly (ordinal), so
+    /// the spellings RFC 7515 §4.1.9 would treat as the same media type, <c>application/dc+sd-jwt</c> and
+    /// case variants, are refused as well.
     /// </summary>
     public const string MediaType = "dc+sd-jwt";
 
