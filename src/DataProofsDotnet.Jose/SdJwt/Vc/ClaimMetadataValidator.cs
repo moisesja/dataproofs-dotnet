@@ -19,9 +19,11 @@ internal static class ClaimMetadataValidator
 
     /// <summary>
     /// The most units of work one validation spends, summed over every claim metadata entry, pass and path component,
-    /// and charged before the work is done. Applying an index or a null component to an element is one unit; applying a
-    /// key component is one unit per <see cref="KeyCharsPerUnit"/> characters of the key, rounded down, plus one, because
-    /// the member lookup and the Disclosure lookup both hash the whole key; every element selected is one more unit. Each
+    /// and charged before the work is done. Applying any component to an element is one unit; looking a key up in an
+    /// object is one more unit per <see cref="KeyCharsPerUnit"/> characters of the key, rounded down, because the member
+    /// lookup and the Disclosure lookup both hash the whole key, and is charged only once the element is known to be an
+    /// object that will be searched (an undisclosed element or a skipped shape is not); every element selected is one
+    /// more unit. Each
     /// unit is then a bounded amount of work: an index into a list built once per array, or hashing and comparing up to
     /// <see cref="KeyCharsPerUnit"/> characters. The work is claims times the elements each path reaches times the key
     /// length, and the two size bounds limit none of those products: a 27,000-leaf credential against 27,000 claims took
@@ -104,12 +106,14 @@ internal static class ClaimMetadataValidator
         {
             var component = claim.Path[step];
             var last = step == claim.Path.Count - 1;
-            var cost = component.Key is { } costKey ? 1 + (long)costKey.Length / KeyCharsPerUnit : 1;
+            var keyCost = component.Key is { } costKey ? (long)costKey.Length / KeyCharsPerUnit : 0;
             var next = budget.Next;
             next.Clear();
             foreach (var selected in selection)
             {
-                if (!budget.Spend(cost))
+                // Applying a component to an element is constant work until a key is looked up; the lookup's cost is
+                // charged only once the element is known to be an object that will be searched.
+                if (!budget.Spend(1))
                     return OverBudget();
 
                 // An element that was not disclosed: present in the issued credential, contents unknown.
@@ -126,6 +130,9 @@ internal static class ClaimMetadataValidator
                             continue;
                         return PathError(Path(), step, "an object");
                     }
+
+                    if (!budget.Spend(keyCost))
+                        return OverBudget();
 
                     if (obj.TryGetPropertyValue(key, out var value))
                     {
