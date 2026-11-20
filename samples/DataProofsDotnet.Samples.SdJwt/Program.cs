@@ -180,6 +180,30 @@ using (var kbHeader = System.Text.Json.JsonDocument.Parse(Base64Url.Decode(stand
 SdJwtVerificationResult missingKb = SdJwtVerifier.Verify(kbIssued.Issuance, resolveIssuer, verifyOptions, joseCrypto);
 Console.WriteLine($"  requiring KB but presenting none -> valid={missingKb.IsValid}, errors={missingKb.Errors.Count}");
 Check(!missingKb.IsValid && missingKb.Errors.Count > 0, "a required-but-absent KB-JWT fails with errors, not an exception");
+Console.WriteLine();
+
+// ----------------------------------------------------------- validity window (nbf / exp)
+// RFC 9901 §7.1 step 6: the verifier checks nbf and exp (RFC 7519 NumericDates, both optional) at
+// CurrentTime (default: now) with ClockSkew (default: 2 minutes). Before nbf - skew the SD-JWT is
+// SD_JWT_NOT_YET_VALID; from exp + skew on it is SD_JWT_EXPIRED; a value that is not a JSON number
+// is SD_JWT_NBF_INVALID / SD_JWT_EXP_INVALID. The issuer does not judge the time.
+Console.WriteLine("--- validity window (nbf / exp) ---");
+var issuedAt = new DateTimeOffset(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
+JsonObject windowClaims = Claims();
+windowClaims["nbf"] = issuedAt.ToUnixTimeSeconds();
+windowClaims["exp"] = issuedAt.AddDays(30).ToUnixTimeSeconds();
+SdJwtIssuer.Result windowIssued = await SdJwtIssuer.IssueAsync(windowClaims, flatFrame, issuerSigner);
+
+SdJwtVerificationResult AtTime(DateTimeOffset now)
+    => SdJwtVerifier.Verify(windowIssued.Issuance, resolveIssuer, new SdJwtVerificationOptions { CurrentTime = now }, joseCrypto);
+
+SdJwtVerificationResult inWindow = AtTime(issuedAt.AddDays(1));
+SdJwtVerificationResult tooEarly = AtTime(issuedAt.AddHours(-1));
+SdJwtVerificationResult tooLate = AtTime(issuedAt.AddDays(31));
+Console.WriteLine($"  a day in: valid={inWindow.IsValid}; an hour early: {tooEarly.Errors[0].Split(':')[0]}; a day late: {tooLate.Errors[0].Split(':')[0]}");
+Check(inWindow.IsValid, "inside [nbf, exp) the SD-JWT verifies");
+Check(!tooEarly.IsValid && tooEarly.Errors[0].StartsWith("SD_JWT_NOT_YET_VALID"), "before nbf - skew it is not yet valid");
+Check(!tooLate.IsValid && tooLate.Errors[0].StartsWith("SD_JWT_EXPIRED"), "from exp + skew on it has expired");
 
 Console.WriteLine();
 Console.WriteLine("Done! SD-JWT example completed successfully.");
