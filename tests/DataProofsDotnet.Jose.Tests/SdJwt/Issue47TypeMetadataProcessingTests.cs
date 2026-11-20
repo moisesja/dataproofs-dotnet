@@ -1092,6 +1092,72 @@ public sealed class Issue47TypeMetadataProcessingTests
         (await refused.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith("VC_CLAIM_SD_VIOLATION:");
     }
 
+    private static JsonObject Decoy() => Placeholder(Disclosure.ForArrayElement("salt-decoy", "never disclosed"));
+
+    public static TheoryData<string, string, int?, string?, bool?, string?> ShiftedIndexes => new()
+    {
+        // claims arr, disclosed index, metadata path tail, sd, mandatory, issuer's expected code (null: issued)
+        { "decoy,a,b", "arr", 2, "never", null, null },
+        { "decoy,a,b", "arr", 1, "always", null, null },
+        { "decoy,{t},s", "arr.t", null, null, null, null },
+        { "decoy,a", "arr", null, null, true, "VC_CLAIM_MANDATORY_MISSING" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ShiftedIndexes))]
+    public async Task At_issuance_the_complete_payload_only_decides_whether_a_mandatory_claim_was_included(
+        string shape, string tail, int? disclosedIndex, string? sd, bool? mandatory, string? issuerCode)
+    {
+        // Adversarial pass 2: the complete-payload view skips array decoys, so its index 1 is another element than the
+        // as-issued index 1 the verifier judges. It must not add sd or path findings, only a missing mandatory claim.
+        var array = shape switch
+        {
+            "decoy,a,b" => new JsonArray(Decoy(), "a", "b"),
+            "decoy,{t},s" => new JsonArray(Decoy(), new JsonObject { ["t"] = 1 }, "s"),
+            _ => new JsonArray(Decoy(), "a"),
+        };
+        var claims = new JsonObject { ["vct"] = Vct, ["arr"] = array };
+        var path = tail == "arr.t" ? Path("arr", 1, "t") : Path("arr", 1);
+        var metadata = Bytes(SimpleDocument(new JsonArray(ClaimEntry(path, sd, mandatory))));
+        var frame = disclosedIndex is { } index ? new DisclosureFrame().DiscloseArrayElements("arr", index) : new DisclosureFrame();
+
+        var plain = await SdJwtVcIssuer.IssueAsync(claims, frame, Issuer.Signer);
+        ShouldPass(await Verify(plain.Issuance, Options((Vct, metadata))));
+
+        var act = () => SdJwtVcIssuer.IssueWithTypeMetadataAsync(claims, frame, Issuer.Signer, Options((Vct, metadata)));
+        if (issuerCode is null)
+            await act.Should().NotThrowAsync();
+        else
+            (await act.Should().ThrowExactlyAsync<MalformedJoseException>()).Which.Message.Should().StartWith(issuerCode + ":");
+    }
+
+    [Fact]
+    public async Task Claim_metadata_evaluation_is_bounded()
+    {
+        // Adversarial pass 2: the work is claims times selected elements; a 27,000-leaf credential against 27,000 claims
+        // took 22 s. Here 5,000 elements: 700 claims select 3.5 million elements and pass, 1,000 select 5 million and are refused.
+        var elements = new JsonArray();
+        for (var i = 0; i < 5_000; i++)
+            elements.Add((JsonNode)new JsonObject { ["v"] = i });
+        var presentation = await Sign(new JsonObject { ["vct"] = Vct, ["a"] = elements });
+        static byte[] Document(int count)
+        {
+            var claims = new JsonArray();
+            for (var i = 0; i < count; i++)
+                claims.Add((JsonNode)ClaimEntry(Path("a", null, "k" + i)));
+            return Bytes(SimpleDocument(claims));
+        }
+
+        var watch = Stopwatch.StartNew();
+        ShouldPass(await Verify(presentation, Options((Vct, Document(700)))));
+        var refused = await Verify(presentation, Options((Vct, Document(1_000))));
+        watch.Stop();
+
+        ShouldFail(refused, "VC_CLAIM_METADATA_INVALID");
+        refused.Errors.Single().Should().Contain("selects more than 4000000 elements");
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10));
+    }
+
     [Fact]
     public async Task The_processed_metadata_cannot_be_changed_through_a_cast()
     {

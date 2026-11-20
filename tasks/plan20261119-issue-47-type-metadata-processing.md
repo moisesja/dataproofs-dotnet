@@ -179,7 +179,7 @@ Error codes (stable prefixes, as the existing `VC_*` ones): `VC_TYPE_METADATA_UN
 - [x] PublicAPI, sample section, samples-coverage report, PRD FR-17a / AC-3, CHANGELOG
 - [x] Build `/warnaserror`, full suite, ac-6, ac-7, ac-9, every sample; the SD-JWT VC sample with reflection-based
       serialization disabled (no serializer is touched, so the ac-12 legs are not affected)
-- [ ] Adversarial pass, fixes with tests (pass 1 done; pass 2 over the fixes running)
+- [x] Adversarial pass, fixes with tests (two passes; see Review)
 - [ ] PR
 
 ## Changes to the decisions during implementation
@@ -190,6 +190,31 @@ Error codes (stable prefixes, as the existing `VC_*` ones): `VC_TYPE_METADATA_UN
   algorithm's value must be standard base64 of the right length, and (adversarial F4) canonical.
 - Decision 9 gained a second view. At issuance the validator runs on the credential as a verifier sees it and on the
   complete payload with array decoys dropped (adversarial F3), so the issuer refuses whatever the verifier refuses
-  and a decoy cannot stand in for a mandatory element.
+  and a decoy cannot stand in for a mandatory element. Pass 2 showed the complete view also judged `sd` and path
+  errors at indices the decoys had shifted, refusing credentials the verifier accepts; it now reports only a missing
+  mandatory claim, which is what §5.6 ties to "the complete Unsecured Payload".
+- New: a fixed selection budget (4,000,000 path selections per validation). The two size bounds do not bound the work,
+  which is claims times selected elements (pass 2: 22 s for a 27,000-leaf credential against 27,000 claims). A fixed
+  internal bound, like the reconstruction's depth 64, rather than another option.
 
 ## Review
+
+### Adversarial pass 1 (fresh agent; issue, diff and -27 text only), on `e4b6743`
+
+Five findings, all reproduced in its test file and then by a regression test of mine that fails on `e4b6743`:
+F1 quadratic duplicate-path check and merge (1 MiB document: 113 s), F2 integrity hashed over a buffer the resolver
+could still change (34 of 200 runs parsed an unhashed document; 271 of 500 threw past the result contract), F3 an
+array decoy standing in for a mandatory element at issuance, F4 non-canonical base64 matched, F5 "immutable" lists
+mutable through a cast. Fixed in `d0554eb`. Held: strongest-algorithm rule, md5/sha1, base64url, grandparent integrity,
+`vct` variants (NUL, look-alikes, percent-encoding, slash, BOM) for leaf and parent, cycles, depth N/N+1, three-level
+override limits, path encodings, nested and array `sd`, mandatory withheld versus never set, every resolver fault
+shape, no retrieval before the signature, 200-deep nesting, duplicate members, lone surrogates, processing off.
+
+### Adversarial pass 2 (same agent, over the fixes), on `d0554eb`
+
+F1, F2, F4, F5 hold (Adv15 0.2 s; 0 of 214,600 and 0 of 213,000 racing runs). Canonical path keys are injective
+(`"0"`/`0`, `null`/`"null"`, escapes, normalization forms, separators). Without array decoys issuer and verifier agree
+over six shapes in both directions; canonical base64 accepts every conformant spelling for all three lengths; no new
+exception type escapes. Two findings: the complete view judged `sd` and paths at shifted indices (issuer refused what
+the verifier accepts), and the residual fan-out cost. Both fixed in the next commit, with regression tests that fail
+on `d0554eb`.

@@ -118,9 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     directly; array positions count undisclosed elements. A withheld selectively disclosable claim is not a
     missing mandatory one; a mandatory claim is missing only where nothing could hide it. Two consequences to
     know: a verifier cannot tell a withheld `sd: never` member from a decoy, so it is detected only when the
-    claim is also mandatory; and an issuer that adds decoys to arrays shifts the positions -27 counts.
+    claim is also mandatory; and an issuer that adds decoys to arrays shifts the positions -27 counts. The work
+    is bounded: claim metadata whose paths select more than 4,000,000 elements of one credential is refused with
+    `VC_CLAIM_METADATA_INVALID`.
   - *Issuance is checked by the same code:* the verifier's processing runs on the issued credential with every
-    Disclosure, knowing every unresolved digest is a decoy, and the credential is not returned when it fails.
+    Disclosure, knowing every unresolved digest is a decoy, and the credential is not returned when it fails. It
+    refuses whatever that verification refuses, and also a mandatory claim that only a decoy stands in for.
   - *The processed metadata is typed* on `SdJwtVcVerificationResult.ProcessedTypeMetadata`: merged claim
     metadata (`ClaimMetadata`, `ClaimPathComponent`, `ClaimDisplayMetadata`, `ClaimSelectiveDisclosure`) and the
     effective display with rendering (`TypeDisplayMetadata`, `TypeRenderingMetadata`, `SimpleRenderingMetadata`,
