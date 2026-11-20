@@ -32,12 +32,17 @@ internal static class SdJwtReconstructor
     /// <param name="payload">The SD-JWT issuer-signed payload (carries <c>_sd</c>/<c>...</c>/<c>_sd_alg</c>).</param>
     /// <param name="disclosures">The Disclosures presented alongside the SD-JWT.</param>
     /// <param name="sdAlg">The resolved <c>_sd_alg</c> hash algorithm name.</param>
+    /// <param name="trace">
+    /// When supplied, records where each part of the returned payload came from (SD-JWT VC claim metadata reads it,
+    /// draft-ietf-oauth-sd-jwt-vc-27 §5.6). It does not change what is reconstructed or refused.
+    /// </param>
     /// <exception cref="MalformedJoseException">
     /// On a digest that appears more than once in the payload, directly or through a Disclosure, whether or
     /// not a Disclosure matches it; a Disclosure of the wrong shape for its placement; or a Disclosure that is
     /// presented but never referenced (RFC 9901 §7.1 / §10).
     /// </exception>
-    public static JsonObject Reconstruct(JsonObject payload, IReadOnlyList<Disclosure> disclosures, string sdAlg)
+    public static JsonObject Reconstruct(
+        JsonObject payload, IReadOnlyList<Disclosure> disclosures, string sdAlg, ReconstructionTrace? trace = null)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(disclosures);
@@ -53,7 +58,7 @@ internal static class SdJwtReconstructor
                     "Two SD-JWT Disclosures share the same digest; the presentation is malformed (RFC 9901 §7.1).");
         }
 
-        var walk = new Walk(byDigest);
+        var walk = new Walk(byDigest, trace);
         var result = (JsonObject)ProcessNode(payload.DeepClone(), walk, depth: 0)!;
 
         // RFC 9901 §7.1 step 4.3.4: every presented Disclosure MUST be referenced exactly once by
@@ -72,9 +77,11 @@ internal static class SdJwtReconstructor
     /// <summary>
     /// The state of one reconstruction: the Disclosures by digest, and every digest encountered and resolved so far.
     /// </summary>
-    private sealed class Walk(IReadOnlyDictionary<string, Disclosure> byDigest)
+    private sealed class Walk(IReadOnlyDictionary<string, Disclosure> byDigest, ReconstructionTrace? trace)
     {
         public IReadOnlyDictionary<string, Disclosure> ByDigest { get; } = byDigest;
+
+        public ReconstructionTrace? Trace { get; } = trace;
 
         public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
 
@@ -124,6 +131,7 @@ internal static class SdJwtReconstructor
     private static JsonObject ProcessObject(JsonObject obj, Walk walk, int depth)
     {
         var output = new JsonObject();
+        walk.Trace?.AddObject(output);
 
         // First copy non-control members, recursing into them.
         foreach (var (key, value) in obj.ToList())
@@ -157,7 +165,10 @@ internal static class SdJwtReconstructor
                 walk.Encounter(digest);
 
                 if (!walk.ByDigest.TryGetValue(digest, out var disclosure))
+                {
+                    walk.Trace?.AddUnresolvedDigest(output);
                     continue; // No matching Disclosure: a decoy. Ignore it (RFC 9901 §4.2.7).
+                }
 
                 if (disclosure.IsArrayElement)
                     throw new MalformedJoseException("An '_sd' digest resolved to an array-element Disclosure (RFC 9901 §7.1).");
@@ -178,6 +189,7 @@ internal static class SdJwtReconstructor
                         $"Disclosed SD-JWT claim '{name}' collides with a claim already present in the object (RFC 9901 §7.1).");
 
                 output[name] = ProcessNode(disclosure.ClaimValueNode?.DeepClone(), walk, depth + 1);
+                walk.Trace?.AddDisclosedMember(output, name);
             }
         }
 
@@ -187,6 +199,7 @@ internal static class SdJwtReconstructor
     private static JsonArray ProcessArray(JsonArray arr, Walk walk, int depth)
     {
         var output = new JsonArray();
+        walk.Trace?.AddArray(output);
         foreach (var element in arr)
         {
             // An array-element placeholder is an object with exactly one member named "...".
@@ -194,17 +207,22 @@ internal static class SdJwtReconstructor
             {
                 walk.Encounter(digest!);
                 if (!walk.ByDigest.TryGetValue(digest!, out var disclosure))
+                {
+                    walk.Trace?.AddElement(output, ReconstructionTrace.Origin.Undisclosed);
                     continue; // Decoy / undisclosed element: drop it (RFC 9901 §4.2.4.2 / §7.1).
+                }
 
                 if (!disclosure.IsArrayElement)
                     throw new MalformedJoseException("An array '...' placeholder resolved to an object-property Disclosure (RFC 9901 §7.1).");
 
                 walk.Resolve(digest!);
                 output.Add(ProcessNode(disclosure.ClaimValueNode?.DeepClone(), walk, depth + 1));
+                walk.Trace?.AddElement(output, ReconstructionTrace.Origin.Disclosed);
             }
             else
             {
                 output.Add(ProcessNode(element?.DeepClone(), walk, depth + 1));
+                walk.Trace?.AddElement(output, ReconstructionTrace.Origin.Clear);
             }
         }
         return output;

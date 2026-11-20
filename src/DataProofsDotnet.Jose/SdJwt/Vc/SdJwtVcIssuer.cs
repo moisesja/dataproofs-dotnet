@@ -111,4 +111,59 @@ public static class SdJwtVcIssuer
         return SdJwtIssuer.IssueAsync(
             asSigned, frame, signer, options, typ: SdJwtVcConstants.MediaType, cancellationToken);
     }
+
+    /// <summary>
+    /// Issue an SD-JWT VC as <see cref="IssueAsync"/> does, then check it against its Type Metadata
+    /// (draft-ietf-oauth-sd-jwt-vc-27 §5): the SD-JWT VC verifier's own processing
+    /// (<see cref="SdJwtVcVerifier.VerifyWithTypeMetadataAsync"/>) runs on the issued credential with every Disclosure,
+    /// so a credential this returns passes that processing when the holder presents every Disclosure. The documents
+    /// are retrieved through <see cref="TypeMetadataProcessingOptions.Resolver"/> for the signed <c>vct</c> and each
+    /// <c>extends</c> value; a <c>vct#integrity</c> in <paramref name="claims"/> must match the <c>vct</c>'s document.
+    /// Here every Disclosure is known, so a claim missing from an object whose digests are all decoys is missing, and a
+    /// <c>mandatory</c> claim the claims set lacks is refused. The credential is never returned when the check fails.
+    /// </summary>
+    /// <param name="claims">The input claims set (a JSON object). Not mutated.</param>
+    /// <param name="frame">Which claims are selectively disclosable.</param>
+    /// <param name="signer">The Issuer's NetCrypto-backed JWS signer.</param>
+    /// <param name="typeMetadata">The Type Metadata processing options, with the document resolver.</param>
+    /// <param name="options">Issuance options (hash algorithm, decoys, holder cnf key).</param>
+    /// <param name="cancellationToken">Cancels the signing operation and Type Metadata retrieval.</param>
+    /// <exception cref="MalformedJoseException">
+    /// When <see cref="IssueAsync"/> refuses the input, or when the credential fails Type Metadata processing; the
+    /// message starts with the verifier's code (<c>VC_CLAIM_SD_VIOLATION</c>, <c>VC_TYPE_METADATA_INTEGRITY_MISMATCH</c>,
+    /// and so on).
+    /// </exception>
+    /// <exception cref="JoseException">
+    /// Exactly a <see cref="JoseException"/>, not a subtype, with the message starting
+    /// <c>VC_TYPE_METADATA_RESOLVER_FAULT</c>, when the resolver threw: a fault, not a verdict on the credential. The
+    /// resolver's exception is the inner exception.
+    /// </exception>
+    public static async Task<SdJwtIssuer.Result> IssueWithTypeMetadataAsync(
+        JsonObject claims,
+        DisclosureFrame frame,
+        JwsSigner signer,
+        TypeMetadataProcessingOptions typeMetadata,
+        SdJwtIssuerOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(typeMetadata);
+
+        var issued = await IssueAsync(claims, frame, signer, options, cancellationToken).ConfigureAwait(false);
+
+        // Parity with the verifier: the same reconstruction, traced, over what was signed, with every Disclosure.
+        // SdJwtIssuer has already reconstructed these bytes untraced and refused to sign anything that would not verify,
+        // so this walk cannot fail; it is repeated only to record the positions claim metadata is judged on.
+        var signed = CompactJwt.Decode(issued.IssuerJwt).Payload;
+        var trace = new ReconstructionTrace();
+        var processed = SdJwtReconstructor.Reconstruct(signed, issued.Disclosures, SdJwtClaims.ResolveSdAlg(signed), trace);
+
+        var outcome = await TypeMetadataProcessor.ProcessAsync(
+            signed, processed, trace, allDisclosuresPresent: true, typeMetadata, cancellationToken).ConfigureAwait(false);
+        if (outcome.Fault is { } fault)
+            throw new JoseException(outcome.Error!, fault);
+        if (outcome.Error is { } error)
+            throw new MalformedJoseException(error);
+
+        return issued;
+    }
 }

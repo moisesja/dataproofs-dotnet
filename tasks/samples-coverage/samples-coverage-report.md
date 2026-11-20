@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **549**
-- Covered by at least one sample: **547**
+- Public members across 6 packages: **618**
+- Covered by at least one sample: **616**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -424,12 +424,44 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.SignatureAlgorithm`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier (type)`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.Verify`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Description`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Dir`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Label`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Locale`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.Display`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.Mandatory`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.Path`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.SelectiveDisclosure`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimMetadata.SvgId`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent.Index`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent.IsAllElements`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimPathComponent.Key`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ClaimSelectiveDisclosure (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataDocumentResolver (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataDocumentResolver.ResolveDocumentAsync`
 - `DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.ITypeMetadataResolver.ResolveAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataDocumentResolver (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataDocumentResolver..ctor(IReadOnlyDictionary`2)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataDocumentResolver.ResolveDocumentAsync`
 - `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver..ctor()`
 - `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver..ctor(IReadOnlyDictionary`2)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver.ResolveAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Claims`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Description`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Display`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Documents`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Name`
+- `DataProofsDotnet.Jose.SdJwt.Vc.ProcessedTypeMetadata.Vct`
+- `DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata.AltText`
+- `DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata.Uri`
+- `DataProofsDotnet.Jose.SdJwt.Vc.RenderingImageMetadata.UriIntegrity`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.AkaVctsClaim`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MediaType`
@@ -440,15 +472,52 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.VctIntegrityClaim`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer.IssueAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcIssuer.IssueWithTypeMetadataAsync`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.DisclosedPayload`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Errors`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.IsValid`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.KeyBindingVerified`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.ProcessedTypeMetadata`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadata`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadataResolverFault`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Vct`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyWithTypeMetadataAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.BackgroundColor`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.BackgroundImage`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.Logo`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.TextColor`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.ColorScheme`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.Contrast`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.Orientation`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.Uri`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SvgTemplateMetadata.UriIntegrity`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Description`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Dir`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Locale`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Name`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeDisplayMetadata.Rendering`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Compute`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Matches`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Sha256`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Sha384`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Sha512`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions..ctor(ITypeMetadataDocumentResolver)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.DefaultMaxDocumentSize`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.DefaultMaxExtendsDepth`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.MaxDocumentSize`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.MaxExtendsDepth`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions.Resolver`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata.Simple`
+- `DataProofsDotnet.Jose.SdJwt.Vc.TypeRenderingMetadata.SvgTemplates`
 - `DataProofsDotnet.Jose.Signing.JwsBuilder (type)`
 - `DataProofsDotnet.Jose.Signing.JwsBuilder.BuildCompactAsync`
 - `DataProofsDotnet.Jose.Signing.JwsBuilder.BuildJsonAsync`

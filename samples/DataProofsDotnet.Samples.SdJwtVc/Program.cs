@@ -18,7 +18,9 @@ using Base64Url = DataProofsDotnet.Jose.Base64Url;
 //   * registered claims that MUST NOT be selectively disclosed (iss/nbf/exp/cnf/vct/aka_vcts/...),
 //     nor anything inside them, while a nested claim that only shares the name is ordinary,
 //   * offline-by-default Type Metadata (`vct`) resolution via a pluggable resolver hook —
-//     LocalCacheTypeMetadataResolver here, never the network (FR-10 posture).
+//     LocalCacheTypeMetadataResolver here, never the network (FR-10 posture),
+//   * Type Metadata processing on request (draft -27 §5.7, issue #47): integrity, the extends chain,
+//     merged claim metadata the credential must satisfy, typed display metadata for a wallet.
 //
 // Constructed by hand (no DI package).
 
@@ -209,6 +211,144 @@ Check(withoutMetadata.IsValid && withoutMetadata.TypeMetadata is null, "an unres
 Check((await seeded.ResolveAsync(vct))?["vct"]!.GetValue<string>() == vct, "ITypeMetadataResolver.ResolveAsync returns the cached document");
 
 Console.WriteLine();
+
+// ----------------------------------------------------------- 4. Type Metadata processing (§5.7, opt-in)
+Console.WriteLine("--- Type Metadata processing (integrity, extends, claim and display metadata) ---");
+
+// A parent type and the vct's type, as their publishers serve them. Integrity is over these exact octets (§6).
+const string parentVct = "https://credentials.example.com/base_identity";
+byte[] parentDocument = System.Text.Encoding.UTF8.GetBytes(new JsonObject
+{
+    ["vct"] = parentVct,
+    ["claims"] = new JsonArray(
+        new JsonObject { ["path"] = new JsonArray("given_name"), ["sd"] = "always", ["mandatory"] = true },
+        new JsonObject { ["path"] = new JsonArray("address", "country"), ["sd"] = "never" }),
+}.ToJsonString());
+byte[] typeDocument = System.Text.Encoding.UTF8.GetBytes(new JsonObject
+{
+    ["vct"] = vct,
+    ["name"] = "Identity Credential",
+    ["description"] = "An example identity credential type.",
+    ["extends"] = parentVct,
+    ["extends#integrity"] = TypeMetadataIntegrity.Compute(parentDocument, TypeMetadataIntegrity.Sha384),
+    ["display"] = new JsonArray(new JsonObject
+    {
+        ["locale"] = "en-US",
+        ["name"] = "Identity",
+        ["description"] = "Who you are",
+        ["dir"] = "ltr",
+        ["rendering"] = new JsonObject
+        {
+            ["simple"] = new JsonObject
+            {
+                ["logo"] = new JsonObject { ["uri"] = "https://credentials.example.com/logo.png", ["uri#integrity"] = "sha256-LmXfh+9cLlJNXN+TsMk+PmKjZ5t0WRL5ca/xGgX3c1U=", ["alt_text"] = "Logo" },
+                ["background_image"] = new JsonObject { ["uri"] = "https://credentials.example.com/background.png" },
+                ["background_color"] = "#12107c",
+                ["text_color"] = "#FFFFFF",
+            },
+            ["svg_templates"] = new JsonArray(new JsonObject
+            {
+                ["uri"] = "https://credentials.example.com/card.svg",
+                ["properties"] = new JsonObject { ["orientation"] = "landscape", ["color_scheme"] = "light", ["contrast"] = "normal" },
+            }),
+        },
+    }),
+    ["claims"] = new JsonArray(
+        new JsonObject
+        {
+            ["path"] = new JsonArray("given_name"),
+            ["display"] = new JsonArray(new JsonObject { ["locale"] = "en-US", ["label"] = "Given name", ["description"] = "First name", ["dir"] = "auto" }),
+            ["svg_id"] = "given_name",
+        },
+        new JsonObject { ["path"] = new JsonArray("nationalities", null), ["sd"] = "allowed" },
+        new JsonObject { ["path"] = new JsonArray("nationalities", 0) }),
+}.ToJsonString());
+
+// The documents come from the consumer's resolver: an offline local cache of octets here, never the network.
+ITypeMetadataDocumentResolver documents = new LocalCacheTypeMetadataDocumentResolver(new Dictionary<string, byte[]>
+{
+    [vct] = typeDocument,
+    [parentVct] = parentDocument,
+});
+Check((await documents.ResolveDocumentAsync(parentVct))!.SequenceEqual(parentDocument), "ITypeMetadataDocumentResolver.ResolveDocumentAsync returns the octets");
+var processing = new TypeMetadataProcessingOptions(documents)
+{
+    MaxExtendsDepth = TypeMetadataProcessingOptions.DefaultMaxExtendsDepth,
+    MaxDocumentSize = TypeMetadataProcessingOptions.DefaultMaxDocumentSize,
+};
+Console.WriteLine($"  resolver set: {processing.Resolver is not null}, max extends hops: {processing.MaxExtendsDepth}, max document: {processing.MaxDocumentSize} octets");
+
+// The issuer binds the credential to the exact type document with vct#integrity, and checks issuance against the
+// metadata: given_name must be selectively disclosable, address.country must stay in the clear.
+JsonObject typedClaims = VcClaims();
+typedClaims[SdJwtVcConstants.VctIntegrityClaim] = TypeMetadataIntegrity.Compute(typeDocument);
+typedClaims["nationalities"] = new JsonArray("US", "DE");
+var typedFrame = new DisclosureFrame().Disclose("given_name").DiscloseArrayElements("nationalities", 1);
+SdJwtIssuer.Result typedIssued = await SdJwtVcIssuer.IssueWithTypeMetadataAsync(typedClaims, typedFrame, issuerSigner, processing);
+
+string typedPresentation = SdJwtHolder.CreatePresentation(typedIssued.Issuance, []); // present nothing selectively disclosable
+SdJwtVcVerificationResult processed = await SdJwtVcVerifier.VerifyWithTypeMetadataAsync(
+    typedPresentation, resolveIssuer, processing, cryptoProvider: joseCrypto);
+Console.WriteLine($"  processed: valid={processed.IsValid}, fault={processed.TypeMetadataResolverFault is not null}");
+Check(processed.IsValid, "a withheld mandatory claim is not a missing one (§5.6)");
+Check(processed.TypeMetadataResolverFault is null, "no resolver fault");
+
+ProcessedTypeMetadata metadata = processed.ProcessedTypeMetadata!;
+Console.WriteLine($"  type {metadata.Vct}: {metadata.Name} ({metadata.Description}), {metadata.Documents.Count} documents in the chain");
+Check(metadata.Documents.Count == 2 && processed.TypeMetadata!["extends"]!.GetValue<string>() == parentVct, "the extends chain was processed");
+
+TypeDisplayMetadata display = metadata.Display[0];
+Console.WriteLine($"  display [{display.Locale}, {display.Dir}]: {display.Name} - {display.Description}");
+TypeRenderingMetadata rendering = display.Rendering!;
+SimpleRenderingMetadata simple = rendering.Simple!;
+RenderingImageMetadata logo = simple.Logo!;
+Console.WriteLine($"  simple: logo {logo.Uri} ({logo.AltText}, integrity {logo.UriIntegrity is not null}), background {simple.BackgroundImage!.Uri} {simple.BackgroundColor}/{simple.TextColor}");
+SvgTemplateMetadata template = rendering.SvgTemplates[0];
+Console.WriteLine($"  svg: {template.Uri} {template.Orientation}/{template.ColorScheme}/{template.Contrast}, integrity {template.UriIntegrity ?? "(none)"}");
+// A wallet that fetches the logo checks its bytes before use; the library never fetches it.
+Check(!TypeMetadataIntegrity.Matches(logo.UriIntegrity!, "not the logo"u8), "a rendering resource is checked against uri#integrity by the wallet");
+
+foreach (ClaimMetadata claim in metadata.Claims)
+{
+    string path = string.Join(".", claim.Path.Select((ClaimPathComponent c) => c.Key ?? (c.IsAllElements ? "*" : c.Index!.Value.ToString())));
+    ClaimDisplayMetadata? claimDisplay = claim.Display.FirstOrDefault();
+    string label = claimDisplay is { } d ? $"'{d.Label}' [{d.Locale}, {d.Dir}] {d.Description}" : "(no display)";
+    Console.WriteLine($"  claim {path}: mandatory={claim.Mandatory}, sd={claim.SelectiveDisclosure}, svg_id={claim.SvgId ?? "-"}, {label}");
+}
+ClaimMetadata givenName = metadata.Claims.Single(c => c.Path[0].Key == "given_name");
+Check(givenName is { Mandatory: true, SelectiveDisclosure: ClaimSelectiveDisclosure.Always, SvgId: "given_name" },
+    "the child's display and svg_id are combined with the parent's mandatory and sd (§5.6.5)");
+Check(metadata.Claims.Any(c => c.SelectiveDisclosure == ClaimSelectiveDisclosure.Never)
+    && metadata.Claims.Any(c => c.SelectiveDisclosure == ClaimSelectiveDisclosure.Allowed)
+    && metadata.Claims.Any(c => c.Path.Count == 2 && c.Path[1].Index == 0), "every sd value and path component kind is present");
+
+// A credential that contradicts the metadata is refused at issuance and at verification, with a stable code.
+bool contradicted;
+try
+{
+    await SdJwtVcIssuer.IssueWithTypeMetadataAsync(typedClaims, new DisclosureFrame(), issuerSigner, processing);
+    contradicted = false;
+}
+catch (MalformedJoseException ex) when (ex.Message.StartsWith("VC_CLAIM_SD_VIOLATION", StringComparison.Ordinal))
+{
+    contradicted = true;
+}
+Check(contradicted, "issuing given_name in the clear is refused (sd: always)");
+SdJwtIssuer.Result clear = await SdJwtVcIssuer.IssueAsync(typedClaims, new DisclosureFrame(), issuerSigner);
+SdJwtVcVerificationResult refused = await SdJwtVcVerifier.VerifyWithTypeMetadataAsync(clear.Issuance, resolveIssuer, processing, cryptoProvider: joseCrypto);
+Console.WriteLine($"  given_name in the clear: {refused.Errors.FirstOrDefault()}");
+Check(!refused.IsValid && refused.TypeMetadataResolverFault is null, "a contradiction is a verdict");
+
+// A resolver that fails is a fault, told apart from a verdict.
+SdJwtVcVerificationResult faulted = await SdJwtVcVerifier.VerifyWithTypeMetadataAsync(
+    typedPresentation, resolveIssuer, new TypeMetadataProcessingOptions(new UnreachableResolver()), cryptoProvider: joseCrypto);
+Console.WriteLine($"  resolver fault: {faulted.TypeMetadataResolverFault?.GetType().Name} ({faulted.Errors.FirstOrDefault()})");
+Check(!faulted.IsValid && faulted.TypeMetadataResolverFault is HttpRequestException, "a resolver fault is not a verdict");
+Check(processed.ProcessedTypeMetadata is not null && withMetadata.ProcessedTypeMetadata is null, "VerifyAsync does not process");
+Check(TypeMetadataIntegrity.Compute(typeDocument, TypeMetadataIntegrity.Sha512).StartsWith(TypeMetadataIntegrity.Sha512 + "-", StringComparison.Ordinal),
+    "integrity strings name their algorithm");
+
+Console.WriteLine();
 Console.WriteLine("Done! SD-JWT VC example completed successfully.");
 return 0;
 
@@ -217,4 +357,11 @@ static void Check(bool condition, string what)
     if (condition) return;
     Console.WriteLine($"  FAILED: {what}");
     Environment.Exit(1);
+}
+
+/// <summary>A resolver whose network is down: the verifier reports a fault, not a verdict.</summary>
+sealed class UnreachableResolver : ITypeMetadataDocumentResolver
+{
+    public Task<byte[]?> ResolveDocumentAsync(string reference, CancellationToken cancellationToken = default)
+        => throw new HttpRequestException("Type Metadata host unreachable");
 }
