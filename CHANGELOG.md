@@ -143,8 +143,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `X509CertificateChain.Create` from DER certificates, end-entity first. Every JWS that signer produces, compact
     or JSON, and so every JWT, VC-JOSE envelope, SD-JWT and SD-JWT VC, carries it as `x5c` in the **protected**
     header (standard padded base64, as §4.1.6 requires; -27 §2.5 reads it only there). Setting a chain whose
-    end-entity key is not the signer's key throws `ArgumentException`, so the library never emits an `x5c` that
-    cannot verify. A signer without a chain emits exactly the bytes it did before.
+    end-entity key is not the signer's public key (`ISigner.PublicKey`) throws `ArgumentException`, so the library
+    never emits an `x5c` whose end-entity key is not the signer's. A signer without a chain emits exactly the bytes
+    it did before.
   - *Verification.* `JwsParser.ParseCompactWithCertificateChain`, `SdJwtVerifier.VerifyWithCertificateChain` and
     `SdJwtVcVerifier.VerifyWithCertificateChainAsync` (Type Metadata processing optional, through
     `TypeMetadataProcessingOptions`) take a **mandatory** hook, `Func<X509CertificateChain, bool>`, in place of the
@@ -161,10 +162,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     exception from the hook propagates, as one from a `kid` resolver does.
   - *What a well-formed `x5c` is.* A JSON array of 1 to `X509CertificateChain.MaxCertificates` (10) strings, each
     canonical base64 (no base64url, no whitespace, padding required), each exactly one DER certificate whose
-    `TBSCertificate` fields are in RFC 5280 order, no two identical. The end-entity key must be Ed25519, P-256,
-    P-384 or secp256k1, with the `alg` that key's curve produces; RSA, P-521 and other keys are
-    `X5C_UNSUPPORTED_KEY`. EC points are checked on their curve; Ed25519 keys are checked for length, and a key
-    that is no curve point fails at the signature check, before the hook runs. DER is read with the in-box
+    `TBSCertificate` fields are in RFC 5280 order, no two identical. Every TLV is strict DER; two DEFAULT values
+    encoded explicitly, which DER would omit (an explicit v1 version, an explicit critical `FALSE`), are tolerated,
+    as certificate parsers generally do. The end-entity key must be Ed25519, P-256, P-384 or secp256k1, with the
+    `alg` that key's curve produces; RSA, Ed448, other algorithms and other named curves (P-521 among them) are
+    `X5C_UNSUPPORTED_KEY`, and an EC key whose parameters are not a named curve is `X5C_MALFORMED`.
+    `X509CertificateChain.Create` throws `MalformedJoseException` for `X5C_MALFORMED` and `NotSupportedException`
+    for `X5C_UNSUPPORTED_KEY`. EC points are checked on their curve; Ed25519 keys are checked for length, and a key
+    that is no curve point, or a small-order one, fails at the signature check, before the hook runs. DER is read with the in-box
     `System.Formats.Asn1`, which performs no cryptography: no package was added.
   - **What the library does not check: the chain.** It performs no RFC 5280 path validation. It verifies no
     certificate signature and checks no validity period, basic constraints, key usage, name chaining or order,

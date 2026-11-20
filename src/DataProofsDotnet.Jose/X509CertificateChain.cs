@@ -17,7 +17,8 @@ namespace DataProofsDotnet.Jose;
 /// <remarks>
 /// <para>
 /// <b>Parsed, not validated.</b> Building this type checks that each entry is one well-formed DER certificate
-/// with nothing after it and that the end-entity key is one this package verifies with. It does <b>not</b> perform
+/// with nothing after it (an explicit v1 version and an explicit critical <c>FALSE</c>, DEFAULT values DER would omit,
+/// are tolerated) and that the end-entity key is one this package verifies with. It does <b>not</b> perform
 /// RFC 5280 path validation: it checks no certificate signature, validity period, basic constraints, key usage,
 /// name chaining or order, revocation, policy, name constraint or critical extension, and it knows no trust anchor.
 /// RFC 7515 §4.1.6 requires the recipient to validate the chain, and draft-ietf-oauth-sd-jwt-vc-27 §2.5 requires
