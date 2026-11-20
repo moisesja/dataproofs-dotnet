@@ -6,7 +6,8 @@ namespace DataProofsDotnet.Jose.SdJwt;
 /// Verifies SD-JWT presentations (RFC 9901 §7): verifies the Issuer JWT signature, reconstructs
 /// the processed (disclosed) payload by resolving every <c>_sd</c> digest and array-element
 /// <c>{"...": digest}</c> placeholder against the presented Disclosures (rejecting
-/// undisclosed/duplicate/unknown/shape-mismatched digests), and — when a Key Binding JWT is
+/// undisclosed/duplicate/unknown/shape-mismatched digests), checks the validity window of the
+/// processed payload's top-level <c>nbf</c> and <c>exp</c> (§7.1 step 6), and — when a Key Binding JWT is
 /// present or required — verifies it (<c>typ</c>, signature under the SD-JWT's <c>cnf</c> key,
 /// <c>sd_hash</c>, <c>aud</c>, <c>nonce</c>, freshness). Returns a structured
 /// <see cref="SdJwtVerificationResult"/>; a structurally valid but failing presentation yields
@@ -14,10 +15,23 @@ namespace DataProofsDotnet.Jose.SdJwt;
 /// (PRD FR-3/FR-23). Stateless and thread-safe.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The Issuer JWT's <c>typ</c> is not checked here: RFC 9901 §9.11 leaves explicit typing to the
 /// application profile, so this verifier accepts any kind of SD-JWT. A caller verifying one profile
 /// checks its <c>typ</c>; for SD-JWT VC use <see cref="Vc.SdJwtVcVerifier"/>, which accepts only
 /// <c>dc+sd-jwt</c>.
+/// </para>
+/// <para>
+/// <b>Validity window.</b> <c>nbf</c> and <c>exp</c> are both optional; a present one must be a JSON number of
+/// seconds since the epoch (an RFC 7519 NumericDate, fractions allowed) between 0001-01-01 and 9999-12-31, or the
+/// presentation fails with <c>SD_JWT_NBF_INVALID</c> or <c>SD_JWT_EXP_INVALID</c>. They are judged at
+/// <see cref="SdJwtVerificationOptions.CurrentTime"/> (default: now) with <see cref="SdJwtVerificationOptions.ClockSkew"/>:
+/// <c>SD_JWT_NOT_YET_VALID</c> when the time is before <c>nbf</c> − skew, <c>SD_JWT_EXPIRED</c> when it is at or
+/// after <c>exp</c> + skew (RFC 7519 §4.1.4: the time "MUST be before" <c>exp</c>). Only the top-level members are
+/// read, from the processed payload (§7.1 step 6), so an <c>exp</c> the Issuer made selectively disclosable is
+/// checked when it is disclosed and absent when it is withheld; a verifier that needs <c>exp</c> checks its presence
+/// (RFC 9901 §9.7). To judge a credential at another instant, set <see cref="SdJwtVerificationOptions.CurrentTime"/>.
+/// </para>
 /// </remarks>
 public static class SdJwtVerifier
 {
@@ -180,6 +194,16 @@ public static class SdJwtVerifier
         {
             return SdJwtVerificationResult.Failure($"DISCLOSURE_INVALID: {ex.Message}", issuerJwt.Algorithm);
         }
+
+        // 4a. The validity window (RFC 9901 §7.1 step 6): the top-level nbf and exp "in the processed payload, if
+        //     present", against CurrentTime with ClockSkew. Before Key Binding (§7.3 step 4 runs §7.1 first), and so
+        //     before the SD-JWT VC profile rules and any Type Metadata retrieval. A nested member of the same name is an
+        //     ordinary claim. For an SD-JWT VC the value read here is the issuer-signed clear member whenever the
+        //     credential can be accepted: a Disclosure cannot add a top-level exp beside a clear one (step 3.c.ii.3,
+        //     refused above), and one that adds it where none was clear is refused by the profile's positional rule.
+        var windowErrors = ValidityWindow.Check(disclosedPayload, options.CurrentTime ?? DateTimeOffset.UtcNow, options.ClockSkew);
+        if (windowErrors.Count > 0)
+            return SdJwtVerificationResult.Failure(windowErrors, issuerJwt.Algorithm);
 
         // 5. Key Binding (RFC 9901 §7.3).
         var keyBindingVerified = false;

@@ -1,7 +1,8 @@
 namespace DataProofsDotnet.Jose.SdJwt;
 
 /// <summary>
-/// Policy controlling SD-JWT verification and the Key Binding JWT checks (RFC 9901 §7.3).
+/// Policy controlling SD-JWT verification (the validity window of RFC 9901 §7.1 step 6) and the Key Binding JWT
+/// checks (RFC 9901 §7.3).
 /// Immutable; defaults are the strict posture (a present KB-JWT is always cryptographically
 /// verified; <see cref="RequireKeyBinding"/> additionally makes its absence a failure).
 /// </summary>
@@ -35,9 +36,17 @@ public sealed record SdJwtVerificationOptions
     /// </summary>
     public TimeSpan? MaxKeyBindingAge { get; init; }
 
-    /// <summary>Permitted clock skew applied to KB-JWT <c>iat</c> freshness checks. Defaults to 2 minutes.</summary>
+    /// <summary>
+    /// Permitted clock skew, applied to the SD-JWT's validity window (<c>nbf</c> and <c>exp</c>, RFC 9901 §7.1 step 6)
+    /// and to the KB-JWT <c>iat</c> freshness checks. Defaults to 2 minutes. The window is <c>[nbf − skew, exp + skew)</c>:
+    /// a time exactly at <c>nbf − skew</c> is accepted, one exactly at <c>exp + skew</c> is not (RFC 7519 §4.1.4 and §4.1.5).
+    /// A negative value narrows the window; it never widens it.
+    /// </summary>
     public TimeSpan ClockSkew { get; init; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>The reference "now" for freshness checks; <c>null</c> uses <see cref="DateTimeOffset.UtcNow"/> at verify time.</summary>
+    /// <summary>
+    /// The reference "now" for the SD-JWT's validity window and the KB-JWT freshness checks; <c>null</c> uses
+    /// <see cref="DateTimeOffset.UtcNow"/> at verify time. Set it to judge a presentation at another instant.
+    /// </summary>
     public DateTimeOffset? CurrentTime { get; init; }
 }
