@@ -33,8 +33,9 @@ public static class SdJwtIssuer
     /// When the frame references a claim shape the claims set does not have, or the SD-JWT would not verify: an
     /// <c>_sd_alg</c> below the top level (RFC 9901 §4.1.1), a duplicate member name, a Disclosure named <c>_sd</c> or
     /// <c>...</c>, a top-level <c>nbf</c> or <c>exp</c> that is not a NumericDate (a JSON number of seconds, RFC 7519
-    /// §4.1; a <see cref="DateTimeOffset"/> serializes as a string) or is one outside -62135596800 to 253402300799
-    /// (0001-01-01 to 9999-12-31, which RFC 7519 allows and the verifier refuses), or anything else in its content that
+    /// §4.1; a <see cref="DateTimeOffset"/> serializes as a string), or is a NumericDate outside -62135596800 to
+    /// 253402300799 inclusive (0001-01-01T00:00:00Z to 9999-12-31T23:59:59Z; RFC 7519 allows such a value, but the
+    /// verifier refuses it), or anything else in its content that
     /// <see cref="SdJwtVerifier"/> refuses when every Disclosure is presented. The time is not judged: an SD-JWT whose
     /// <c>nbf</c> is in the future, or whose <c>exp</c> has passed, is issued, and fails verification until, or from,
     /// then. A value the serializer cannot write at all, such as a non-finite <see cref="double"/>, fails as it always
@@ -184,9 +185,9 @@ public static class SdJwtIssuer
     /// presented: the payload bytes and the encoded Disclosures are parsed back and reconstructed as a verifier would.
     /// A caller's claims set can carry what RFC 9901 forbids, such as an <c>_sd_alg</c> below the top level (§4.1.1),
     /// a member name twice (RFC 7519 §4), a Disclosure named <c>_sd</c> or <c>...</c>, or a top-level <c>nbf</c> or
-    /// <c>exp</c> that is not a NumericDate or lies outside the years 0001 to 9999, read in the processed payload as the
-    /// verifier reads it; the frame copies it as given, and a .NET object inside a <see cref="JsonValue"/> only shows
-    /// it once serialized, which is why the serialized form is checked.
+    /// <c>exp</c> that is not a NumericDate or lies outside -62135596800 to 253402300799, read in the processed
+    /// payload as the verifier reads it; the frame copies it as given, and a .NET object inside a
+    /// <see cref="JsonValue"/> only shows it once serialized, which is why the serialized form is checked.
     /// </summary>
     /// <exception cref="MalformedJoseException">When the SD-JWT would not reconstruct.</exception>
     private static void EnsureReconstructs(byte[] payloadBytes, IReadOnlyList<Disclosure> disclosures, string sdAlg)

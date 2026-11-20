@@ -36,9 +36,9 @@ public static class SdJwtVcIssuer
     /// <exception cref="MalformedJoseException">
     /// When <c>vct</c> is missing/blank, <c>aka_vcts</c> is malformed, the frame discloses a disallowed claim, a reserved
     /// claim carries selective-disclosure structure, or <see cref="SdJwtIssuer.IssueAsync"/> refuses the SD-JWT, for
-    /// example a present <c>nbf</c> or <c>exp</c> that is not a NumericDate, or is one outside the years 0001 to 9999
-    /// (the verifier's <c>SD_JWT_NBF_INVALID</c> / <c>SD_JWT_EXP_INVALID</c>). Their times are not judged: a credential
-    /// valid from tomorrow is issued.
+    /// example a present <c>nbf</c> or <c>exp</c> that is not a NumericDate, or is one outside -62135596800 to
+    /// 253402300799 (the verifier's <c>SD_JWT_NBF_INVALID</c> / <c>SD_JWT_EXP_INVALID</c>). Their times are not
+    /// judged: a credential valid from tomorrow is issued.
     /// </exception>
     public static Task<SdJwtIssuer.Result> IssueAsync(
         JsonObject claims,

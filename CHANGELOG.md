@@ -13,12 +13,13 @@ issued, every issuer emits the same bytes. **It refuses some credentials that 2.
 library issued.** Read these entries before upgrading:
 
 - an SD-JWT or SD-JWT VC whose `exp` has passed or whose `nbf` is still ahead, or whose `nbf` or `exp` is not a
-  number or lies outside the years 0001 to 9999 (*Fixed*, issue #45);
+  number or lies outside -62135596800 to 253402300799 seconds (0001-01-01T00:00:00Z to 9999-12-31T23:59:59Z),
+  and a Key Binding JWT whose own `nbf` or `exp` fails the same way (*Fixed*, issue #45);
 - an SD-JWT VC with `typ: vc+sd-jwt`, or with an `aka_vcts` that is disclosed or malformed (*Changed*, issue #49);
 - an SD-JWT VC with Disclosures or decoy digests inside a reserved claim such as `status` or `cnf` (*Fixed*, issue
   #48);
-- an SD-JWT with a digest repeated anywhere in the payload, or an `_sd_alg` below the top level (*Fixed*, issue
-  #48).
+- an SD-JWT with a digest repeated anywhere in the payload, an `_sd_alg` below the top level, or a Disclosure
+  named `_sd_alg` (*Fixed*, issue #48).
 
 The SD-JWT issuers also refuse to sign several of these shapes, and each entry says which. A consumer that
 references `System.Formats.Cbor` directly below 10.0.15 must raise that reference (*Security*, issue #50). The
@@ -294,7 +295,7 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
     caller's values as given in every release from 0.1.0-preview.1 to 2.0.0. A credential they issued with an `exp` that
     has now passed, or an `nbf` still ahead, verified until this release and now fails. One they issued with a
     non-number `nbf` or `exp` (a string, or a .NET `DateTimeOffset` placed in the claims set, which serializes as one),
-    or with a NumericDate outside the years 0001 to 9999 (such as `1e20`, which 2.0.0 signed and verified), now fails at
+    or with a NumericDate outside -62135596800 to 253402300799 (such as `1e20`, which 2.0.0 signed and verified), now fails at
     every instant, and both issuers now refuse to sign it, throwing `MalformedJoseException` with the verifier's code. The issuers do not judge the time: a credential valid from tomorrow is still issued.
   - *What to do.* Issuers write `nbf` and `exp` as seconds (`DateTimeOffset.ToUnixTimeSeconds()`) and reissue
     credentials whose holders still need them after `exp`. Verifiers that must judge a credential at another instant,
@@ -371,8 +372,12 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   withheld digest that repeated across `_sd` arrays and `...` placeholders was accepted. Such an SD-JWT now
   fails with `DISCLOSURE_INVALID`, and the message for every repeat is now `An SD-JWT digest appears more
   than once in the payload, ...`. Every newly refused input is invalid under RFC 9901. *This library's own
-  output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
-  the issue #48 adversarial pass; it is a separate commit in that PR.
+  output* is affected only where the caller built the repeat: `SdJwtIssuer` salts every Disclosure and draws
+  every decoy at random, but in every release from 0.1.0-preview.1 to 2.0.0 it, and `SdJwtVcIssuer` through
+  it, copied a caller's claims as given, so a claims set that already held a digest twice, in its own `_sd`
+  arrays or `...` placeholders, was signed and verified. It is now refused at verification, and both issuers
+  refuse to sign it (see "`SdJwtIssuer` does not sign what its own verifier refuses", below). Found by the issue #48 adversarial pass; it is a separate
+  commit in that PR.
 
 - **SD-JWT: an `_sd_alg` below the top level is refused, verifying and issuing.** RFC 9901 §4.1.1:
   `_sd_alg` "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used in any object nested
@@ -408,28 +413,39 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
 The owner fixed this release at 2.1.0 on 2026-11-19, before the six issues were worked, and every change in it
 was held to that. Under the versioning policy in [`RELEASING.md`](RELEASING.md):
 
-- *The public API is additive, at source and binary level.* `DataProofsDotnet.Jose`'s `PublicAPI.Unshipped.txt`
-  gains 90 entries and loses none, and no other package's API changed. No existing member gained a parameter, and
-  every new property is `init`. `[Obsolete]` on `SdJwtVcConstants.TransitionalMediaType` keeps the constant, its
-  value and its `PublicAPI` entry. It raises CS0618, which a build that treats warnings as errors reports as an
-  error, but the contract the policy versions is the source surface those files record, and SemVer §7 makes a
-  deprecation a minor. So the 2.0.0 rule, that a source-breaking change is a major, does not apply.
+- *The public API only adds, which by itself makes this a minor* (SemVer §7, "MINOR version ... MUST be
+  incremented if new, backward compatible functionality is introduced to the public API").
+  `DataProofsDotnet.Jose`'s `PublicAPI.Unshipped.txt` gains 90 entries and loses none, and no other package's API
+  changed. No existing member changed or gained a parameter, so nothing breaks at binary level either. No new
+  property has a `set` accessor; four have `init`.
+- *`[Obsolete]` on `SdJwtVcConstants.TransitionalMediaType` comes closest to a major.* The constant, its value and
+  its `PublicAPI` entry stay, and SemVer §7 makes a deprecation a minor ("It MUST be incremented if any public API
+  functionality is marked as deprecated"). But the policy calls a change non-breaking when "no source has to
+  change", and a consumer that uses the constant and treats warnings as errors does have to change its source: it
+  writes the literal or suppresses CS0618. Every other consumer compiles unchanged, and compiled code is unaffected,
+  since the constant's value is copied into it. This release counts that as a deprecation, not as the source break
+  the 2.0.0 rule makes a major.
 - *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
   appears only when the caller sets `JwsSigner.CertificateChain`.
-- *The accept-set narrows, partly for spec-valid input, which makes this at least a minor.* Most of what is newly
-  refused was invalid under the governing RFC, which alone would be a patch: expired and not-yet-valid credentials
-  and non-number times (RFC 9901 §7.1 step 6; RFC 7519 §4.1.4, §4.1.5), a repeated digest (RFC 9901 §7.1 step 4)
-  and a nested `_sd_alg` (§4.1.1). Five narrowings refuse input that was spec-valid:
-  - a NumericDate outside the years 0001 to 9999, which RFC 7519 allows;
+- *The accept-set narrows, partly for spec-valid input, which is minor or major material and never a patch.* Most of
+  what is newly refused was invalid under the governing RFC: expired and not-yet-valid credentials and non-number
+  times (RFC 9901 §7.1 step 6, §7.3 step 5.h; RFC 7519 §4.1.4, §4.1.5), a repeated digest (RFC 9901 §7.1 step 4), a
+  nested `_sd_alg` (§4.1.1) and a Disclosure named `_sd_alg` beside the top-level one (§7.1 step 3.c.ii.3). Five
+  narrowings refuse input that was spec-valid, or that the draft 2.0.0 pinned, -16, asked Verifiers to accept:
+  - a NumericDate outside -62135596800 to 253402300799 seconds (the years 0001 to 9999), which RFC 7519 allows;
   - decoy digests inside a reserved claim, which RFC 9901 §4.2.5 and -27 allow;
-  - `typ: vc+sd-jwt`, which -16, the draft 2.0.0 pinned, allowed;
-  - a selectively disclosable or free-form `aka_vcts`, which -16 allowed;
+  - `typ: vc+sd-jwt`, which -16 asked Verifiers to accept "for a reasonable transitional period", although its
+    Issuers "MUST use dc+sd-jwt";
+  - a selectively disclosable or free-form `aka_vcts`, a claim -16 did not register;
   - Disclosures inside a reserved claim's subclaims, which -16 left open.
-- *None of them makes it a major.* `RELEASING.md` asks whether a conformant peer could plausibly be depending on
-  the old behaviour today. A peer on -19 or later, or on the RFC to come, emits none of the last three, and no
-  Issuer has a use for a date past 9999. The decoys-only credential is conformant and is refused because a
-  verifier cannot tell it from the withheld Disclosure -27 forbids. This library's `SdJwtVcIssuer` never produced
-  one; its generic `SdJwtIssuer` could, as *Fixed* says.
+- *None of them makes it a major, by this release's judgment.* `RELEASING.md` asks whether a conformant peer could
+  plausibly be depending on the old behaviour today. For the three draft shapes it could not: a peer conforming to
+  -19 or later, and so to the -27 this release pins, sends none of them. The two RFC shapes are less clean. A
+  conformant peer could send them, and this library's 2.0.0 issuers could produce both: both issuers signed
+  `exp: 1e20`, and the generic `SdJwtIssuer` could put decoys inside `status` (the `SdJwtVcIssuer` never did from
+  a `DisclosureFrame`). They are refused anyway, because neither has a known use and refusing fails closed: an
+  `exp` past 9999 means nothing for a credential, and a verifier cannot tell decoys inside a reserved claim from the
+  withheld Disclosures -27 forbids.
 
 ## [2.0.0] - 2026-11-02
 
