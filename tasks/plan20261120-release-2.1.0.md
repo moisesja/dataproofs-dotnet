@@ -36,24 +36,61 @@
 
 ## Checklist
 
-- [ ] CHANGELOG: `## [Unreleased]` becomes `## [2.1.0] - <date>`, with a lead paragraph and a `### Why this is a
+- [x] CHANGELOG: `## [Unreleased]` becomes `## [2.1.0] - <date>`, with a lead paragraph and a `### Why this is a
       minor and not a major` subsection.
-- [ ] CHANGELOG audit corrections:
-  - [ ] #45: the issuers refuse out-of-range NumericDates.
-  - [ ] #48: decoys inside a reserved claim are a spec-valid narrowing.
-  - [ ] #46 and #47: scope "nothing changes" to their feature.
-  - [ ] #50: NU1605 for a direct Cbor pin below 10.0.15.
-  - [ ] #49: `TransitionalMediaType` has no replacement constant.
-- [ ] XML docs on `SdJwtIssuer.IssueAsync` and `SdJwtVcIssuer.IssueAsync`: name the refused range.
-- [ ] `Directory.Build.props`: `DataProofsVersion` 2.0.0 becomes 2.1.0, and the comment follows.
-- [ ] RELEASING.md:
-  - [ ] the 2.1.0 worked example;
-  - [ ] fix the "-preview dev default" sentence;
-  - [ ] add the credentials-dotnet row to the downstream table.
-- [ ] Verify: build `/warnaserror`; the full test suite with zero skips; `dotnet pack` gives 2.1.0 packages;
+- [x] CHANGELOG audit corrections:
+  - [x] #45: the issuers refuse out-of-range NumericDates.
+  - [x] #48: decoys inside a reserved claim are a spec-valid narrowing.
+  - [x] #46 and #47: scope "nothing changes" to their feature.
+  - [x] #50: NU1605 for a direct Cbor pin below 10.0.15.
+  - [x] #49: `TransitionalMediaType` has no replacement constant.
+- [x] XML docs on `SdJwtIssuer.IssueAsync` and `SdJwtVcIssuer.IssueAsync`: name the refused range.
+- [x] `Directory.Build.props`: `DataProofsVersion` 2.0.0 becomes 2.1.0, and the comment follows.
+- [x] RELEASING.md:
+  - [x] the 2.1.0 worked example;
+  - [x] fix the "-preview dev default" sentence;
+  - [x] add the credentials-dotnet row to the downstream table.
+- [x] Verify: build `/warnaserror`; the full test suite with zero skips; `dotnet pack` gives 2.1.0 packages;
       `git diff origin/main -- src/` shows only XML docs.
-- [ ] Independent check of the final CHANGELOG claims against the code.
+- [x] Independent check of the final CHANGELOG claims against the code.
 - [ ] PR, with CI passing 12/12.
 - [ ] Thorough review; fix findings; merge on a ready verdict for the current head. No tag.
 
 ## Review
+
+### Before the PR: the independent claim check (7fea1d9 → a11a0e7)
+
+A fresh agent got the diff and the instruction to falsify every added claim. It used reproductions against the
+2.0.0 NuGet packages, the spec texts and the downstream repositories, and did not see this plan.
+
+**Twelve findings, all fixed in a11a0e7:**
+- Four claims about this library's own output or its API were wrong:
+  - "every new property is `init`": 45 of the 49 are get-only;
+  - "`SdJwtVcIssuer` never produced one": false for a caller-built `_sd`;
+  - the repeated-digest entry's "own output unaffected": false for caller-built repeats;
+  - the two RFC-valid shapes "have no conformant producer": the 2.0.0 issuers produced both.
+- One spec reading was overstated: `vc+sd-jwt` under -16 was asked of Verifiers, and forbidden to Issuers.
+- Two lists were incomplete:
+  - the lead list missed the KB-JWT's own `nbf`/`exp` and a Disclosure named `_sd_alg`;
+  - the worked example named two of "three" draft shapes, and its date range missed years before 0001.
+- The credentials-dotnet row was wrong in two places: no project there references the DI package, and seven
+  issues wait for this release, not four; #35 waits for none.
+- The range wording was imprecise: "years 0001 to 9999" missed that 253402300799.5 is refused.
+- The new dev-default sentence contradicted the `ci.yml` comment.
+- The [Obsolete] tension was unstated: the policy says "no source has to change", and a warnings-as-errors
+  consumer of the constant must change its source.
+- RELEASING called the release "a patch" from the accept-set alone, but the additive API alone makes a minor.
+
+I checked three findings myself before fixing them: the 4-of-49 `init` count from `PublicAPI.Unshipped.txt`, the
+`ci.yml` comment, and the credentials-dotnet issues. That last check also showed its Cbor pin is at 10.0.15, so
+the NU1605 note does not apply to it.
+
+**Earlier evidence:**
+- NU1605 was reproduced against a local 2.1.0 pack of Cose. The two local 2.1.0 packages it put in the global
+  NuGet cache were removed afterwards.
+- `dotnet build -c Release /warnaserror` is clean; `dotnet test` passes 4,042 tests with 0 skipped; `dotnet pack`
+  gives all six packages at 2.1.0.
+
+**Two new policy sentences for the owner to keep or strike** (RELEASING.md, worked example 2.1.0):
+- "A narrowing whose refused shape has a known conformant use is a major."
+- "marking a member `[Obsolete]` while keeping it working is a minor".
