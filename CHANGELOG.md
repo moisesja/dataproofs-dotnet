@@ -138,8 +138,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `SdJwtVcIssuer` refuses the same frames as before, and its message now adds "and neither may any of its
   subclaims". It now also throws `MalformedJoseException` for a claims set whose reserved claim holds a
-  disclosure site the caller built, which it used to sign as given; it reads the claims as they will be
-  signed, so a `JsonValue` wrapping a .NET object that serializes with an `_sd` member is caught too. A Disclosure
+  disclosure site the caller built, which it used to sign as given. It serializes the claims once, checks
+  that JSON and signs it, so a `JsonValue` wrapping a .NET object that serializes with an `_sd` member is
+  caught too, and a claims set that serializes with a duplicate member name (RFC 7519 §4: claim names
+  "MUST be unique") now throws `MalformedJoseException` instead of being signed and refused at
+  verification. A claims set the serializer cannot write still fails through the returned task. A Disclosure
   referenced from the top-level `_sd` hides its name behind its digest, so when it is withheld no verifier
   can tell that it was a reserved claim: keeping those claims in the clear is the issuer's duty. The
   generic `SdJwtVerifier` does not apply the rule, which belongs to the SD-JWT VC profile.
@@ -150,14 +153,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repeat only within one `_sd` array, or when a presented Disclosure was referenced twice; a decoy or
   withheld digest that repeated across `_sd` arrays and `...` placeholders was accepted. Such an SD-JWT now
   fails with `DISCLOSURE_INVALID`, and the message for every repeat is now `An SD-JWT digest appears more
-  than once in the payload, ...`. The walk also skipped every `_sd_alg` member at any depth, dropping its
-  value unread, digests included; RFC 9901 §4.1.1 says `_sd_alg` "MUST NOT be used in any object nested
-  within the payload", so a nested `_sd_alg`, in the clear or in a disclosed value, now fails with
-  `DISCLOSURE_INVALID` instead of disappearing from the processed payload. Every newly refused input is
-  invalid under RFC 9901. *This library's own output:* `SdJwtIssuer` salts every Disclosure and draws every
-  decoy at random, so it never repeats a digest; it copies a nested `_sd_alg` from a caller's claims set
-  as given, and such an SD-JWT is now refused. Found by the issue #48 adversarial passes; these are
-  separate commits in that PR.
+  than once in the payload, ...`. Every newly refused input is invalid under RFC 9901. *This library's own
+  output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
+  the issue #48 adversarial pass; it is a separate commit in that PR.
+
+- **SD-JWT: `_sd_alg` is a control claim only at the top level.** The reconstructor skipped an `_sd_alg`
+  member at every depth, so a nested one vanished from the processed payload unread, with any digests
+  under it out of reach of the step 4 check. RFC 9901 §4.1.1 puts `_sd_alg` at the top level only, and
+  §7.1 step 3.f removes only that one, so a nested `_sd_alg` is now processed and kept like any other
+  member. *This library's own output:* `SdJwtIssuer` copies a nested `_sd_alg` from a caller's claims set
+  as given; such an SD-JWT verifies as before and now keeps the member. Separately, a Disclosure named
+  `_sd_alg` beside the top-level `_sd_alg` is now refused as a name clash (§7.1 step 3.c.ii.3: "If the
+  claim name already exists at the level of the _sd key, the SD-JWT MUST be rejected"); it used to
+  replace `_sd_alg` in the processed payload. Found by the issue #48 adversarial passes; separate
+  commits in that PR.
 
 ## [2.0.0] - 2026-11-02
 

@@ -88,17 +88,24 @@ RFC 9901:
    the claims set.** Every Disclosure a top-level entry makes (flat, structured, recursive, array element) sits at or
    under that entry's claim, so the top-level names decide; 2.0.0 already behaved this way. A caller can also build a
    disclosure site into a reserved claim of the claims set, which `SdJwtIssuer` signed as given (first adversarial
-   pass, A9a). The scan reads the claims as `SdJwtIssuer` will sign them, cloned and serialized, because a `JsonValue`
-   can wrap a .NET object that only becomes a JSON object there (second pass, A2). The depth behaviour of issuance is
-   unchanged (checked: claims sets of depth 60 to 200 fail and pass exactly as with the generic issuer). Alternative:
-   issue, then run the verifier's check on the result. Lost: it signs before it refuses.
-6. **RFC 9901 §7.1 step 4 and §4.1.1 in the reconstructor, each in its own commit.** The reconstructor refused a
-   repeated digest only within one `_sd` array or when a Disclosure resolved it twice (first pass, X1), and it skipped
-   every `_sd_alg` member at any depth, so a digest under a nested one was never seen and the member vanished from
-   the processed payload (second pass, A1). Now every embedded digest is tracked for the whole walk and a nested
-   `_sd_alg` is refused. Both are in the code this PR changes and a few lines each; the brief's default is to fix such
-   defects in the PR. Separate commits so each can be dropped alone. Every newly refused input is invalid under
-   RFC 9901.
+   pass, A9a). A `JsonValue` can wrap a .NET object that only becomes a JSON object when serialized (second pass, A2),
+   and could serialize differently the next time (third pass, P3_06), so the issuer serializes the claims once, checks
+   that JSON and hands that JSON to `SdJwtIssuer`. The same parse refuses duplicate member names (RFC 7519 §4), which
+   had escaped as `ArgumentException`. A claims set the serializer cannot write (depth, a non-finite number, a throwing
+   getter) still fails through the returned task, as it did inside `SdJwtIssuer`; depth behaviour is unchanged
+   (checked from 60 to 200 against the generic issuer). Alternative: issue, then run the verifier's check on the
+   result. Lost: it signs before it refuses.
+6. **RFC 9901 §7.1 step 4 and the top-level-only `_sd_alg` in the reconstructor, in their own commits.** The
+   reconstructor refused a repeated digest only within one `_sd` array or when a Disclosure resolved it twice (first
+   pass, X1), and it skipped every `_sd_alg` member at any depth, so a digest under a nested one was never seen and the
+   member vanished from the processed payload (second pass, A1). Now every embedded digest is tracked for the whole
+   walk, and a nested `_sd_alg` is processed like any other member (`_sd_alg` is a control claim only at the top
+   level, §4.1.1 and §7.1 step 3.f). This decision moved: `80880e8` first refused a nested `_sd_alg` (§4.1.1 "MUST NOT
+   be used in any object nested"), but `SdJwtIssuer` signs one from a caller's claims as given, so the library refused
+   its own output (third pass, P3_07); `2e18450` walks it instead, which closes A1 without a new refusal. The same
+   commit makes a Disclosure named `_sd_alg` beside the top-level one a name clash (§7.1 step 3.c.ii.3, third pass
+   P3_08). All in the code this PR changes and a few lines each; the brief's default is to fix such defects in the PR.
+   Separate commits so each can be dropped alone.
 7. **Failure messages** are #52's: `SD-JWT VC claim 'x' MUST NOT be selectively disclosed (… §2.2.2.3)` for a top-level
    Disclosure (unchanged from 2.0.0) and `SD-JWT VC claim 'x' MUST NOT have selectively disclosable sub-claims or
    elements (…)` for a site inside one.
@@ -114,23 +121,24 @@ RFC 9901:
       and verification; regression tests fail on `origin/main` and on #52's head.
 - [x] PRD FR-16, FR-17 and AC-3 step 5, `SdJwtVcConstants`, issuer and verifier docs, sample, CHANGELOG.
 - [x] Build `/warnaserror`, full test run, `ac-7`, `ac-9`.
-- [ ] Adversarial passes, fixes re-attacked.
+- [x] Adversarial passes, fixes re-attacked.
 - [ ] PR, CI green.
 
 ## Verification
 
-- `Issue48ReservedClaimPositionTests` and `SdJwtDigestUniquenessTests` (116 tests, public API only) copied alone onto
-  `c4bf7fb` (origin/main): 54 fail; onto `912b975` (#52's head): 41 fail; on this branch: 116 pass. The passing ones
+- `Issue48ReservedClaimPositionTests` and `SdJwtDigestUniquenessTests` (121 tests, public API only) copied alone onto
+  `c4bf7fb` (origin/main): 57 fail; onto `912b975` (#52's head): 44 fail; on this branch: 121 pass. The passing ones
   on the bases are guards: frame entries on reserved claims (already refused at the top level in every release),
   top-level reserved Disclosures, the `given_name` control row, clear-plus-Disclosure collisions, unreferenced
   Disclosures, distinct decoys, repeats 2.0.0 already refused, and (on #52's head) the `aka_vcts` cases #52 fixed.
-- Mutation: with the signed-payload scan disabled, 12 tests fail (every withheld and decoy case). The empty-`_sd`, the
-  `JsonValue` issuer case and the nested `_sd_alg` cases each failed before their fix.
+- Mutation: with the signed-payload scan disabled, 12 tests fail (every withheld and decoy case). With the issuer
+  signing the caller's claims instead of the JSON it checked, the P3_06 test fails. The empty-`_sd`, `JsonValue`,
+  duplicate-member and nested `_sd_alg` cases each failed before their fix.
 - Issuance depth: claims sets nested 60 to 200 deep give the same outcome through `SdJwtVcIssuer` as through the
   generic `SdJwtIssuer` (pass up to 63, the serializer's `InvalidOperationException` from 64), so the as-signed scan
   changes nothing there.
 - `dotnet build DataProofsDotnet.sln -c Release --no-incremental /warnaserror`: 0 warnings, 0 errors.
-- `dotnet test DataProofsDotnet.sln -c Release --no-build`: 3491 passed, 0 failed, 0 skipped (Jose 1520).
+- `dotnet test DataProofsDotnet.sln -c Release --no-build`: 3496 passed, 0 failed, 0 skipped (Jose 1525).
 - `ac-7` `tasks/api-surface-scan`: clean. `ac-9` `tasks/samples-coverage`: OK, 549 members (547 covered, 2
   allowlisted); all 15 samples exit 0. No public API change, so `PublicAPI.Unshipped.txt` is untouched by this issue.
 
@@ -154,13 +162,22 @@ claim was refused; fixed). Not changed: a withheld top-level Disclosure of a who
 from a decoy (documented); a Disclosure named `_sd_alg` beside a clear one is not a name clash (generic, follow-up);
 neither verifier checks `exp`/`nbf` (#45).
 
+**Pass 3** (the pass 2 agent, sent back over the fixes at `80880e8`; 59 probes). A1 and A3 closed; A2's reported case
+closed. Found: P3_06 (the issuer checked one serialization and signed another; fixed, decision 5), P3_07 (refusing a
+nested `_sd_alg` refused the issuers' own output; decision 6 moved), P3_08 (a Disclosure named `_sd_alg` beside the
+top-level one replaced it; fixed), a duplicate member name inside a reserved claim escaping as `ArgumentException`
+(fixed), and the serializer's exceptions moving from the task to the call (restored). Attacked without success: the
+signed-versus-processed rule against everything the positions caught, presented and withheld, per reserved name;
+`_sd` values `null`, `{}`, `"x"`, `0`, `false`, `[null]`, `[1]`, `[""]`, `[[]]`, `[{}]` and escaped; an empty `_sd`
+masking a site; every vendored fixture; size and depth.
+
 ## Follow-ups (not done here)
 
 - Generic `SdJwtIssuer` input rule: refuse a caller-built `_sd`, `_sd_alg` or `...` placeholder in the claims set
   (RFC 9901 §4.1 rule 7). It signs them as given, and silently overwrites a caller's `_sd` when the frame makes digests
   at the same level. A top-level one can hide a reserved claim that no verifier can see.
-- Generic reconstructor: a Disclosure named `_sd_alg` is not treated as clashing with a clear `_sd_alg` (RFC 9901
-  §7.1 step 3.c.ii.3).
+- Issuance at depth 63: both issuers sign a claims set the reconstructor's depth bound of 64 then refuses
+  (pre-existing).
 - #45: neither verifier checks `exp` or `nbf` (RFC 9901 §7.1 step 6).
 
 ## Review
