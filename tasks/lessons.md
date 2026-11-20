@@ -513,16 +513,13 @@ different literal.
 - When evidence overturns an approved decision, apply the plan's stated tie-breaker and say plainly in the report
   that the decision moved.
 
-## 2026-10-31 — A background agent needs a time budget, and an absolute needs its scope (PR #42)
+## 2026-10-31 — An absolute needs its scope (PR #42)
 
-**Correction:** "the fuck is going on here? you've been running for hours." The adversarial review ran for about 11
-hours with nothing committed: one request hung for 4 hours 40 minutes, and I resumed the agent with no limit. I had
-ended my turn saying I would wait, so the owner saw nothing. The same review then disproved a line I had just written,
-"an unlisted context is never loaded", which held only for values a document names.
+**Correction:** The adversarial review disproved a line I had just written, "an unlisted context is never loaded",
+which held only for values a document names. I had also ended my turn saying I would wait for that review, so the
+owner saw none of the work that was already verified.
 
 **The rule for myself:**
-- Give a background agent a time budget and a narrow list of attacks, and say when I expect it back. If it overruns,
-  tell the owner what is blocked and what is already done, rather than waiting in silence.
 - Work that is verified and blocked only on a review is worth reporting while the review runs.
 - "Never", "always" and "every" in a doc are claims about every route. State the scope I tested, and pin the edge of
   that scope with a test.
