@@ -4,7 +4,8 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 
 /// <summary>
 /// Verifies SD-JWT VC presentations (draft-ietf-oauth-sd-jwt-vc-27 §2.4): runs the generic
-/// SD-JWT verification (FR-16) and then enforces the profile rules — the issuer-JWT <c>typ</c> is
+/// SD-JWT verification (FR-16), which includes the validity window of the issuer-signed <c>nbf</c> and
+/// <c>exp</c>, and then enforces the profile rules — the issuer-JWT <c>typ</c> is
 /// exactly <c>dc+sd-jwt</c> (§2.2.1; the former <c>vc+sd-jwt</c> is rejected), the REQUIRED
 /// <c>vct</c> claim (§2.2.2.1), a well-formed <c>aka_vcts</c> claim when present (§2.2.2.2), and
 /// the rule that no registered must-not-disclose claim, nor anything inside one, was selectively
@@ -16,21 +17,37 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// on a structurally valid but failing presentation (PRD FR-3/FR-23). Stateless and thread-safe.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>Validity window (§2.2.2.3: <c>nbf</c> is "The time before which the Verifiable Digital Credential MUST NOT be
+/// accepted", <c>exp</c> the time "after which the Verifiable Digital Credential is no longer valid").</b> Every method
+/// here judges both, as <see cref="SdJwtVerifier"/> does, at <see cref="SdJwtVerificationOptions.CurrentTime"/> with
+/// <see cref="SdJwtVerificationOptions.ClockSkew"/>, after the signature (and, under <c>x5c</c>, the certificate hook)
+/// and before the Key Binding JWT, the profile rules and any Type Metadata retrieval: <c>SD_JWT_EXPIRED</c>, <c>SD_JWT_NOT_YET_VALID</c>, and <c>SD_JWT_EXP_INVALID</c>
+/// or <c>SD_JWT_NBF_INVALID</c> for a present value that is not a NumericDate. Both claims are optional. The value
+/// judged is the top-level member the Issuer signed in the clear: a Disclosure cannot add one beside it (RFC 9901 §7.1
+/// step 3.c.ii.3) or where there is none (the positional rule, <c>VC_DISALLOWED_DISCLOSURE</c>), and a nested member
+/// such as <c>credentialSubject.exp</c> is an ordinary claim.
+/// </para>
+/// <para>
 /// Not done here, and left to the caller: checking <c>status</c> (§2.4 says a Verifier SHOULD), and the
 /// Issuer key discovery and validation policy of §2.5, which the <c>resolveIssuerPublicJwk</c> callback
 /// stands for, or, for the Inline X.509 Certificates mechanism, the chain validation hook of
 /// <see cref="VerifyWithCertificateChainAsync"/>. The caller chooses the mechanism by the method it calls. Nor does Type Metadata establish trust or authorization (§7.7, §7.8): a type that extends a
 /// known type gives its issuer no authority to issue it.
+/// </para>
 /// </remarks>
 public static class SdJwtVcVerifier
 {
     /// <summary>
-    /// Verify a presented SD-JWT VC against the Issuer's public key and the profile rules,
+    /// Verify a presented SD-JWT VC against the Issuer's public key, its validity window and the profile rules,
     /// optionally retrieving Type Metadata for the <c>vct</c>.
     /// </summary>
     /// <param name="presentation">The presented SD-JWT VC (issuer JWT, disclosures, optional KB-JWT).</param>
     /// <param name="resolveIssuerPublicJwk">Maps the issuer-JWT <c>kid</c> (empty when absent) to the Issuer's public JWK.</param>
-    /// <param name="options">SD-JWT verification/Key-Binding policy; <c>null</c> uses the defaults.</param>
+    /// <param name="options">
+    /// SD-JWT verification/Key-Binding policy; <c>null</c> uses the defaults. Its <see cref="SdJwtVerificationOptions.CurrentTime"/>
+    /// and <see cref="SdJwtVerificationOptions.ClockSkew"/> also judge <c>nbf</c> and <c>exp</c>.
+    /// </param>
     /// <param name="typeMetadataResolver">
     /// Optional <c>vct</c> Type Metadata resolver; <c>null</c> skips metadata retrieval. Default
     /// implementations are offline (<see cref="LocalCacheTypeMetadataResolver"/>).
@@ -73,8 +90,8 @@ public static class SdJwtVcVerifier
     /// withheld selectively disclosable claim is not a missing mandatory one.
     /// </summary>
     /// <remarks>
-    /// Metadata is retrieved only after the issuer signature and every profile rule have passed, so an unauthenticated
-    /// presentation never makes the resolver fetch anything. A failure returns <see cref="SdJwtVcVerificationResult.IsValid"/>
+    /// Metadata is retrieved only after the issuer signature, the validity window and every profile rule have passed, so
+    /// an unauthenticated, expired or not yet valid presentation never makes the resolver fetch anything. A failure returns <see cref="SdJwtVcVerificationResult.IsValid"/>
     /// <c>false</c> with a stable code: <c>VC_TYPE_METADATA_UNAVAILABLE</c>, <c>VC_TYPE_METADATA_INVALID</c>,
     /// <c>VC_TYPE_METADATA_INTEGRITY_INVALID</c>, <c>VC_TYPE_METADATA_INTEGRITY_MISMATCH</c>,
     /// <c>VC_TYPE_METADATA_VCT_MISMATCH</c>, <c>VC_TYPE_METADATA_EXTENDS_CYCLE</c>, <c>VC_TYPE_METADATA_EXTENDS_DEPTH</c>,
@@ -136,8 +153,9 @@ public static class SdJwtVcVerifier
     /// Failures are coded: those of <see cref="VerifyAsync"/> and <see cref="VerifyWithTypeMetadataAsync"/>, with
     /// <c>X5C_MISSING</c>, <c>X5C_MALFORMED</c>, <c>X5C_UNSUPPORTED_KEY</c> and <c>X5C_UNTRUSTED</c> (the hook returned
     /// <c>false</c>) in place of the <c>kid</c> resolver's <c>ISSUER_KEY_UNRESOLVED</c>; a signature that does not verify
-    /// under the end-entity key is <c>ISSUER_SIGNATURE_INVALID</c>. Type Metadata is retrieved only after the hook
-    /// accepted the chain and every profile rule passed. A cancellation of <paramref name="cancellationToken"/> propagates.
+    /// under the end-entity key is <c>ISSUER_SIGNATURE_INVALID</c>. The validity window is judged after the hook, which
+    /// is called for an expired credential too. Type Metadata is retrieved only after the hook accepted the chain, the
+    /// window held and every profile rule passed. A cancellation of <paramref name="cancellationToken"/> propagates.
     /// </para>
     /// </remarks>
     /// <param name="presentation">The presented SD-JWT VC (issuer JWT, disclosures, optional KB-JWT).</param>
