@@ -393,8 +393,9 @@ public sealed class JwsX5cTests
         var leaf = CreateLeaf(KeyType.P256);
         var der = leaf.Certificate;
         var b64 = Convert.ToBase64String(der);
-        // A DER length that is a multiple of 3 has no padding, so give the unpadded case its own certificate.
-        var padded = Enumerable.Range(0, 8).Select(_ => CreateLeaf(KeyType.P256).Certificate).First(c => c.Length % 3 != 0);
+        // A DER length that is a multiple of 3 has no padding, so the padding cases use a certificate whose length is
+        // known not to be one (PR #56 review round 2: this used to search random certificates for one).
+        var padded = PaddedCertificate();
         var paddedB64 = Convert.ToBase64String(padded);
         var pem = string.Join("\n", Enumerable.Range(0, (b64.Length + 63) / 64).Select(i => b64.Substring(i * 64, Math.Min(64, b64.Length - (i * 64)))));
         var nonCanonical = NonCanonicalPadBits(paddedB64);
@@ -611,6 +612,23 @@ public sealed class JwsX5cTests
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>
+    /// A certificate whose DER length is not a multiple of 3, so its base64 ends in padding. Assembled certificates
+    /// have a length fixed by their inputs, so one of three subject lengths (each one byte longer) is the answer, and it
+    /// is the same one on every run.
+    /// </summary>
+    public static byte[] PaddedCertificate()
+    {
+        var key = new DefaultKeyGenerator().Generate(KeyType.P256);
+        foreach (var subject in new[] { "Padded", "Padded1", "Padded12" })
+        {
+            var certificate = Assemble(Spki(key), subject);
+            if (certificate.Length % 3 != 0)
+                return certificate;
+        }
+        throw new InvalidOperationException("Unreachable: three consecutive lengths include one that is not a multiple of 3.");
+    }
 
     /// <summary>The same bytes in base64 with a non-zero bit in the last character's unused bits.</summary>
     private static string NonCanonicalPadBits(string padded)

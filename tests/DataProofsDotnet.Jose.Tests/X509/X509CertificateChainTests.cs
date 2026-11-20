@@ -219,7 +219,9 @@ public sealed class X509CertificateChainTests
 
     public static TheoryData<string, byte[]> MalformedKeys()
     {
-        var p256 = new DefaultKeyGenerator().Generate(KeyType.P256);
+        // A fixed key, so the off-curve row is off the curve on every run (flipping a random y's low bit is only
+        // overwhelmingly likely to leave the curve).
+        var p256 = new DefaultKeyGenerator().FromPrivateKey(KeyType.P256, Enumerable.Repeat((byte)0x47, 32).ToArray());
         var jwk = JwkConversion.ToPublicJwk(p256.KeyType, p256.PublicKey);
         var x = Base64Url.Decode(jwk.X!);
         var y = Base64Url.Decode(jwk.Y!);

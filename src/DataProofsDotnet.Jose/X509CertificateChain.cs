@@ -17,15 +17,20 @@ namespace DataProofsDotnet.Jose;
 /// <remarks>
 /// <para>
 /// <b>Parsed, not validated.</b> Building this type reads each entry as exactly one DER certificate with nothing after
-/// it. Every TLV is read under DER rules: each field of <c>TBSCertificate</c> for its tag and position, each issuer and
-/// subject Name down to its attribute values, each AlgorithmIdentifier's parameters, and each extension with the DER
-/// value inside its <c>extnValue</c>; no extension may appear twice (RFC 5280 §4.2). Inside values the schema leaves
-/// open (attribute values, parameters, extension values) every nested TLV is read too, to a depth of 32, with DER's
-/// content rules for BOOLEAN, INTEGER, ENUMERATED, BIT STRING, NULL, OBJECT IDENTIFIER and the two time types; the bytes
-/// of strings and OCTET STRINGs are not interpreted (a character set is a type constraint, not an encoding rule), and the
-/// contents of the signature and public-key BIT STRINGs are not TLVs and are not read, except the end-entity key. Two
-/// DEFAULT values encoded explicitly, which DER would omit (an explicit v1 version, an explicit critical <c>FALSE</c>),
-/// are tolerated, as certificate parsers generally do.
+/// it. Where RFC 5280 gives the schema, it is read field by field under DER rules: each field of <c>TBSCertificate</c>
+/// for its tag and position, each issuer and subject Name down to its attribute values (each RDN a non-empty SET OF in
+/// DER order), each AlgorithmIdentifier, and each extension, whose <c>extnValue</c> must hold exactly one DER TLV; no
+/// extension may appear twice (RFC 5280 §4.2). Where the schema is open (attribute values, algorithm parameters,
+/// extension values), every nested TLV is read too, to a depth of 32, but only against the DER rules that hold whatever
+/// the schema: minimal lengths and tags; primitive encodings for the universal types DER always encodes primitively and
+/// constructed ones for SEQUENCE, SET, EXTERNAL, EMBEDDED PDV and CHARACTER STRING; and DER's content rules for
+/// BOOLEAN, INTEGER, ENUMERATED, BIT STRING unused bits, NULL, OBJECT IDENTIFIER, UTCTime and GeneralizedTime. Without
+/// the schema the order of a SET's elements, DEFAULT omission and a named bit list's trailing zeros cannot be judged,
+/// so they are not. The bytes of strings, OCTET STRINGs and REALs are not interpreted (a character set is a type
+/// constraint, not an encoding rule), and the contents of the signature and public-key BIT STRINGs are not TLVs and are
+/// not read, except the end-entity key. Two DEFAULT values encoded explicitly where the schema is known, which DER
+/// would omit (an explicit v1 version, an explicit critical <c>FALSE</c>), are tolerated, as certificate parsers
+/// generally do; so are Key Usage trailing zero bits.
 /// </para>
 /// <para>
 /// It does <b>not</b> perform RFC 5280 path validation: it checks no certificate signature, validity period, basic
@@ -400,70 +405,103 @@ public sealed class X509CertificateChain
     }
 
     /// <summary>
-    /// Read one TLV whose type the certificate schema leaves open, and everything inside it, under DER rules: definite
-    /// minimal lengths at every level; constructed encodings only for SEQUENCE, SET and non-universal tags (DER encodes
-    /// every other universal type primitively); a SET's elements in DER order; and the content rules DER sets for
-    /// BOOLEAN, INTEGER, ENUMERATED, BIT STRING, NULL, OBJECT IDENTIFIER, UTCTime and GeneralizedTime. The bytes of strings
-    /// and of OCTET STRINGs are not interpreted (a character set is a type constraint, not an encoding rule). Nesting
-    /// deeper than <see cref="MaxOpenValueDepth"/> is refused.
+    /// Read one TLV whose type the certificate schema leaves open (an attribute value, algorithm parameters, an extension
+    /// value), and everything inside it, checking only the DER rules that hold for every DER value whatever its schema
+    /// (X.690). Without the schema the reader cannot tell SET from SET OF, a DEFAULT value from a present one, or a
+    /// named bit list from a plain BIT STRING, so it checks no component order, DEFAULT omission or trailing-zero rule.
+    /// It does check, at every level:
+    /// <list type="bullet">
+    /// <item>definite lengths in the fewest octets, and minimal tag octets (§10.1, §8.1.2);</item>
+    /// <item>a constructed encoding's contents are complete TLVs (§8.1.3);</item>
+    /// <item>the universal types DER always encodes primitively (BOOLEAN, INTEGER, BIT STRING, OCTET STRING, NULL, OBJECT
+    /// IDENTIFIER, ObjectDescriptor, REAL, ENUMERATED, RELATIVE-OID, the restricted character strings, UTCTime and
+    /// GeneralizedTime) are primitive (§8.2–§8.20, §10.2), and those always constructed (SEQUENCE, SET, EXTERNAL,
+    /// EMBEDDED PDV, CHARACTER STRING) are constructed (§8.9–§8.12, §8.18, §8.24); END-OF-CONTENTS never appears;</item>
+    /// <item>BOOLEAN is one octet, 00 or FF (§11.1); INTEGER and ENUMERATED are minimal (§8.3.2); BIT STRING's unused
+    /// bits are zero (§11.2.1); NULL is empty (§8.8.2); OBJECT IDENTIFIER subidentifiers are minimal (§8.19.2); UTCTime and
+    /// GeneralizedTime have DER's form (§11.7, §11.8).</item>
+    /// </list>
+    /// The bytes of strings, OCTET STRINGs and REALs are not interpreted. Nesting deeper than
+    /// <see cref="MaxOpenValueDepth"/> is refused: a resource bound, not a DER rule.
     /// </summary>
     private static void ReadOpenValue(AsnReader reader, int depth)
     {
         var tag = reader.PeekTag();
+        var universal = tag.TagClass == TagClass.Universal ? (UniversalTagNumber?)tag.TagValue : null;
+
+        if (universal is UniversalTagNumber.EndOfContents)
+            throw new AsnContentException("an END-OF-CONTENTS, which DER never encodes.");
+
         if (tag.IsConstructed)
         {
+            if (universal is { } type && IsAlwaysPrimitive(type))
+                throw new AsnContentException($"a constructed encoding of universal type {tag.TagValue}, which DER encodes primitively.");
             if (depth >= MaxOpenValueDepth)
                 throw new AsnContentException($"a value is nested more than {MaxOpenValueDepth} levels deep.");
-            AsnReader inner;
-            if (tag.TagClass != TagClass.Universal)
-                inner = reader.ReadSequence(tag);
-            else if (tag.TagValue == (int)UniversalTagNumber.Sequence)
-                inner = reader.ReadSequence();
-            else if (tag.TagValue == (int)UniversalTagNumber.Set)
-                inner = reader.ReadSetOf();
-            else
-                throw new AsnContentException($"a constructed encoding of universal type {tag.TagValue}, which DER forbids.");
+
+            // Any constructed encoding's contents are complete TLVs; no schema needed to walk them, and no order is
+            // checked (a schema-unknown SET may be a SET, ordered by tag, or a SET OF, ordered by octets).
+            var encoded = reader.ReadEncodedValue();
+            if (!AsnDecoder.TryReadEncodedValue(encoded.Span, AsnEncodingRules.DER, out _, out var contentOffset, out var contentLength, out _))
+                throw new AsnContentException("a constructed value's header is not DER.");
+            var inner = new AsnReader(encoded.Slice(contentOffset, contentLength), AsnEncodingRules.DER);
             while (inner.HasData)
                 ReadOpenValue(inner, depth + 1);
             return;
         }
 
-        if (tag.TagClass == TagClass.Universal)
+        switch (universal)
         {
-            switch ((UniversalTagNumber)tag.TagValue)
-            {
-                case UniversalTagNumber.EndOfContents:
-                case UniversalTagNumber.Sequence:
-                case UniversalTagNumber.Set:
-                    throw new AsnContentException($"a primitive encoding of universal type {tag.TagValue}.");
-                case UniversalTagNumber.Boolean:
-                    reader.ReadBoolean();
-                    return;
-                case UniversalTagNumber.Integer:
-                    reader.ReadIntegerBytes();
-                    return;
-                case UniversalTagNumber.Enumerated:
-                    reader.ReadEnumeratedBytes();
-                    return;
-                case UniversalTagNumber.BitString:
-                    reader.ReadBitString(out _);
-                    return;
-                case UniversalTagNumber.Null:
-                    reader.ReadNull();
-                    return;
-                case UniversalTagNumber.ObjectIdentifier:
-                    reader.ReadObjectIdentifier();
-                    return;
-                case UniversalTagNumber.UtcTime:
-                    reader.ReadUtcTime();
-                    return;
-                case UniversalTagNumber.GeneralizedTime:
-                    reader.ReadGeneralizedTime();
-                    return;
-            }
+            case UniversalTagNumber.Sequence:
+            case UniversalTagNumber.Set:
+            case UniversalTagNumber.External:
+            case UniversalTagNumber.Embedded:
+            case UniversalTagNumber.UnrestrictedCharacterString:
+                throw new AsnContentException($"a primitive encoding of universal type {tag.TagValue}, which is always constructed.");
+            case UniversalTagNumber.Boolean:
+                reader.ReadBoolean();
+                return;
+            case UniversalTagNumber.Integer:
+                reader.ReadIntegerBytes();
+                return;
+            case UniversalTagNumber.Enumerated:
+                reader.ReadEnumeratedBytes();
+                return;
+            case UniversalTagNumber.BitString:
+                reader.ReadBitString(out _);
+                return;
+            case UniversalTagNumber.Null:
+                reader.ReadNull();
+                return;
+            case UniversalTagNumber.ObjectIdentifier:
+                reader.ReadObjectIdentifier();
+                return;
+            case UniversalTagNumber.UtcTime:
+                reader.ReadUtcTime();
+                return;
+            case UniversalTagNumber.GeneralizedTime:
+                reader.ReadGeneralizedTime();
+                return;
+            default:
+                reader.ReadEncodedValue();
+                return;
         }
-        reader.ReadEncodedValue();
     }
+
+    /// <summary>The universal types X.690 encodes primitively under DER, whatever the schema around them.</summary>
+    private static bool IsAlwaysPrimitive(UniversalTagNumber type) => type switch
+    {
+        UniversalTagNumber.Boolean or UniversalTagNumber.Integer or UniversalTagNumber.BitString
+            or UniversalTagNumber.OctetString or UniversalTagNumber.Null or UniversalTagNumber.ObjectIdentifier
+            or UniversalTagNumber.ObjectDescriptor or UniversalTagNumber.Real or UniversalTagNumber.Enumerated
+            or UniversalTagNumber.RelativeObjectIdentifier
+            or UniversalTagNumber.UTF8String or UniversalTagNumber.NumericString or UniversalTagNumber.PrintableString
+            or UniversalTagNumber.TeletexString or UniversalTagNumber.VideotexString or UniversalTagNumber.IA5String
+            or UniversalTagNumber.UtcTime or UniversalTagNumber.GeneralizedTime or UniversalTagNumber.GraphicString
+            or UniversalTagNumber.VisibleString or UniversalTagNumber.GeneralString or UniversalTagNumber.UniversalString
+            or UniversalTagNumber.BMPString => true,
+        _ => false,
+    };
 
     private static void ReadAlgorithmIdentifier(AsnReader reader)
     {

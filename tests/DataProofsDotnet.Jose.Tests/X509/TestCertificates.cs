@@ -1,5 +1,4 @@
 using System.Formats.Asn1;
-using System.Numerics;
 using System.Security.Cryptography.X509Certificates;
 using DataProofsDotnet.Jose.Signing;
 using NetCrypto;
@@ -27,8 +26,17 @@ internal static class TestCertificates
     public const string P521Oid = "1.3.132.0.35";
     public const string Secp256k1Oid = "1.3.132.0.10";
 
-    /// <summary>The ECDSA P-256 key that signs every assembled certificate.</summary>
-    public static readonly ECDsa AssemblyCa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    /// <summary>
+    /// The Ed25519 key that signs every assembled certificate, from a fixed seed. Ed25519 signatures are deterministic
+    /// and always 64 bytes, so an assembled certificate's bytes, and so its length, depend only on its inputs (PR #56
+    /// review round 2: a randomized ECDSA signature made the length vary, and a fixture that needed a length could fail).
+    /// </summary>
+    private static readonly KeyPairSigner AssemblyCa =
+        new(Generator.FromPrivateKey(KeyType.Ed25519, Enumerable.Repeat((byte)0x46, 32).ToArray()), NetCryptoProvider);
+
+    /// <summary>The fixed validity of assembled certificates: no clock reaches into their bytes.</summary>
+    private static readonly DateTimeOffset AssembledNotBefore = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset AssembledNotAfter = new(2036, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>A NetCrypto key pair, the JWS signer over it, and the end-entity certificate holding its public key.</summary>
     public sealed record Leaf(KeyPair Key, JwsSigner Signer, byte[] Certificate)
@@ -168,7 +176,8 @@ internal static class TestCertificates
     }
 
     /// <summary>
-    /// A v3 certificate for <paramref name="spki"/>, signed (ecdsa-with-SHA256) by <see cref="AssemblyCa"/>.
+    /// A v3 certificate for <paramref name="spki"/>, signed (Ed25519) by <see cref="AssemblyCa"/>, with a fixed validity
+    /// and an 8-byte serial, so its length depends only on the arguments.
     /// <paramref name="tbsTail"/> writes extra TBS fields after the subjectPublicKeyInfo; <paramref name="version"/>
     /// null omits the version field.
     /// </summary>
@@ -184,13 +193,17 @@ internal static class TestCertificates
                 using (tbs.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0, isConstructed: true)))
                     tbs.WriteInteger(v);
             }
-            tbs.WriteInteger(new BigInteger(Interlocked.Increment(ref _serial)));
-            if (rawSignatureAlgorithm is not null) tbs.WriteEncodedValue(rawSignatureAlgorithm); else WriteEcdsaSha256(tbs);
+            // A distinct serial per certificate (so two assembled certificates never repeat), always 8 bytes long.
+            var serial = new byte[8];
+            serial[0] = 0x01;
+            BinaryPrimitives.WriteInt32BigEndian(serial.AsSpan(4), Interlocked.Increment(ref _serial));
+            tbs.WriteIntegerUnsigned(serial);
+            if (rawSignatureAlgorithm is not null) tbs.WriteEncodedValue(rawSignatureAlgorithm); else WriteEd25519(tbs);
             if (rawIssuer is not null) tbs.WriteEncodedValue(rawIssuer); else WriteName(tbs, issuer);
             using (tbs.PushSequence())
             {
-                tbs.WriteUtcTime(DateTimeOffset.UtcNow.AddDays(-1));
-                tbs.WriteUtcTime(DateTimeOffset.UtcNow.AddYears(1));
+                tbs.WriteUtcTime(AssembledNotBefore);
+                tbs.WriteUtcTime(AssembledNotAfter);
             }
             if (rawSubject is not null) tbs.WriteEncodedValue(rawSubject); else WriteName(tbs, subject);
             tbs.WriteEncodedValue(spki);
@@ -212,15 +225,15 @@ internal static class TestCertificates
         return Sign(tbs.Encode());
     }
 
-    /// <summary>Wrap TBS bytes into a Certificate signed by <see cref="AssemblyCa"/>.</summary>
+    /// <summary>Wrap TBS bytes into a Certificate signed (deterministically) by <see cref="AssemblyCa"/>.</summary>
     public static byte[] Sign(byte[] tbs)
     {
         var certificate = new AsnWriter(AsnEncodingRules.DER);
         using (certificate.PushSequence())
         {
             certificate.WriteEncodedValue(tbs);
-            WriteEcdsaSha256(certificate);
-            certificate.WriteBitString(AssemblyCa.SignData(tbs, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence));
+            WriteEd25519(certificate);
+            certificate.WriteBitString(AssemblyCa.SignAsync(tbs).GetAwaiter().GetResult());
         }
         return certificate.Encode();
     }
@@ -232,10 +245,10 @@ internal static class TestCertificates
         return Assemble(rsa.ExportSubjectPublicKeyInfo(), subject);
     }
 
-    private static void WriteEcdsaSha256(AsnWriter writer)
+    private static void WriteEd25519(AsnWriter writer)
     {
         using (writer.PushSequence())
-            writer.WriteObjectIdentifier("1.2.840.10045.4.3.2");
+            writer.WriteObjectIdentifier(Ed25519Oid);
     }
 
     private static void WriteName(AsnWriter writer, string commonName)
