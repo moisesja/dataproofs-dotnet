@@ -1,0 +1,59 @@
+# Plan: prepare release 2.1.0 (2026-11-20)
+
+## Owner's intent
+
+- 2026-11-19: after issues #50, #49, #48, #47, #46 and #45, "let's prepare release 1.6.0". Corrected the same day
+  to "Let's do 2.1.0", because 2.0.0 is already on NuGet.
+- 2026-11-20, approving this plan: "Yes, prepare but do not release". So this PR prepares the release only. No
+  tag, no GitHub release, no publish, and no approval of the `nuget-release` deployment come from this work.
+
+## Decisions
+
+1. **The version is 2.1.0, a minor.** The owner decided this on 2026-11-19, before the issues were done, and every
+   issue PR was held to "no source break" for it.
+   - **The audit.** An independent read-only audit of v2.0.0..1b43268 (the PR #57 head, holding all six issues)
+     confirms nothing in the range forces a major.
+     - Public API: additions only. 90 lines were added to the Jose `PublicAPI.Unshipped.txt`, and no line was
+       removed in any package.
+     - Emitted output: the same input gives the same bytes, compared on `SdJwtVcIssuer` with awkward input.
+     - Accept-set: it narrows for input that was spec-valid, which is minor material.
+   - *Alternative: 2.0.1, a patch.* It lost: the API adds members, and the accept-set narrows for spec-valid input
+     (`RELEASING.md`).
+   - *Alternative: 3.0.0, a major.* It lost because nothing is source-breaking. The `[Obsolete]` on
+     `SdJwtVcConstants.TransitionalMediaType` leaves its `PublicAPI` line unchanged, and SemVer §7 makes
+     deprecation a minor.
+2. **No sub-agent.** The change is documentation, three XML-doc comments and one version number.
+3. **The CHANGELOG date** is the day this PR merges. A release tagged on a later day gets a one-line date commit
+   first.
+4. **The audit's five CHANGELOG gaps are fixed here, not filed.** They are inaccuracies in the notes this release
+   ships (lesson of 2026-10-30, "A finding I can fix is a task, not a note"). One reaches `src`: the issuer XML
+   docs omit the NumericDate range they refuse. That fix is documentation only; behaviour is unchanged.
+5. **RELEASING.md gains a 2.1.0 worked example.** The re-pin from -16 to -27 is the first accept-set narrowing
+   whose newly refused input was valid under the previous pin and invalid under the new one. The policy did not
+   say which draft "governs" in that case.
+   - *Alternative: no worked example.* It lost because the next re-pin (to the RFC, PRD §12.2) would face the same
+     question with no record. The owner can strike the rule sentence in review.
+
+## Checklist
+
+- [ ] CHANGELOG: `## [Unreleased]` becomes `## [2.1.0] - <date>`, with a lead paragraph and a `### Why this is a
+      minor and not a major` subsection.
+- [ ] CHANGELOG audit corrections:
+  - [ ] #45: the issuers refuse out-of-range NumericDates.
+  - [ ] #48: decoys inside a reserved claim are a spec-valid narrowing.
+  - [ ] #46 and #47: scope "nothing changes" to their feature.
+  - [ ] #50: NU1605 for a direct Cbor pin below 10.0.15.
+  - [ ] #49: `TransitionalMediaType` has no replacement constant.
+- [ ] XML docs on `SdJwtIssuer.IssueAsync` and `SdJwtVcIssuer.IssueAsync`: name the refused range.
+- [ ] `Directory.Build.props`: `DataProofsVersion` 2.0.0 becomes 2.1.0, and the comment follows.
+- [ ] RELEASING.md:
+  - [ ] the 2.1.0 worked example;
+  - [ ] fix the "-preview dev default" sentence;
+  - [ ] add the credentials-dotnet row to the downstream table.
+- [ ] Verify: build `/warnaserror`; the full test suite with zero skips; `dotnet pack` gives 2.1.0 packages;
+      `git diff origin/main -- src/` shows only XML docs.
+- [ ] Independent check of the final CHANGELOG claims against the code.
+- [ ] PR, with CI passing 12/12.
+- [ ] Thorough review; fix findings; merge on a ready verdict for the current head. No tag.
+
+## Review

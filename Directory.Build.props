@@ -5,11 +5,12 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <!-- GA line: v2.0.0 (CHANGELOG [2.0.0]), now published on NuGet.org. Release CI overrides
-         this from the git tag (e.g. v2.0.0 -> 2.0.0). The AC-10 clean-room install does not use
-         it: it packs at a run-unique 0.0.0-smoke version, so it can never install a published
-         package of the same version in place of the one just packed (issue #50). -->
-    <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">2.0.0</DataProofsVersion>
+    <!-- GA line: v2.1.0 (CHANGELOG [2.1.0]), prepared; v2.0.0 is the latest on NuGet.org.
+         Release CI overrides this from the git tag (e.g. v2.1.0 -> 2.1.0). The AC-10 clean-room
+         install does not use it: it packs at a run-unique 0.0.0-smoke version, so it can never
+         install a published package of the same version in place of the one just packed (issue
+         #50). -->
+    <DataProofsVersion Condition="'$(DataProofsVersion)' == ''">2.1.0</DataProofsVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
     <Deterministic>true</Deterministic>
