@@ -69,6 +69,10 @@ Check(chain.EndEntityPublicKey.X == issuerJwk.X && chain.EndEntityPublicKey.Crv 
 Console.WriteLine();
 
 // The verifier's hook: RFC 5280 path validation by the platform, to the verifier's own anchor only.
+// X509Chain does not check what the end-entity key may be used for. The library does, before the hook runs: an
+// end-entity certificate whose Key Usage lacks digitalSignature is refused with X5C_KEY_USAGE (section 2b below).
+// Extended Key Usage is ecosystem policy (which purposes an issuer certificate must carry); check it here if yours
+// defines one, for example with X509EnhancedKeyUsageExtension on the end-entity certificate.
 bool TrustedByExampleRoot(X509CertificateChain presented)
 {
     using var platformChain = new X509Chain();
@@ -121,6 +125,31 @@ var attacker = new JwsSigner(new KeyPairSigner(attackerKey, crypto))
 string forged = await JwsBuilder.BuildCompactAsync(payload, attacker);
 Check(Throws<JoseCryptoException>(() => JwsParser.ParseCompactWithCertificateChain(forged, TrustedByExampleRoot, joseCrypto), "X5C_UNTRUSTED"),
     "a root carried in x5c is not a trust anchor");
+
+// ----------------------------------------------------------- 2b. Key Usage: a key-agreement-only certificate may not sign
+// A certificate the trusted intermediate really issued, for the issuer's key, but whose only (critical) Key Usage is
+// keyAgreement. Its chain validates, and X509Chain accepts it; RFC 5280 §4.2.1.3 still forbids using the key to verify
+// signatures, so the library refuses it before the key is used: the signer at signing time, the verifier as
+// X5C_KEY_USAGE (whatever the hook would say).
+var keyAgreementRequest = new CertificateRequest("CN=issuer.example", issuerPublic, HashAlgorithmName.SHA256);
+keyAgreementRequest.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyAgreement, true));
+using X509Certificate2 keyAgreementCertificate = keyAgreementRequest.Create(
+    intermediate.SubjectName, X509SignatureGenerator.CreateForECDsa(intermediateKey), now.AddDays(-1), now.AddYears(1), [0x04]);
+var keyAgreementChain = X509CertificateChain.Create([keyAgreementCertificate.RawData, intermediate.RawData]);
+Check(TrustedByExampleRoot(keyAgreementChain), "the key-agreement-only chain itself validates to the anchor");
+Check(Throws<ArgumentException>(() => _ = new JwsSigner(new KeyPairSigner(issuerKey, crypto)) { CertificateChain = keyAgreementChain }, "X5C_KEY_USAGE"),
+    "a key-agreement-only certificate cannot be put on a signer (X5C_KEY_USAGE)");
+string keyAgreementHeader = Base64Url.Encode(Encoding.UTF8.GetBytes(new JsonObject
+{
+    ["alg"] = "ES256",
+    ["x5c"] = new JsonArray(keyAgreementChain.Certificates.Select(c => (JsonNode?)Convert.ToBase64String(c.Span)).ToArray()),
+}.ToJsonString()));
+// The same key really signs this one (a stand-in for a token from another implementation that does not check Key Usage).
+string keyAgreementJws = await JwsBuilder.BuildCompactAsync(payload, new JwsSigner(new KeyPairSigner(issuerKey, crypto)));
+Check(Throws<JoseCryptoException>(() => JwsParser.ParseCompactWithCertificateChain(
+        keyAgreementHeader + "." + keyAgreementJws.Split('.')[1] + "." + keyAgreementJws.Split('.')[2], TrustedByExampleRoot, joseCrypto), "X5C_KEY_USAGE"),
+    "a JWS under a key-agreement-only certificate is X5C_KEY_USAGE, before the hook runs");
+Console.WriteLine("  a trusted key-agreement-only certificate: refused on signing and on verification (X5C_KEY_USAGE)");
 
 // A malformed x5c is a parse failure with a stable code.
 string badHeader = Base64Url.Encode(Encoding.UTF8.GetBytes("""{"alg":"ES256","x5c":"not-an-array"}"""));
