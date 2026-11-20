@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-11-20
+
+**This is a minor release.** The public API only adds, in `DataProofsDotnet.Jose`: nothing is removed or
+changed, and one constant, `SdJwtVcConstants.TransitionalMediaType`, is marked `[Obsolete]`. For input that 2.0.0
+issued, every issuer emits the same bytes. **It refuses some credentials that 2.0.0 verified, including some this
+library issued.** Read these entries before upgrading:
+
+- an SD-JWT or SD-JWT VC whose `exp` has passed or whose `nbf` is still ahead, or whose `nbf` or `exp` is not a
+  number or lies outside -62135596800 to 253402300799 seconds (0001-01-01T00:00:00Z to 9999-12-31T23:59:59Z),
+  and a Key Binding JWT whose own `nbf` or `exp` fails the same way (*Fixed*, issue #45);
+- an SD-JWT VC with `typ: vc+sd-jwt`, or with an `aka_vcts` that is disclosed or malformed (*Changed*, issue #49);
+- an SD-JWT VC with Disclosures or decoy digests inside a reserved claim such as `status` or `cnf` (*Fixed*, issue
+  #48);
+- an SD-JWT with a digest repeated anywhere in the payload, an `_sd_alg` below the top level, or a Disclosure
+  named `_sd_alg` (*Fixed*, issue #48).
+
+The SD-JWT issuers also refuse to sign several of these shapes, and each entry says which. A consumer that
+references `System.Formats.Cbor` directly below 10.0.15 must raise that reference (*Security*, issue #50). The
+reasons this is a minor are under *Why this is a minor and not a major*, at the end of this section.
 
 ### Security
 
@@ -21,7 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the bytes it emits, and the COSE and bbs-2023 suites, vectors included, pass unchanged on 10.0.15.
   Upgrade to this release. Until then, a direct
   `<PackageReference Include="System.Formats.Cbor" Version="10.0.15" />` in the consuming project
-  lifts the transitive version and clears the audit for all four packages.
+  lifts the transitive version and clears the audit for all four packages. A consumer that already
+  references `System.Formats.Cbor` directly at 10.0.8 to 10.0.14 gets `NU1605` (a package downgrade,
+  which the .NET SDK treats as an error by default) once it moves to this release: raise that
+  reference to 10.0.15 or remove it.
 
 ### Changed
 
@@ -52,7 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     generic `SdJwtVerifier` does not check `typ` (RFC 9901 §9.11 leaves explicit typing to the profile)
     and is the layer to build that format on.
   - `SdJwtVcConstants.TransitionalMediaType` keeps its value and is marked `[Obsolete]`. Using it raises
-    warning CS0618, which a build that treats warnings as errors reports as an error.
+    warning CS0618, which a build that treats warnings as errors reports as an error. There is no
+    replacement constant: code that names the W3C VC-JOSE-COSE `vc+sd-jwt` media type, for example to
+    route such credentials away from `SdJwtVcVerifier`, writes the literal. Already-compiled code is
+    unaffected, because the compiler copies a constant's value into the code that uses it.
 
 - **`aka_vcts` is a registered SD-JWT VC claim** (-18; -27 §2.2.2.2 and §2.2.2.3). Under -16 it was an
   ordinary claim that could take any value and be selectively disclosed, so both rules below refuse
@@ -138,8 +162,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and `Compute` give a wallet the same check for `uri#integrity` on a logo or template it fetches, and an
     issuer the value to put in `vct#integrity`.
 
-  Nothing changes for existing callers: `VerifyAsync`, `IssueAsync` and the raw `ITypeMetadataResolver` path
-  behave as before, and no member was removed or changed. A verifier that wants processing moves to
+  Type Metadata processing changes nothing for existing callers: `VerifyAsync`, `IssueAsync` and the raw
+  `ITypeMetadataResolver` path do not process it, and no member was removed or changed. (The same methods
+  change in this release for other reasons: see issues #45, #48 and #49 in this section and under *Changed*
+  and *Fixed*.) A verifier that wants processing moves to
   `VerifyWithTypeMetadataAsync` and supplies document octets; the credentials it then refuses are ones that
   contradict their own Type Metadata, which this library's earlier issuers never checked, so credentials they
   issued can be among them.
@@ -216,10 +242,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     not authenticated by it (-27 §2.5): bind it yourself, for example through a Subject Alternative Name, or
     ignore it.
 
-  Nothing changes for existing callers. `JwsParser.Parse`/`ParseCompact`, `SdJwtVerifier.Verify`,
-  `SdJwtVcVerifier.VerifyAsync`/`VerifyWithTypeMetadataAsync` and `VcJose.VerifyCredential` never read `x5c`,
-  so a token whose `x5c` is malformed still verifies through them as before, and no accepted input is now
-  refused. No member was removed or changed. Not provided: `x5c` verification for detached-payload compact JWS
+  The `x5c` support changes nothing for existing callers. `JwsParser.Parse`/`ParseCompact`,
+  `SdJwtVerifier.Verify`, `SdJwtVcVerifier.VerifyAsync`/`VerifyWithTypeMetadataAsync` and
+  `VcJose.VerifyCredential` never read `x5c`, so a token whose `x5c` is malformed still verifies through them
+  as before, and `x5c` makes none of them refuse an input they accepted. (The SD-JWT verifiers refuse more in
+  this release for other reasons: issues #45, #48 and #49.) No member was removed or changed. Not provided: `x5c` verification for detached-payload compact JWS
   and for the JWS JSON serializations (which never read `x5c`, protected or not), an asynchronous hook, and the
   COSE counterpart, `x5chain` (RFC 9360).
 
@@ -261,14 +288,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     for the Issuer's. This library's Key Binding JWTs carry neither claim, so none it made is affected.
   - *This narrows what the verifiers accept.* An expired or not-yet-valid credential, and a non-number `nbf`/`exp`, are
     invalid under RFC 9901 and RFC 7519. A NumericDate before year 1 or after year 9999 (such as `1e20`) is valid under
-    RFC 7519 and is now refused as `*_INVALID`: no conformant Issuer has a use for it, and refusing is the fail-closed
-    reading in every direction. `nbf` later than `exp` is not refused as such: with no skew it fails at every instant.
+    RFC 7519 and is now refused as `*_INVALID`, by the verifiers and by both issuers: no conformant Issuer has a use for
+    it, and refusing is the fail-closed reading in every direction. That part narrows the accept-set for spec-valid
+    input. `nbf` later than `exp` is not refused as such: with no skew it fails at every instant.
   - *This library's own output.* `SdJwtIssuer` and `SdJwtVcIssuer` have never added `nbf` or `exp`, and have signed the
     caller's values as given in every release from 0.1.0-preview.1 to 2.0.0. A credential they issued with an `exp` that
     has now passed, or an `nbf` still ahead, verified until this release and now fails. One they issued with a
-    non-number `nbf` or `exp` (a string, or a .NET `DateTimeOffset` placed in the claims set, which serializes as one)
-    now fails at every instant, and both issuers now refuse to sign it, throwing `MalformedJoseException` with the
-    verifier's code. The issuers do not judge the time: a credential valid from tomorrow is still issued.
+    non-number `nbf` or `exp` (a string, or a .NET `DateTimeOffset` placed in the claims set, which serializes as one),
+    or with a NumericDate outside -62135596800 to 253402300799 (such as `1e20`, which 2.0.0 signed and verified), now fails at
+    every instant, and both issuers now refuse to sign it, throwing `MalformedJoseException` with the verifier's code. The issuers do not judge the time: a credential valid from tomorrow is still issued.
   - *What to do.* Issuers write `nbf` and `exp` as seconds (`DateTimeOffset.ToUnixTimeSeconds()`) and reissue
     credentials whose holders still need them after `exp`. Verifiers that must judge a credential at another instant,
     such as an audit of past presentations, set `CurrentTime`; one that tolerates more clock drift raises `ClockSkew`.
@@ -307,10 +335,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim 'status' MUST NOT have selectively disclosable sub-claims or
     elements (...)`. The message for a reserved claim disclosed at the top level is unchanged. An empty
     `_sd` array inside a reserved claim carries no digest and is accepted (RFC 9901 §4.2.4.1).
-  - *Also refused, and possibly valid:* decoy digests inside a reserved claim. RFC 9901 §4.2.5 lets an
-    issuer add decoys to any `_sd` array or array, and -27 forbids Disclosures, not digests, so a
-    credential with only decoys there may be conformant. A verifier cannot tell a decoy from a withheld
-    Disclosure, and the withheld case is the one -27 forbids, so the check fails closed.
+  - *Also refused, and valid: decoy digests inside a reserved claim. This narrows the accept-set for
+    spec-valid input.* RFC 9901 §4.2.5: "Decoy digests MAY be added both to the _sd array for objects as
+    well as in arrays", and -27 §2.2.2.3 forbids Disclosures, not digests, so a credential with only decoys
+    there is conformant. A verifier cannot tell a decoy from a withheld Disclosure, and the withheld case is
+    the one -27 forbids, so the check fails closed. This library's 2.0.0 output is among it: the generic
+    `SdJwtIssuer` with `typ: dc+sd-jwt`, a `DecoyDigestCount` above zero and a frame entry such as
+    `DiscloseObject("status", new DisclosureFrame())` put decoys inside `status`, and that credential
+    verified until this release.
   - *This library's own output:* `SdJwtVcIssuer` has refused a `DisclosureFrame` entry of any kind on
     `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` in every release from 0.1.0-preview.1
     to 2.0.0, every Disclosure such an entry makes sits at or under that claim, and it adds decoys only to
@@ -340,8 +372,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   withheld digest that repeated across `_sd` arrays and `...` placeholders was accepted. Such an SD-JWT now
   fails with `DISCLOSURE_INVALID`, and the message for every repeat is now `An SD-JWT digest appears more
   than once in the payload, ...`. Every newly refused input is invalid under RFC 9901. *This library's own
-  output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
-  the issue #48 adversarial pass; it is a separate commit in that PR.
+  output* is affected only where the caller built the repeat: `SdJwtIssuer` salts every Disclosure and draws
+  every decoy at random, but in every release from 0.1.0-preview.1 to 2.0.0 it, and `SdJwtVcIssuer` through
+  it, copied a caller's claims as given, so a claims set that already held a digest twice, in its own `_sd`
+  arrays or `...` placeholders, was signed and verified. It is now refused at verification, and both issuers
+  refuse to sign it (see "`SdJwtIssuer` does not sign what its own verifier refuses", below). Found by the issue #48 adversarial pass; it is a separate
+  commit in that PR.
 
 - **SD-JWT: an `_sd_alg` below the top level is refused, verifying and issuing.** RFC 9901 §4.1.1:
   `_sd_alg` "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used in any object nested
@@ -371,6 +407,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than the reconstruction bound of 64 (depth 63 and beyond). The check reads the serialized form, so a
   .NET object inside a `JsonValue` is covered. It adds one parse and one reconstruction per issuance.
   Found by the PR #54 review and the issue #48 adversarial passes; a separate commit in that PR.
+
+### Why this is a minor and not a major
+
+The owner fixed this release at 2.1.0 on 2026-11-19, before the six issues were worked, and every change in it
+was held to that. Under the versioning policy in [`RELEASING.md`](RELEASING.md):
+
+- *The public API only adds, which by itself makes this a minor* (SemVer §7, "MINOR version ... MUST be
+  incremented if new, backward compatible functionality is introduced to the public API").
+  `DataProofsDotnet.Jose`'s `PublicAPI.Unshipped.txt` gains 90 entries and loses none, and no other package's API
+  changed. No existing member changed or gained a parameter, so nothing breaks at binary level either. No new
+  property has a `set` accessor; four have `init`.
+- *`[Obsolete]` on `SdJwtVcConstants.TransitionalMediaType` comes closest to a major.* The constant, its value and
+  its `PublicAPI` entry stay, and SemVer §7 makes a deprecation a minor ("It MUST be incremented if any public API
+  functionality is marked as deprecated"). But the policy calls a change non-breaking when "no source has to
+  change", and a consumer that uses the constant and treats warnings as errors does have to change its source: it
+  writes the literal or suppresses CS0618. Every other consumer compiles unchanged, and compiled code is unaffected,
+  since the constant's value is copied into it. This release counts that as a deprecation, not as the source break
+  the 2.0.0 rule makes a major.
+- *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
+  appears only when the caller sets `JwsSigner.CertificateChain`.
+- *The accept-set narrows, partly for spec-valid input, which is minor or major material and never a patch.* Most of
+  what is newly refused was invalid under the governing RFC: expired and not-yet-valid credentials and non-number
+  times (RFC 9901 §7.1 step 6, §7.3 step 5.h; RFC 7519 §4.1.4, §4.1.5), a repeated digest (RFC 9901 §7.1 step 4), a
+  nested `_sd_alg` (§4.1.1) and a Disclosure named `_sd_alg` beside the top-level one (§7.1 step 3.c.ii.3). Five
+  narrowings refuse input that was spec-valid, or that the draft 2.0.0 pinned, -16, asked Verifiers to accept:
+  - a NumericDate outside -62135596800 to 253402300799 seconds (the years 0001 to 9999), which RFC 7519 allows;
+  - decoy digests inside a reserved claim, which RFC 9901 §4.2.5 and -27 allow;
+  - `typ: vc+sd-jwt`, which -16 asked Verifiers to accept "for a reasonable transitional period", although its
+    Issuers "MUST use dc+sd-jwt";
+  - a selectively disclosable or free-form `aka_vcts`, a claim -16 did not register;
+  - Disclosures inside a reserved claim's subclaims, which -16 left open.
+- *None of them makes it a major, by this release's judgment.* `RELEASING.md` asks whether a conformant peer could
+  plausibly be depending on the old behaviour today. For the three draft shapes it could not: a peer conforming to
+  -19 or later, and so to the -27 this release pins, sends none of them. The two RFC shapes are less clean. A
+  conformant peer could send them, and this library's 2.0.0 issuers could produce both: both issuers signed
+  `exp: 1e20`, and the generic `SdJwtIssuer` could put decoys inside `status` (the `SdJwtVcIssuer` never did from
+  a `DisclosureFrame`). They are refused anyway, because neither has a known use and refusing fails closed: an
+  `exp` past 9999 means nothing for a credential, and a verifier cannot tell decoys inside a reserved claim from the
+  withheld Disclosures -27 forbids.
 
 ## [2.0.0] - 2026-11-02
 
