@@ -16,6 +16,7 @@ using Base64Url = DataProofsDotnet.Jose.Base64Url;
 //   * an optional `aka_vcts` claim naming further types — a non-empty array without the vct value,
 //   * the `dc+sd-jwt` media type, and only that: the former `vc+sd-jwt` is rejected,
 //   * registered claims that MUST NOT be selectively disclosed (iss/nbf/exp/cnf/vct/aka_vcts/...),
+//     nor anything inside them, while a nested claim that only shares the name is ordinary,
 //   * offline-by-default Type Metadata (`vct`) resolution via a pluggable resolver hook —
 //     LocalCacheTypeMetadataResolver here, never the network (FR-10 posture).
 //
@@ -147,6 +148,37 @@ catch (MalformedJoseException)
 }
 Console.WriteLine($"  making aka_vcts disclosable rejected: {akaDisclosureRejected}");
 Check(akaDisclosureRejected, "aka_vcts cannot be made selectively disclosable");
+
+// The rule is positional (issue #48): it covers the registered top-level claims and everything inside
+// them, so a member of status cannot be disclosed either, while a nested claim that only shares a
+// registered name, such as credentialSubject.status, is an ordinary claim.
+JsonObject withStatus = VcClaims();
+withStatus[SdJwtVcConstants.StatusClaim] = new JsonObject
+{
+    ["status_list"] = new JsonObject { ["idx"] = 412, ["uri"] = "https://example.com/statuslists/1" },
+};
+withStatus["credentialSubject"] = new JsonObject { ["status"] = "active" };
+
+bool statusMemberRejected;
+try
+{
+    await SdJwtVcIssuer.IssueAsync(
+        withStatus, new DisclosureFrame().DiscloseObjectProperties(SdJwtVcConstants.StatusClaim, "status_list"), issuerSigner);
+    statusMemberRejected = false;
+}
+catch (MalformedJoseException)
+{
+    statusMemberRejected = true;
+}
+Console.WriteLine($"  making a member of status disclosable rejected: {statusMemberRejected}");
+Check(statusMemberRejected, "a subclaim of a registered claim cannot be made selectively disclosable");
+
+SdJwtIssuer.Result nestedIssued = await SdJwtVcIssuer.IssueAsync(
+    withStatus, new DisclosureFrame().DiscloseObjectProperties("credentialSubject", "status"), issuerSigner);
+SdJwtVcVerificationResult nestedResult = await SdJwtVcVerifier.VerifyAsync(nestedIssued.Issuance, resolveIssuer, cryptoProvider: joseCrypto);
+Console.WriteLine($"  credentialSubject.status disclosed and verified: {nestedResult.IsValid}");
+Check(nestedResult.IsValid && nestedResult.DisclosedPayload!["credentialSubject"]!["status"]!.GetValue<string>() == "active",
+    "a nested claim named like a registered claim is selectively disclosable");
 Console.WriteLine();
 
 // ----------------------------------------------------------- 3. Type Metadata (offline, opt-in)

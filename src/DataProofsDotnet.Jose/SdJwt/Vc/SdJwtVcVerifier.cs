@@ -7,7 +7,8 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// SD-JWT verification (FR-16) and then enforces the profile rules — the issuer-JWT <c>typ</c> is
 /// exactly <c>dc+sd-jwt</c> (§2.2.1; the former <c>vc+sd-jwt</c> is rejected), the REQUIRED
 /// <c>vct</c> claim (§2.2.2.1), a well-formed <c>aka_vcts</c> claim when present (§2.2.2.2), and
-/// the rule that no registered must-not-disclose claim was selectively disclosed (§2.2.2.3). When
+/// the rule that no registered must-not-disclose claim, nor anything inside one, was selectively
+/// disclosed (§2.2.2.3; a nested claim that only shares a reserved name is not affected). When
 /// an <see cref="ITypeMetadataResolver"/> is supplied, the <c>vct</c> Type Metadata is retrieved
 /// through it (offline/local-cache by default — never the network unless the consumer's resolver
 /// opts in, FR-17). Returns a structured result; never throws on a structurally valid but failing

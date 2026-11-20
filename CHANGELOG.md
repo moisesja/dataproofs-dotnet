@@ -59,10 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   input that was valid then, including credentials `SdJwtVcIssuer` 2.0.0 would have issued:
   - it is on `SdJwtVcConstants.MustNotBeSelectivelyDisclosed`, so `SdJwtVcIssuer` throws
     `MalformedJoseException` for a `DisclosureFrame` entry keyed `aka_vcts`, and `SdJwtVcVerifier` fails
-    a presentation carrying a Disclosure named `aka_vcts` with `VC_DISALLOWED_DISCLOSURE`. As for the
-    other seven names, the verifier matches the name at any depth, so a nested claim that only shares
-    the name is refused too; scoping the rule to the registered claims and their sub-claims is
-    [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48);
+    a presentation carrying a Disclosure of `aka_vcts` or of any of its elements with
+    `VC_DISALLOWED_DISCLOSURE`. As for the other seven names, the rule follows the claim's position, so a
+    nested claim that only shares the name is not affected (see *Fixed*, issue
+    [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48));
   - when present it must be a non-empty array of non-empty strings that does not contain the `vct`
     value. `SdJwtVcIssuer` throws `MalformedJoseException` otherwise, and `SdJwtVcVerifier` fails with
     the new code `VC_AKA_VCTS_INVALID`.
@@ -87,6 +87,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SdJwtVcVerificationResult.TypeMetadata` says the document is returned unprocessed (-27 §5.7);
   `SdJwtVcConstants.StatusClaim` and the verifier say `status` is carried, not checked; `SdJwtVerifier`
   says it does not check `typ`.
+
+### Fixed
+
+- **SD-JWT VC: the must-not-disclose rule follows a claim's position, not its name** (issue
+  [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48)). -27 §2.2.2.3: "The following
+  registered JWT claims, including any of their subclaims, when used in the SD-JWT component of an
+  SD-JWT VC, MUST NOT be included in Disclosures". The listed names are JWT claims, members of the
+  top-level claims set. `SdJwtVcVerifier` compared each presented Disclosure's claim name with the list
+  wherever the Disclosure sat. It now uses the claim path at which the RFC 9901 reconstruction resolved
+  the Disclosure, and refuses it when that path starts at a reserved claim: the claim itself, or anything
+  inside it. Two behaviour changes follow, one each way:
+  - *Now accepted:* a Disclosure of a nested claim that only shares a reserved name, such as
+    `credentialSubject.status`, `credentialSubject.exp` or `credentialSubject.iss` made disclosable with
+    `DisclosureFrame.DiscloseObjectProperties("credentialSubject", "status")`. `SdJwtVcIssuer` issued
+    these in every release, and `SdJwtVcVerifier` refused its own output with `VC_DISALLOWED_DISCLOSURE`.
+    They now verify. Nothing to do.
+  - *Now refused, which narrows what the verifier accepts:* a Disclosure inside a reserved claim under a
+    name that is not on the list, such as a member of `status` or `cnf` at any depth, or an element of
+    `aka_vcts` or of an array inside `status`, whether the reserved claim around it is in the clear or is
+    itself a Disclosure. 2.0.0 verified these. -16 did not say whether a reserved claim's subclaims could
+    be disclosed; -19 added "including any of their subclaims", so under the pinned -27 such a credential
+    is invalid. The failure is `VC_DISALLOWED_DISCLOSURE`, and its message now gives the Disclosure's path
+    (`a Disclosure at 'status.status_list.idx' is inside SD-JWT VC claim 'status', ...`); the message for a
+    reserved claim disclosed at the top level is unchanged.
+  - *This library's own output:* `SdJwtVcIssuer` has refused a `DisclosureFrame` entry of any kind on
+    `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` in every release from 0.1.0-preview.1
+    to 2.0.0, and every Disclosure such an entry makes sits at or under that claim, so none of its output
+    is newly refused, apart from the `aka_vcts` element Disclosures under *Changed*. A credential built
+    with the generic `SdJwtIssuer`, `typ: dc+sd-jwt` and a frame entry on a reserved claim is.
+  - *What to do:* issuers keep `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and
+    `status` wholly in the clear. A verifier that receives credentials with Disclosures inside them needs
+    the issuer to reissue them.
+
+  Not changed: `SdJwtVcIssuer` refuses the same frames as before, and its message now adds "and neither
+  may any of its subclaims". A digest inside a reserved claim with no Disclosure presented for it is not
+  refused, because it cannot be told from a decoy (RFC 9901 §4.2.5), and -27 forbids Disclosures, not
+  digests. The generic `SdJwtVerifier` does not apply the rule, which belongs to the SD-JWT VC profile.
 
 ## [2.0.0] - 2026-11-02
 

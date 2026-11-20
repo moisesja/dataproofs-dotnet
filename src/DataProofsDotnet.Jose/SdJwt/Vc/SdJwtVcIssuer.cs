@@ -8,22 +8,25 @@ namespace DataProofsDotnet.Jose.SdJwt.Vc;
 /// generic SD-JWT issuance (FR-16). Enforces the profile rules at issuance time — the
 /// issuer-JWT <c>typ</c> is fixed to <see cref="SdJwtVcConstants.MediaType"/> (<c>dc+sd-jwt</c>, §2.2.1),
 /// the <c>vct</c> claim is REQUIRED and stays in the clear (§2.2.2.1), an <c>aka_vcts</c> claim is
-/// well formed when present (§2.2.2.2), and none of the registered must-not-disclose claims may be
-/// marked selectively disclosable (§2.2.2.3) — and otherwise reuses <see cref="SdJwtIssuer"/>
-/// unchanged. Stateless and thread-safe.
+/// well formed when present (§2.2.2.2), and none of the registered must-not-disclose claims, nor
+/// anything inside one, may be marked selectively disclosable (§2.2.2.3) — and otherwise reuses
+/// <see cref="SdJwtIssuer"/> unchanged. Stateless and thread-safe.
 /// </summary>
 public static class SdJwtVcIssuer
 {
     /// <summary>
     /// Issue an SD-JWT VC from an input claims set and disclosure frame. The claims set MUST carry
     /// a non-empty string <c>vct</c>, and an <c>aka_vcts</c> claim, when present, MUST be a non-empty
-    /// array of non-empty strings that does not contain the <c>vct</c> value; the frame MUST NOT mark
-    /// any registered must-not-disclose claim (<see cref="SdJwtVcConstants.MustNotBeSelectivelyDisclosed"/>)
-    /// as disclosable. Each violation is a documented failure (<see cref="MalformedJoseException"/>) — the
-    /// disallowed claim shape the profile rejects.
+    /// array of non-empty strings that does not contain the <c>vct</c> value; the frame MUST NOT have a
+    /// top-level entry, of any kind, on a registered must-not-disclose claim
+    /// (<see cref="SdJwtVcConstants.MustNotBeSelectivelyDisclosed"/>), since every Disclosure such an entry
+    /// makes is that claim or one of its subclaims. Each violation is a documented failure
+    /// (<see cref="MalformedJoseException"/>) — the disallowed claim shape the profile rejects. A nested entry
+    /// that only shares a reserved name, such as <c>DiscloseObjectProperties("credentialSubject", "status")</c>,
+    /// is an ordinary claim and is issued.
     /// </summary>
     /// <param name="claims">The input claims set (a JSON object). Not mutated.</param>
-    /// <param name="frame">Which claims are selectively disclosable (must not target registered claims).</param>
+    /// <param name="frame">Which claims are selectively disclosable (must not target registered claims or their subclaims).</param>
     /// <param name="signer">The Issuer's NetCrypto-backed JWS signer.</param>
     /// <param name="options">Issuance options (hash algorithm, decoys, holder cnf key).</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>

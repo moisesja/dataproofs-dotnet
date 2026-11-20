@@ -52,11 +52,16 @@ public static class SdJwtVcConstants
     public const string StatusClaim = "status";
 
     /// <summary>
-    /// The registered JWT claims that MUST NOT be placed in Disclosures, i.e. MUST stay in the
-    /// clear in the SD-JWT payload (§2.2.2.3): <c>iss</c>, <c>nbf</c>, <c>exp</c>, <c>cnf</c>,
-    /// <c>vct</c>, <c>vct#integrity</c>, <c>aka_vcts</c>, <c>status</c>. Marking any of these in a
-    /// <see cref="DisclosureFrame"/> is a disallowed claim shape the Issuer rejects, and finding
-    /// any of them disclosed in a presentation is a Verifier failure.
+    /// The registered JWT claims that, "including any of their subclaims", MUST NOT be placed in
+    /// Disclosures, i.e. MUST stay in the clear in the SD-JWT payload (§2.2.2.3): <c>iss</c>,
+    /// <c>nbf</c>, <c>exp</c>, <c>cnf</c>, <c>vct</c>, <c>vct#integrity</c>, <c>aka_vcts</c>,
+    /// <c>status</c>. The names are those of top-level claims, and the rule covers each claim and
+    /// everything inside it: a member of <c>status</c> or <c>cnf</c> at any depth, an element of
+    /// <c>aka_vcts</c>. A <see cref="DisclosureFrame"/> entry on one of them, of any kind, is a
+    /// disallowed claim shape the Issuer rejects, and a presented Disclosure that resolves to one or
+    /// inside one is a Verifier failure (<c>VC_DISALLOWED_DISCLOSURE</c>). A claim deeper in the payload
+    /// that only shares a name, such as <c>credentialSubject.status</c>, is an ordinary claim and may be
+    /// selectively disclosed.
     /// </summary>
     public static readonly IReadOnlyList<string> MustNotBeSelectivelyDisclosed =
         ["iss", "nbf", "exp", "cnf", VctClaim, VctIntegrityClaim, AkaVctsClaim, StatusClaim];
