@@ -29,6 +29,7 @@ Every path uses fixed seed keys, fixed timestamps and fixed documents (`Fixtures
 | `LegacyPath` | `Ed25519Signature2020` and `EcdsaSecp256r1Signature2019`, each in the JCS and RDFC variants. The RDFC signing input is the one zcap-dotnet uses. The RDFC documents list a context that defines the proof terms (`ed25519-2020/v1`, or `undefined-terms/v2` for P-256, which has no published one), since RDFC refuses terms it would drop. |
 | `JosePath` | JWS in compact, Flattened, General and DIDComm kid-placement forms; JWT with claim validation; General JSON JWE with ECDH-ES+A256KW and A256KW; compact JWE. |
 | `SdJwtPath` | SD-JWT issuance with object and array-element disclosures and decoys, then a holder presentation with a Key Binding JWT, then verification. |
+| `X509Path` | `x5c` (issue #46): a compact JWS and an SD-JWT VC signed with a certificate chain, verified with the end-entity key and a hook pinned to the certificate, and an `X5C_UNTRUSTED` refusal. The certificate is assembled from fixed fields with `System.Formats.Asn1`, so the JWS is deterministic. |
 | `CoseAndVcPath` | COSE_Sign1 with EdDSA and ES256, CWT, and the VC-JOSE and VC-COSE envelopes. |
 | `JwkPath` | JWK to and from Multikey, conversion to `Microsoft.IdentityModel.Tokens.JsonWebKey`, the `PublicKeyMaterial` JWK round trip, and RFC 7638 thumbprints. |
 | `CompositionPath` | `AddDataProofs` with every registration. A consumer `JsonSerializerContext` that lists `DataIntegrityProof` (the zcap-dotnet#154 scenario, `AotSmokeJson.cs`). Resolution through `DataProofsJsonOptions.Default`. |

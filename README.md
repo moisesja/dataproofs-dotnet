@@ -6,7 +6,7 @@ families defined by the W3C and IETF securing-mechanism landscape.
 | Package | What it gives you |
 |---|---|
 | `DataProofsDotnet.Core` | W3C VC Data Integrity 1.0: proof model, add/verify pipeline, cryptosuite registry, JCS suites (`eddsa-jcs-2022`, `ecdsa-jcs-2019`), verification-method resolver abstraction |
-| `DataProofsDotnet.Jose` | JWS, JWE, JWT, JWK; SD-JWT (RFC 9901) with Key Binding; SD-JWT VC; VC-JOSE-COSE (JOSE half) |
+| `DataProofsDotnet.Jose` | JWS, JWE, JWT, JWK; `x5c` certificate chains (parsed; the caller validates them); SD-JWT (RFC 9901) with Key Binding; SD-JWT VC; VC-JOSE-COSE (JOSE half) |
 | `DataProofsDotnet.Cose` | COSE_Sign1 (RFC 9052), CWT (RFC 8392), VC-JOSE-COSE (COSE half) |
 | `DataProofsDotnet.Rdfc` | JSON-LD / RDFC-1.0 canonicalization, offline-default document loader, RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `bbs-2023` selective disclosure |
 | `DataProofsDotnet.Legacy` | Pre–Data-Integrity Linked-Data-Signature suites (`Ed25519Signature2020`, `EcdsaSecp256r1Signature2019`), JCS + RDFC variants — **opt-in, for interop with existing corpora only** |

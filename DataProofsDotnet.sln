@@ -85,6 +85,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "aot-smoke", "aot-smoke", "{
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AotSmoke", "tasks\aot-smoke\AotSmoke.csproj", "{2A62FA7C-6A38-424C-84A4-D9FE05AAF578}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataProofsDotnet.Samples.X509CertificateChain", "samples\DataProofsDotnet.Samples.X509CertificateChain\DataProofsDotnet.Samples.X509CertificateChain.csproj", "{5DB1A943-5F26-43F4-AD01-3841166ABBC4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -491,6 +493,18 @@ Global
 		{2A62FA7C-6A38-424C-84A4-D9FE05AAF578}.Release|x64.Build.0 = Release|Any CPU
 		{2A62FA7C-6A38-424C-84A4-D9FE05AAF578}.Release|x86.ActiveCfg = Release|Any CPU
 		{2A62FA7C-6A38-424C-84A4-D9FE05AAF578}.Release|x86.Build.0 = Release|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Debug|x64.Build.0 = Debug|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Debug|x86.Build.0 = Debug|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Release|x64.ActiveCfg = Release|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Release|x64.Build.0 = Release|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Release|x86.ActiveCfg = Release|Any CPU
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -533,5 +547,6 @@ Global
 		{1A449C0C-3908-4917-AE93-AC230338942E} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{71B30D30-4586-6E94-73A4-9EB2851F02F3} = {B554F44C-BC1A-140C-1D5D-67ADEC712783}
 		{2A62FA7C-6A38-424C-84A4-D9FE05AAF578} = {71B30D30-4586-6E94-73A4-9EB2851F02F3}
+		{5DB1A943-5F26-43F4-AD01-3841166ABBC4} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal

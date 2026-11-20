@@ -19,13 +19,15 @@ public sealed class SdJwtVerificationResult
         JsonObject? disclosedPayload,
         IReadOnlyList<string> errors,
         bool keyBindingVerified,
-        string? signatureAlgorithm)
+        string? signatureAlgorithm,
+        X509CertificateChain? issuerCertificateChain = null)
     {
         IsValid = isValid;
         _disclosedPayload = disclosedPayload;
         Errors = errors;
         KeyBindingVerified = keyBindingVerified;
         SignatureAlgorithm = signatureAlgorithm;
+        IssuerCertificateChain = issuerCertificateChain;
     }
 
     /// <summary>True when the issuer signature verified, every disclosure resolved, and (when required) Key Binding passed.</summary>
@@ -48,8 +50,16 @@ public sealed class SdJwtVerificationResult
     /// <summary>The issuer JWT's signature algorithm when known; <c>null</c> otherwise.</summary>
     public string? SignatureAlgorithm { get; }
 
-    internal static SdJwtVerificationResult Success(JsonObject disclosedPayload, bool keyBindingVerified, string signatureAlgorithm)
-        => new(true, disclosedPayload, [], keyBindingVerified, signatureAlgorithm);
+    /// <summary>
+    /// The Issuer's <c>x5c</c> certificate chain, when the presentation verified through
+    /// <see cref="SdJwtVerifier.VerifyWithCertificateChain"/>: its end-entity key verified the Issuer signature and the
+    /// caller's hook accepted it. <c>null</c> on failure and on the <c>kid</c>-resolver path, which never reads <c>x5c</c>.
+    /// </summary>
+    public X509CertificateChain? IssuerCertificateChain { get; }
+
+    internal static SdJwtVerificationResult Success(
+        JsonObject disclosedPayload, bool keyBindingVerified, string signatureAlgorithm, X509CertificateChain? issuerCertificateChain = null)
+        => new(true, disclosedPayload, [], keyBindingVerified, signatureAlgorithm, issuerCertificateChain);
 
     internal static SdJwtVerificationResult Failure(IReadOnlyList<string> errors, string? signatureAlgorithm = null)
         => new(false, null, errors, false, signatureAlgorithm);

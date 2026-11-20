@@ -390,3 +390,18 @@ static DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Compute(System.ReadO
 static DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataIntegrity.Matches(string! integrityMetadata, System.ReadOnlySpan<byte> document) -> bool
 static DataProofsDotnet.Jose.VcJose.EnvelopeCredentialAsync(System.ReadOnlyMemory<byte> credentialJson, DataProofsDotnet.Jose.Signing.JwsSigner! signer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 static DataProofsDotnet.Jose.VcJose.VerifyCredential(string! envelope, System.Func<string!, DataProofsDotnet.Jose.Jwk?>! resolveSignerPublicJwk, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null) -> byte[]!
+const DataProofsDotnet.Jose.X509CertificateChain.MaxCertificates = 10 -> int
+DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.IssuerCertificateChain.get -> DataProofsDotnet.Jose.X509CertificateChain?
+DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.IssuerCertificateChain.get -> DataProofsDotnet.Jose.X509CertificateChain?
+DataProofsDotnet.Jose.Signing.JwsParseResult.CertificateChain.get -> DataProofsDotnet.Jose.X509CertificateChain?
+DataProofsDotnet.Jose.Signing.JwsParseResult.CertificateChain.init -> void
+DataProofsDotnet.Jose.Signing.JwsSigner.CertificateChain.get -> DataProofsDotnet.Jose.X509CertificateChain?
+DataProofsDotnet.Jose.Signing.JwsSigner.CertificateChain.init -> void
+DataProofsDotnet.Jose.X509CertificateChain
+DataProofsDotnet.Jose.X509CertificateChain.Certificates.get -> System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>>!
+DataProofsDotnet.Jose.X509CertificateChain.EndEntityCertificate.get -> System.ReadOnlyMemory<byte>
+DataProofsDotnet.Jose.X509CertificateChain.EndEntityPublicKey.get -> DataProofsDotnet.Jose.Jwk!
+static DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.VerifyWithCertificateChain(string! presentation, System.Func<DataProofsDotnet.Jose.X509CertificateChain!, bool>! validateIssuerCertificateChain, DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions? options = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null) -> DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult!
+static DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyWithCertificateChainAsync(string! presentation, System.Func<DataProofsDotnet.Jose.X509CertificateChain!, bool>! validateIssuerCertificateChain, DataProofsDotnet.Jose.SdJwt.SdJwtVerificationOptions? options = null, DataProofsDotnet.Jose.SdJwt.Vc.TypeMetadataProcessingOptions? typeMetadata = null, DataProofsDotnet.Jose.IJoseCryptoProvider? cryptoProvider = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult!>!
+static DataProofsDotnet.Jose.Signing.JwsParser.ParseCompactWithCertificateChain(string! compact, System.Func<DataProofsDotnet.Jose.X509CertificateChain!, bool>! validateCertificateChain, DataProofsDotnet.Jose.IJoseCryptoProvider! cryptoProvider) -> DataProofsDotnet.Jose.Signing.JwsParseResult!
+static DataProofsDotnet.Jose.X509CertificateChain.Create(System.Collections.Generic.IReadOnlyList<System.ReadOnlyMemory<byte>>! certificates) -> DataProofsDotnet.Jose.X509CertificateChain!

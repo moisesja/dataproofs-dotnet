@@ -26,7 +26,8 @@ public sealed class SdJwtVcVerificationResult
         IReadOnlyList<string> errors,
         ProcessedTypeMetadata? processedTypeMetadata = null,
         Exception? typeMetadataResolverFault = null,
-        byte[]? typeMetadataOctets = null)
+        byte[]? typeMetadataOctets = null,
+        X509CertificateChain? issuerCertificateChain = null)
     {
         _typeMetadataOctets = typeMetadataOctets;
         IsValid = isValid;
@@ -37,6 +38,7 @@ public sealed class SdJwtVcVerificationResult
         Errors = errors;
         ProcessedTypeMetadata = processedTypeMetadata;
         TypeMetadataResolverFault = typeMetadataResolverFault;
+        IssuerCertificateChain = issuerCertificateChain;
     }
 
     /// <summary>True when the SD-JWT verified and every SD-JWT VC profile rule held.</summary>
@@ -86,15 +88,28 @@ public sealed class SdJwtVcVerificationResult
     /// <summary>True when a Key Binding JWT was present and verified.</summary>
     public bool KeyBindingVerified { get; }
 
+    /// <summary>
+    /// The Issuer's <c>x5c</c> certificate chain, when the presentation verified through
+    /// <see cref="SdJwtVcVerifier.VerifyWithCertificateChainAsync"/>: its end-entity key verified the Issuer signature
+    /// and the caller's hook accepted it. Under that mechanism the Issuer is the subject of
+    /// <see cref="X509CertificateChain.EndEntityCertificate"/>, and an <c>iss</c> claim is not authenticated
+    /// (draft-ietf-oauth-sd-jwt-vc-27 §2.5). <c>null</c> on failure and on the <c>kid</c>-resolver methods, which never read <c>x5c</c>.
+    /// </summary>
+    public X509CertificateChain? IssuerCertificateChain { get; }
+
     /// <summary>Human-readable failure reasons (empty when <see cref="IsValid"/> is true). No secrets or key material.</summary>
     public IReadOnlyList<string> Errors { get; }
 
-    internal static SdJwtVcVerificationResult Success(JsonObject disclosedPayload, string vct, JsonObject? typeMetadata, bool keyBindingVerified)
-        => new(true, disclosedPayload, vct, typeMetadata, keyBindingVerified, []);
+    internal static SdJwtVcVerificationResult Success(
+        JsonObject disclosedPayload, string vct, JsonObject? typeMetadata, bool keyBindingVerified,
+        X509CertificateChain? issuerCertificateChain = null)
+        => new(true, disclosedPayload, vct, typeMetadata, keyBindingVerified, [], issuerCertificateChain: issuerCertificateChain);
 
     internal static SdJwtVcVerificationResult Success(
-        JsonObject disclosedPayload, string vct, byte[] typeMetadataOctets, ProcessedTypeMetadata processedTypeMetadata, bool keyBindingVerified)
-        => new(true, disclosedPayload, vct, null, keyBindingVerified, [], processedTypeMetadata, typeMetadataOctets: typeMetadataOctets);
+        JsonObject disclosedPayload, string vct, byte[] typeMetadataOctets, ProcessedTypeMetadata processedTypeMetadata, bool keyBindingVerified,
+        X509CertificateChain? issuerCertificateChain = null)
+        => new(true, disclosedPayload, vct, null, keyBindingVerified, [], processedTypeMetadata, typeMetadataOctets: typeMetadataOctets,
+            issuerCertificateChain: issuerCertificateChain);
 
     internal static SdJwtVcVerificationResult Failure(IReadOnlyList<string> errors)
         => new(false, null, null, null, false, errors);

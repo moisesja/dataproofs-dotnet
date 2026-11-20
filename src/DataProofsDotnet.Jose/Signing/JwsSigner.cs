@@ -70,6 +70,59 @@ public sealed class JwsSigner
     /// <summary>Which JWS header carries <see cref="Kid"/> (see <see cref="JwsKidPlacement"/>).</summary>
     public JwsKidPlacement KidPlacement { get; }
 
+    /// <summary>
+    /// The X.509 certificate chain to carry as the <c>x5c</c> header parameter (RFC 7515 §4.1.6), or <c>null</c>
+    /// (the default) to carry none. Every JWS this signer produces, compact or JSON, and so every JWT, VC-JOSE
+    /// envelope, SD-JWT and SD-JWT VC, then has <c>x5c</c> in its <b>protected</b> header, as
+    /// draft-ietf-oauth-sd-jwt-vc-27 §2.5 requires; a <see cref="Kid"/> is still written as well.
+    /// </summary>
+    /// <remarks>
+    /// The end-entity certificate's key must be this signer's key, so that the JWS verifies under the key a verifier
+    /// takes from <c>x5c</c>. The chain is not validated here: whoever verifies validates it against their own trust
+    /// anchors (see <see cref="X509CertificateChain"/>).
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// When set to a chain whose end-entity public key is not <see cref="Signer"/>'s public key, or whose end-entity
+    /// certificate has a Key Usage extension without <c>digitalSignature</c> (the message starts with <c>X5C_KEY_USAGE</c>).
+    /// </exception>
+    public X509CertificateChain? CertificateChain
+    {
+        get => _certificateChain;
+        init
+        {
+            if (value is not null && !value.EndEntityMaySign)
+                throw new ArgumentException(X509CertificateChain.KeyUsageMessage, nameof(CertificateChain));
+            if (value is not null && !EndEntityKeyIsSignerKey(value))
+                throw new ArgumentException(
+                    "The end-entity certificate's public key is not the signer's public key; a verifier taking the key "
+                    + "from 'x5c' could not verify this signer's signatures.",
+                    nameof(CertificateChain));
+            _certificateChain = value;
+        }
+    }
+
+    private readonly X509CertificateChain? _certificateChain;
+
+    private bool EndEntityKeyIsSignerKey(X509CertificateChain chain)
+    {
+        var (keyType, publicKey) = chain.EndEntityKey;
+        if (keyType != Signer.KeyType)
+            return false;
+        // Both sides as JWK coordinates, so a compressed and an uncompressed encoding of one point compare equal.
+        Jwk signerKey;
+        try
+        {
+            signerKey = JwkConversion.ToPublicJwk(Signer.KeyType, Signer.PublicKey.ToArray());
+        }
+        catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException or ArgumentException)
+        {
+            return false;
+        }
+        var certificateKey = JwkConversion.ToPublicJwk(keyType, publicKey);
+        return string.Equals(signerKey.X, certificateKey.X, StringComparison.Ordinal)
+            && string.Equals(signerKey.Y, certificateKey.Y, StringComparison.Ordinal);
+    }
+
     /// <summary>Sign the JWS signing input and return the signature in JOSE wire format.</summary>
     /// <param name="signingInput">The ASCII bytes of <c>BASE64URL(header) "." BASE64URL(payload)</c>.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>

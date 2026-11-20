@@ -37,6 +37,7 @@ public static class SmokeMain
             new LegacyPath(),
             new JosePath(),
             new SdJwtPath(),
+            new X509Path(),
             new CoseAndVcPath(),
             new JwkPath(),
             new CompositionPath(), // last: compares its DI-built output with the JCS path's

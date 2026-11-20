@@ -56,6 +56,7 @@ public static class VcJose
             Alg = signer.Algorithm,
             Kid = signer.Kid ?? string.Empty,
             Typ = EnvelopeType,
+            X5c = signer.CertificateChain?.ToHeaderValue(),
             AdditionalMembers = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
             {
                 ["cty"] = JsonSerializer.SerializeToElement(CredentialContentType, JoseJson.StringTypeInfo),

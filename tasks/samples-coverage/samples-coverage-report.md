@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **618**
-- Covered by at least one sample: **616**
+- Public members across 6 packages: **631**
+- Covered by at least one sample: **629**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -420,10 +420,12 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.DisclosedPayload`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.Errors`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.IsValid`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.IssuerCertificateChain`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.KeyBindingVerified`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerificationResult.SignatureAlgorithm`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier (type)`
 - `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.Verify`
+- `DataProofsDotnet.Jose.SdJwt.SdJwtVerifier.VerifyWithCertificateChain`
 - `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Description`
 - `DataProofsDotnet.Jose.SdJwt.Vc.ClaimDisplayMetadata.Dir`
@@ -477,6 +479,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.DisclosedPayload`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Errors`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.IsValid`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.IssuerCertificateChain`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.KeyBindingVerified`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.ProcessedTypeMetadata`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.TypeMetadata`
@@ -484,6 +487,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerificationResult.Vct`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyAsync`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyWithCertificateChainAsync`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcVerifier.VerifyWithTypeMetadataAsync`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata (type)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SimpleRenderingMetadata.BackgroundColor`
@@ -524,6 +528,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Signing.JwsKidPlacement (type)`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult (type)`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult..ctor(String,String,Byte[])`
+- `DataProofsDotnet.Jose.Signing.JwsParseResult.CertificateChain`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.PayloadBytes`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.SignatureAlgorithm`
 - `DataProofsDotnet.Jose.Signing.JwsParseResult.SignerKid`
@@ -534,9 +539,11 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.Signing.JwsParser.Parse`
 - `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact`
 - `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompact`
+- `DataProofsDotnet.Jose.Signing.JwsParser.ParseCompactWithCertificateChain`
 - `DataProofsDotnet.Jose.Signing.JwsSigner (type)`
 - `DataProofsDotnet.Jose.Signing.JwsSigner..ctor(ISigner,String,JwsKidPlacement)`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.Algorithm`
+- `DataProofsDotnet.Jose.Signing.JwsSigner.CertificateChain`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.Kid`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.KidPlacement`
 - `DataProofsDotnet.Jose.Signing.JwsSigner.Signer`
@@ -546,6 +553,12 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.VcJose.EnvelopeType`
 - `DataProofsDotnet.Jose.VcJose.MediaType`
 - `DataProofsDotnet.Jose.VcJose.VerifyCredential`
+- `DataProofsDotnet.Jose.X509CertificateChain (type)`
+- `DataProofsDotnet.Jose.X509CertificateChain.Certificates`
+- `DataProofsDotnet.Jose.X509CertificateChain.Create`
+- `DataProofsDotnet.Jose.X509CertificateChain.EndEntityCertificate`
+- `DataProofsDotnet.Jose.X509CertificateChain.EndEntityPublicKey`
+- `DataProofsDotnet.Jose.X509CertificateChain.MaxCertificates`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite (type)`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite..ctor(LegacyCanonicalization,IRdfCanonicalizer,LegacyVariantVerification)`
 - `DataProofsDotnet.Legacy.DataIntegrity.EcdsaSecp256r1Signature2019Cryptosuite.CreateProofAsync`
