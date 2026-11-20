@@ -149,7 +149,9 @@ public static class KeyBindingJwt
             else
             {
                 var now = options.CurrentTime ?? DateTimeOffset.UtcNow;
-                if (now - iat.Value > maxAge + options.ClockSkew)
+                // In 128-bit ticks: maxAge + ClockSkew overflows TimeSpan (OverflowException out of a never-throws
+                // verifier) when both are large. now - iat cannot: both are DateTimeOffsets, under 3.2e18 ticks apart.
+                if ((Int128)(now - iat.Value).Ticks > (Int128)maxAge.Ticks + options.ClockSkew.Ticks)
                     errors.Add($"KB_JWT_EXPIRED: Key Binding JWT 'iat' is older than the {maxAge} freshness bound (replay defense, RFC 9901 §10).");
                 if (iat.Value - now > options.ClockSkew)
                     errors.Add("KB_JWT_IAT_IN_FUTURE: Key Binding JWT 'iat' is in the future beyond the allowed clock skew.");
