@@ -414,6 +414,30 @@ public sealed class Issue45ValidityWindowTests
         ShouldFailWith(nbfResult.Errors, nbfResult.IsValid, "VC_DISALLOWED_DISCLOSURE");
     }
 
+    public static TheoryData<string, string, string> DisclosedValidityClaims => new()
+    {
+        // A top-level nbf or exp that only a Disclosure supplies: refused with the window's code when it fails the
+        // window, and by the positional rule otherwise. Never accepted.
+        { "exp", "1795086000", "SD_JWT_EXPIRED" },
+        { "exp", "1795093200", "VC_DISALLOWED_DISCLOSURE" },
+        { "exp", "\"soon\"", "SD_JWT_EXP_INVALID" },
+        { "nbf", "1795093200", "SD_JWT_NOT_YET_VALID" },
+        { "nbf", "1795086000", "VC_DISALLOWED_DISCLOSURE" },
+        { "nbf", "true", "SD_JWT_NBF_INVALID" },
+    };
+
+    [Theory]
+    [MemberData(nameof(DisclosedValidityClaims))]
+    public async Task A_top_level_nbf_or_exp_from_a_Disclosure_is_never_accepted(string claim, string json, string code)
+    {
+        NowSeconds.Should().Be(1795089600);
+        var disclosure = Disclosure.ForObjectProperty("salt-" + claim, claim, JsonNode.Parse(json));
+        var presentation = await Sign(VcPayload(("_sd", new JsonArray((JsonNode)disclosure.ComputeDigest(SdAlg)))), disclosures: [disclosure]);
+
+        var result = await VerifyVc(presentation, At(Now));
+        ShouldFailWith(result.Errors, result.IsValid, code);
+    }
+
     [Fact]
     public async Task A_Disclosure_cannot_replace_a_clear_exp()
     {
@@ -506,8 +530,8 @@ public sealed class Issue45ValidityWindowTests
     public static TheoryData<string, string, string?> KeyBindingWindows => new()
     {
         // KB-JWT claims (JSON members, Now = 1795089600), the code it fails with, or null when it verifies.
-        { "exp", "1795086000", "KB_JWT_EXPIRED" },            // an hour ago
-        { "exp", "1795089600", "KB_JWT_EXPIRED" },            // exactly now, no skew: RFC 7519 §4.1.4
+        { "exp", "1795086000", "KB_JWT_EXP_PASSED" },         // an hour ago
+        { "exp", "1795089600", "KB_JWT_EXP_PASSED" },         // exactly now, no skew: RFC 7519 §4.1.4
         { "exp", "1795089601", null },
         { "nbf", "1795093200", "KB_JWT_NOT_YET_VALID" },      // in an hour
         { "nbf", "1795089600", null },                        // exactly now: §4.1.5 "after or equal"
@@ -537,6 +561,27 @@ public sealed class Issue45ValidityWindowTests
             await ShouldPassOnBoth(presentation, options);
         else
             await ShouldFailOnBoth(presentation, options, code);
+    }
+
+    [Fact]
+    public async Task A_Key_Binding_JWT_past_both_its_age_bound_and_its_exp_reports_two_distinct_codes()
+    {
+        // KB_JWT_EXPIRED is the iat age bound; the KB-JWT's own exp is KB_JWT_EXP_PASSED, so no code appears twice.
+        var holder = TestKeyMaterial.Generate(KeyType.P256, "holder");
+        var issued = await SdJwtVcIssuer.IssueAsync(
+            VcPayload(), new DisclosureFrame().Disclose("given_name"), Issuer.Signer,
+            new SdJwtIssuerOptions { HolderConfirmationKey = holder.PublicJwk });
+        var presentation = await PresentWithKeyBindingPayload(issued.Issuance, holder, new JsonObject
+        {
+            ["nonce"] = Nonce, ["aud"] = Audience, ["iat"] = NowSeconds - 3600, ["exp"] = NowSeconds - 1800,
+        });
+        var options = At(Now) with
+        {
+            ExpectedAudience = Audience, ExpectedNonce = Nonce, MaxKeyBindingAge = TimeSpan.FromMinutes(5),
+        };
+
+        await ShouldFailOnBoth(presentation, options, "KB_JWT_EXPIRED", "KB_JWT_EXP_PASSED");
+        await ShouldFailOnBoth(presentation, options with { MaxKeyBindingAge = null }, "KB_JWT_EXP_PASSED");
     }
 
     [Fact]

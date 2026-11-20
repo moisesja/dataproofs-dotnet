@@ -14,30 +14,26 @@ namespace DataProofsDotnet.Jose.SdJwt;
 /// </summary>
 internal static class ValidityWindow
 {
-    /// <summary>The SD-JWT's codes: <c>SD_JWT_EXPIRED</c>, <c>SD_JWT_NOT_YET_VALID</c>, <c>SD_JWT_EXP_INVALID</c>, <c>SD_JWT_NBF_INVALID</c>.</summary>
-    public static readonly Codes SdJwt = new("SD_JWT", "the SD-JWT");
+    /// <summary>The SD-JWT's codes.</summary>
+    public static readonly Codes SdJwt = new(
+        "the SD-JWT", Expired: "SD_JWT_EXPIRED", NotYetValid: "SD_JWT_NOT_YET_VALID",
+        ExpInvalid: "SD_JWT_EXP_INVALID", NbfInvalid: "SD_JWT_NBF_INVALID");
 
     /// <summary>
-    /// The Key Binding JWT's codes: <c>KB_JWT_EXPIRED</c> (shared with the <c>iat</c> age bound: either way the KB-JWT
-    /// is too old to accept), <c>KB_JWT_NOT_YET_VALID</c>, <c>KB_JWT_EXP_INVALID</c>, <c>KB_JWT_NBF_INVALID</c>.
+    /// The Key Binding JWT's codes. Its passed <c>exp</c> is <c>KB_JWT_EXP_PASSED</c>, not <c>KB_JWT_EXPIRED</c>, which
+    /// the <c>iat</c> age bound already uses: one result can carry both, and each code keeps one meaning.
     /// </summary>
-    public static readonly Codes KeyBindingJwt = new("KB_JWT", "the Key Binding JWT");
+    public static readonly Codes KeyBindingJwt = new(
+        "the Key Binding JWT", Expired: "KB_JWT_EXP_PASSED", NotYetValid: "KB_JWT_NOT_YET_VALID",
+        ExpInvalid: "KB_JWT_EXP_INVALID", NbfInvalid: "KB_JWT_NBF_INVALID");
 
-    /// <summary>The code prefix and the noun a message names.</summary>
-    internal sealed record Codes(string Prefix, string Subject)
-    {
-        /// <summary>The current time is at or past <c>exp</c> + skew.</summary>
-        public string Expired => Prefix + "_EXPIRED";
-
-        /// <summary>The current time is before <c>nbf</c> − skew.</summary>
-        public string NotYetValid => Prefix + "_NOT_YET_VALID";
-
-        /// <summary>A present <c>exp</c> is not a NumericDate.</summary>
-        public string ExpInvalid => Prefix + "_EXP_INVALID";
-
-        /// <summary>A present <c>nbf</c> is not a NumericDate.</summary>
-        public string NbfInvalid => Prefix + "_NBF_INVALID";
-    }
+    /// <summary>The noun a message names, and the code for each failure.</summary>
+    /// <param name="Subject">The JWT, as the message names it.</param>
+    /// <param name="Expired">The current time is at or past <c>exp</c> + skew.</param>
+    /// <param name="NotYetValid">The current time is before <c>nbf</c> − skew.</param>
+    /// <param name="ExpInvalid">A present <c>exp</c> is not a NumericDate.</param>
+    /// <param name="NbfInvalid">A present <c>nbf</c> is not a NumericDate.</param>
+    internal sealed record Codes(string Subject, string Expired, string NotYetValid, string ExpInvalid, string NbfInvalid);
 
     private const string ExpClaim = "exp";
     private const string NbfClaim = "nbf";
@@ -120,7 +116,6 @@ internal static class ValidityWindow
             return true;
 
         if (node is not JsonValue value
-            || value.GetValueKind() != JsonValueKind.Number
             || !TryGetSeconds(value, out var seconds)
             || seconds < MinUnixSeconds
             || seconds > MaxUnixSeconds)
@@ -135,26 +130,31 @@ internal static class ValidityWindow
     }
 
     /// <summary>
-    /// The number as <see cref="decimal"/>. A parsed value, which is every payload the verifier reads, converts directly,
-    /// exactly for the decimal text a JWT carries. A value that wraps a .NET number converts only if it is a
-    /// <see cref="decimal"/>, so it is read as the JSON text it serializes to, which is what would be signed; a
-    /// non-finite <see cref="double"/> has none and is refused.
+    /// The value as a number of seconds, or <c>false</c> when it is not a JSON number <see cref="decimal"/> can hold.
+    /// Parsed JSON, which is every payload the verifier and the issuer's check read, is read from its element: exactly,
+    /// for the decimal text a JWT carries, and never through a second parse (a number <see cref="decimal"/> cannot hold
+    /// fails here, and nothing else would read it). A value that wraps a .NET number, which converts only if it is a
+    /// <see cref="decimal"/>, is read as the JSON text it serializes to; any failure to serialize it, such as a
+    /// non-finite <see cref="double"/> or a converter that throws, makes it not a NumericDate.
     /// </summary>
     private static bool TryGetSeconds(JsonValue value, out decimal seconds)
     {
-        if (value.TryGetValue(out seconds))
-            return true;
+        seconds = 0;
+        if (value.TryGetValue<JsonElement>(out var element))
+            return element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out seconds);
 
-        string text;
         try
         {
-            text = value.ToJsonString();
+            if (value.GetValueKind() != JsonValueKind.Number)
+                return false;
+            if (value.TryGetValue(out seconds))
+                return true;
+            return decimal.TryParse(value.ToJsonString(), NumberStyles.Float, CultureInfo.InvariantCulture, out seconds);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             seconds = 0;
             return false;
         }
-        return decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out seconds);
     }
 }
