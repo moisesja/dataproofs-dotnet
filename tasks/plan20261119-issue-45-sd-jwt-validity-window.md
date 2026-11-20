@@ -172,21 +172,21 @@ RFC 7519 (https://www.rfc-editor.org/rfc/rfc7519.txt):
 - [x] Samples: the window in `Samples.SdJwt` and `Samples.SdJwtVc`.
 - [x] PRD FR-16, FR-17, AC-3; CHANGELOG under *Fixed*, headed as a behaviour change.
 - [x] Build `/warnaserror`, full suite, gates (`ac-7`, `ac-9`, `ac-12` smoke).
-- [ ] Adversarial pass; fix what reproduces.
+- [x] Adversarial pass; fix what reproduces (two passes, below).
 - [ ] PR, CI green.
 
 ## Verification
 
 Regression proof (the test files copied alone onto each base, built without `/warnaserror` because a doc `cref` names a
 class the base lacks; `ValidityWindowTests` tests the new internal class and has no base to run on):
-- `origin/main` (`f392d23`), `Issue45ValidityWindowTests` only (its APIs exist there): 84 of 91 fail. The 7 that pass
-  are controls: inside the window, no claims, a nested `exp`, the three maximal-skew rows, and the two KB-JWT rows
-  whose own claims are inside their window.
-- `54cb69b` (#56 head, this branch's base), both files: 108 of 121 fail; the 13 that pass are those controls and the
-  "inside the window" row of each of the six entry points.
+- `origin/main` (`f392d23`), `Issue45ValidityWindowTests` only (its APIs exist there): 89 of 98 fail. The 9 that pass
+  are controls: inside the window, no claims, a nested `exp`, the three maximal-skew rows, the two KB-JWT rows whose
+  own claims are inside their window, and the two disclosed rows main's positional rule already refused.
+- `54cb69b` (#56 head, this branch's base), both files: 121 of 143 fail; the 22 that pass are those controls and the
+  two "inside" rows of each of the six entry points, and the raw-resolver "inside" row.
 - `dotnet build DataProofsDotnet.sln -c Release /warnaserror`: 0 warnings, 0 errors. `dotnet test DataProofsDotnet.sln
-  -c Release`: 3,912 passed, 0 failed, 0 skipped (Jose 1,941, Rdfc 990, Core 539, Legacy 297, Cose 129, DI 11,
-  ApiSurface 5). `tasks/dependency-hygiene` (ac-6), `tasks/api-surface-scan` (ac-7) and `tasks/samples-coverage` (ac-9,
+  -c Release`: 3,936 passed, 0 failed, 0 skipped (Jose 1,965, Rdfc 990, Core 539, Legacy 297, Cose 129, DI 11,
+  ApiSurface 5), at `15137f4`. `tasks/dependency-hygiene` (ac-6), `tasks/api-surface-scan` (ac-7) and `tasks/samples-coverage` (ac-9,
   629 of 631 members covered, 2 allowlisted) clean; every sample exits 0; the ac-12 AOT smoke JIT and
   reflection-disabled legs emit and compare identical (29 values). No public API changed.
 - Time bombs: the full Jose suite run with the default clock forced to 2035 fails only the test of that default, after
