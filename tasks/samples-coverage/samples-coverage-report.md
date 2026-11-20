@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **548**
-- Covered by at least one sample: **546**
+- Public members across 6 packages: **549**
+- Covered by at least one sample: **547**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -431,6 +431,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver..ctor(IReadOnlyDictionary`2)`
 - `DataProofsDotnet.Jose.SdJwt.Vc.LocalCacheTypeMetadataResolver.ResolveAsync`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants (type)`
+- `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.AkaVctsClaim`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MediaType`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.MustNotBeSelectivelyDisclosed`
 - `DataProofsDotnet.Jose.SdJwt.Vc.SdJwtVcConstants.StatusClaim`

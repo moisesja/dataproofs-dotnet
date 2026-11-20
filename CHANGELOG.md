@@ -23,6 +23,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<PackageReference Include="System.Formats.Cbor" Version="10.0.15" />` in the consuming project
   lifts the transitive version and clears the audit for all four packages.
 
+### Changed
+
+- **SD-JWT VC is re-pinned from `draft-ietf-oauth-sd-jwt-vc-16` to `-27`** (issue
+  [#49](https://github.com/moisesja/dataproofs-dotnet/issues/49)). -27, of 2026-11-16, is in IESG
+  Evaluation, the last stage before RFC publication. Error messages and XML docs now cite -27 and its
+  section numbers; the ones they cited before (§3.5, §3.2.2.2, §3.2.2.1.1) matched neither -16 nor -27.
+  The `VC_*` codes that start each message are unchanged; a consumer matching the rest of the text will
+  see it change. The vendored examples moved to `tests/fixtures/ietf/sd-jwt-vc-27/`: -27 re-signed every
+  example, and the library verifies all of them. The steps for the next move, to the RFC, are in PRD
+  §12.2. The behaviour changes follow.
+
+- **`SdJwtVcVerifier` no longer accepts `typ: vc+sd-jwt`. This narrows what it accepts.** -16 asked
+  Verifiers to accept the former `vc+sd-jwt` as well as `dc+sd-jwt` "for a reasonable transitional
+  period"; -19 removed that sentence, and -27 §2.2.1 says "The typ value MUST use dc+sd-jwt". An SD-JWT
+  whose issuer-JWT `typ` is anything other than exactly `dc+sd-jwt` now fails with
+  `VC_MEDIA_TYPE_INVALID` before its signature is checked. There is no opt-in. W3C VC-JOSE-COSE uses
+  `vc+sd-jwt` for a different format, a VCDM payload with no `vct`, and an alias, even one behind a
+  flag, would keep the two confusable inside the profile verifier.
+  - *This library's own output:* `SdJwtVcIssuer` has set `typ: dc+sd-jwt` in every release from
+    0.1.0-preview.1 to 2.0.0, so no SD-JWT VC it issued is affected. A token built with the generic
+    `SdJwtIssuer` and an explicit `typ: "vc+sd-jwt"`, as the 2.0.0 SD-JWT VC sample did with
+    `SdJwtVcConstants.TransitionalMediaType`, is now refused.
+  - *What to do:* issue SD-JWT VCs with `SdJwtVcIssuer`, or with `typ: dc+sd-jwt`. A verifier still
+    receiving `vc+sd-jwt` SD-JWT VCs from an issuer on a pre-November-2024 draft needs that issuer to
+    reissue them. A verifier receiving W3C VC-JOSE-COSE `vc+sd-jwt` credentials should not route them
+    here: they failed with `VC_VCT_MISSING` before and fail with `VC_MEDIA_TYPE_INVALID` now. The
+    generic `SdJwtVerifier` does not check `typ` (RFC 9901 §9.11 leaves explicit typing to the profile)
+    and is the layer to build that format on.
+  - `SdJwtVcConstants.TransitionalMediaType` keeps its value and is marked `[Obsolete]`. Using it raises
+    warning CS0618, which a build that treats warnings as errors reports as an error.
+
+- **`aka_vcts` is a registered SD-JWT VC claim** (-18; -27 §2.2.2.2 and §2.2.2.3). Under -16 it was an
+  ordinary claim that could take any value and be selectively disclosed, so both rules below refuse
+  input that was valid then, including credentials `SdJwtVcIssuer` 2.0.0 would have issued:
+  - it is on `SdJwtVcConstants.MustNotBeSelectivelyDisclosed`, so `SdJwtVcIssuer` throws
+    `MalformedJoseException` for a `DisclosureFrame` entry keyed `aka_vcts`, whole claim or elements.
+    `SdJwtVcVerifier` enforces the rule by position and fails with `VC_DISALLOWED_DISCLOSURE` when the
+    top-level `aka_vcts` comes from a Disclosure, or when its signed value holds any disclosure site (an
+    `{"...": digest}` element placeholder or an `_sd` array) whether the holder presents the Disclosure,
+    withholds it, or none exists. A claim named `aka_vcts` nested inside another claim, such as
+    `related.aka_vcts`, is an ordinary claim: it may be selectively disclosed and is not held to the
+    format below. The same positional rule now covers the other seven names (see *Fixed*, issue
+    [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48));
+  - when present it must be a non-empty array of non-empty strings that does not contain the `vct`
+    value. `SdJwtVcIssuer` throws `MalformedJoseException` otherwise, and `SdJwtVcVerifier` checks the
+    value the issuer signed, so withholding an element cannot make a malformed array pass, and fails
+    with the new code `VC_AKA_VCTS_INVALID`.
+
+  *What to do:* issuers put `aka_vcts` in the clear, as an array of the further types. Verifiers that
+  match a credential's type use `vct` and the `aka_vcts` values, and only those: -27 says Type Metadata
+  and `extends` do not add types.
+
+- **`SdJwtVcIssuer` refuses a `vct` or `aka_vcts` value that is not well-formed UTF-16.** A lone surrogate
+  in a caller-built claims set was signed as U+FFFD, so the adversarial review could issue an `aka_vcts`
+  that differed from `vct` before signing and equalled it after, which the verifier then refused. Such a
+  value now throws `MalformedJoseException`, as does a claims set parsed from JSON that escapes a lone
+  surrogate in either claim, which threw `InvalidOperationException` before. Values decoded from the
+  wire cannot carry one, so verification is unchanged.
+
+### Added
+
+- **`SdJwtVcConstants.AkaVctsClaim`** (`"aka_vcts"`).
+- **Documentation for what the SD-JWT VC verifier leaves to the caller:** `ITypeMetadataResolver` lists
+  the -27 retrieval rules an HTTP-backed resolver must carry (https only, redirects, time and size
+  bounds, server-side request forgery checks on every URL, the `vct` identity check and `vct#integrity`);
+  `SdJwtVcVerificationResult.TypeMetadata` says the document is returned unprocessed (-27 §5.7);
+  `SdJwtVcConstants.StatusClaim` and the verifier say `status` is carried, not checked; `SdJwtVerifier`
+  says it does not check `typ`.
+
+### Fixed
+
+- **SD-JWT VC: the must-not-disclose rule follows a claim's position, not its name** (issue
+  [#48](https://github.com/moisesja/dataproofs-dotnet/issues/48)). -27 §2.2.2.3: "The following
+  registered JWT claims, including any of their subclaims, when used in the SD-JWT component of an
+  SD-JWT VC, MUST NOT be included in Disclosures". The listed names are JWT claims, members of the
+  top-level claims set. `SdJwtVcVerifier` compared each presented Disclosure's claim name with the list
+  wherever the Disclosure sat. It now applies to every reserved name the positional rule #49 introduced for
+  `aka_vcts`, which reads what the issuer signed: it refuses a reserved top-level claim that is absent from
+  the issuer-signed payload but present in the processed one (a presented Disclosure supplied it), and a
+  reserved claim whose signed value holds a disclosure site anywhere inside it, an `_sd` array with at
+  least one digest or a `{"...": digest}` element placeholder, whether the Disclosure is attached, withheld
+  or a decoy. Judging only the presented Disclosures would not do: withholding one changes a registered
+  claim under the same signature, for example `status.status_list` dropped from `status`. The behaviour
+  changes follow, one each way:
+  - *Now accepted:* a Disclosure of a nested claim that only shares a reserved name, such as
+    `credentialSubject.status`, `credentialSubject.exp` or `credentialSubject.iss` made disclosable with
+    `DisclosureFrame.DiscloseObjectProperties("credentialSubject", "status")`. `SdJwtVcIssuer` issued
+    these in every release, and `SdJwtVcVerifier` refused its own output with `VC_DISALLOWED_DISCLOSURE`.
+    They now verify. Nothing to do.
+  - *Now refused, which narrows what the verifier accepts:* a credential with selectively disclosable
+    content inside a reserved claim, such as a member of `status` or `cnf` at any depth, or an element of
+    `aka_vcts` or of an array inside `status`, whether its Disclosure is attached or withheld, and whether
+    the reserved claim around it is in the clear or is itself a Disclosure. 2.0.0 verified these. -16 did
+    not say whether a reserved claim's subclaims could be disclosed; -19 added "including any of their
+    subclaims", so under the pinned -27 such a credential is invalid. The failure is
+    `VC_DISALLOWED_DISCLOSURE: SD-JWT VC claim 'status' MUST NOT have selectively disclosable sub-claims or
+    elements (...)`. The message for a reserved claim disclosed at the top level is unchanged. An empty
+    `_sd` array inside a reserved claim carries no digest and is accepted (RFC 9901 §4.2.4.1).
+  - *Also refused, and possibly valid:* decoy digests inside a reserved claim. RFC 9901 §4.2.5 lets an
+    issuer add decoys to any `_sd` array or array, and -27 forbids Disclosures, not digests, so a
+    credential with only decoys there may be conformant. A verifier cannot tell a decoy from a withheld
+    Disclosure, and the withheld case is the one -27 forbids, so the check fails closed.
+  - *This library's own output:* `SdJwtVcIssuer` has refused a `DisclosureFrame` entry of any kind on
+    `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity` or `status` in every release from 0.1.0-preview.1
+    to 2.0.0, every Disclosure such an entry makes sits at or under that claim, and it adds decoys only to
+    objects a frame entry processes, so none of its output is newly refused, apart from the `aka_vcts`
+    element Disclosures under *Changed* and a claims set in which the caller itself built a disclosure
+    site inside a reserved claim. A credential built with the generic `SdJwtIssuer`,
+    `typ: dc+sd-jwt` and a frame entry on a reserved claim is newly refused.
+  - *What to do:* issuers keep `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and
+    `status` wholly in the clear. A verifier that receives credentials with Disclosures inside them needs
+    the issuer to reissue them.
+
+  `SdJwtVcIssuer` refuses the same frames as before, and its message now adds "and neither may any of its
+  subclaims". It now also throws `MalformedJoseException` for a claims set whose reserved claim holds a
+  disclosure site the caller built, which it used to sign as given. It serializes the claims once, checks
+  that JSON and signs it, so a `JsonValue` wrapping a .NET object that serializes with an `_sd` member is
+  caught too, and a claims set that serializes with a duplicate member name (RFC 7519 §4: claim names
+  "MUST be unique") now throws `MalformedJoseException` instead of being signed and refused at
+  verification. A claims set the serializer cannot write still fails through the returned task. A Disclosure
+  referenced from the top-level `_sd` hides its name behind its digest, so when it is withheld no verifier
+  can tell that it was a reserved claim: keeping those claims in the clear is the issuer's duty. The
+  generic `SdJwtVerifier` does not apply the rule, which belongs to the SD-JWT VC profile.
+
+- **SD-JWT: a digest that appears twice anywhere in the payload is refused** (RFC 9901 §7.1 step 4: "If
+  any digest value is encountered more than once in the Issuer-signed JWT payload (directly or recursively
+  via other Disclosures), the SD-JWT MUST be rejected"). `SdJwtVerifier` and `SdJwtVcVerifier` refused a
+  repeat only within one `_sd` array, or when a presented Disclosure was referenced twice; a decoy or
+  withheld digest that repeated across `_sd` arrays and `...` placeholders was accepted. Such an SD-JWT now
+  fails with `DISCLOSURE_INVALID`, and the message for every repeat is now `An SD-JWT digest appears more
+  than once in the payload, ...`. Every newly refused input is invalid under RFC 9901. *This library's own
+  output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
+  the issue #48 adversarial pass; it is a separate commit in that PR.
+
+- **SD-JWT: `_sd_alg` is a control claim only at the top level.** The reconstructor skipped an `_sd_alg`
+  member at every depth, so a nested one vanished from the processed payload unread, with any digests
+  under it out of reach of the step 4 check. RFC 9901 §4.1.1 puts `_sd_alg` at the top level only, and
+  §7.1 step 3.f removes only that one, so a nested `_sd_alg` is now processed and kept like any other
+  member. *This library's own output:* `SdJwtIssuer` copies a nested `_sd_alg` from a caller's claims set
+  as given; such an SD-JWT verifies as before and now keeps the member. Separately, a Disclosure named
+  `_sd_alg` beside the top-level `_sd_alg` is now refused as a name clash (§7.1 step 3.c.ii.3: "If the
+  claim name already exists at the level of the _sd key, the SD-JWT MUST be rejected"); it used to
+  replace `_sd_alg` in the processed payload. Found by the issue #48 adversarial passes; separate
+  commits in that PR.
+
 ## [2.0.0] - 2026-11-02
 
 **This is a major release.** The four RDFC constructor changes under Changed remove actual

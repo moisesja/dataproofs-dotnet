@@ -11,15 +11,15 @@ using Xunit;
 namespace DataProofsDotnet.Jose.Tests.SdJwt;
 
 /// <summary>
-/// AC-3 step 5 — SD-JWT VC profile (FR-17, draft-ietf-oauth-sd-jwt-vc-16) beyond generic SD-JWT.
-/// Fixtures: <c>fixtures/ietf/sd-jwt-vc-16/</c>. Asserts the profile-specific behavior the generic
-/// SD-JWT suite does not: <c>vct</c> presence and validation, the <c>dc+sd-jwt</c> media type with
-/// the transitional <c>vc+sd-jwt</c> accepted on input, the registered must-not-disclose claim
-/// rules, issuer/holder/verifier processing, and Type Metadata retrieval through the offline
-/// <see cref="LocalCacheTypeMetadataResolver"/> (never the network, FR-17 posture).
+/// AC-3 step 5 — SD-JWT VC profile (FR-17, draft-ietf-oauth-sd-jwt-vc-27) beyond generic SD-JWT.
+/// Fixtures: <c>fixtures/ietf/sd-jwt-vc-27/</c>. Asserts the profile-specific behavior the generic
+/// SD-JWT suite does not: <c>vct</c> presence and validation, the <c>dc+sd-jwt</c> media type (the
+/// former <c>vc+sd-jwt</c> is rejected, see <see cref="Issue49SdJwtVcRepinTests"/>), the registered
+/// must-not-disclose claim rules, issuer/holder/verifier processing, and Type Metadata retrieval
+/// through the offline <see cref="LocalCacheTypeMetadataResolver"/> (never the network, FR-17 posture).
 ///
-/// SD-JWT VC pin check (2026-06-12): <see cref="SdJwtVcConstants"/> pins draft-16; re-verified
-/// against the IETF datatracker — -16 remains the latest, no -17 exists (PRD §12.2 / FR-17).
+/// SD-JWT VC pin check (2026-11-19): <see cref="SdJwtVcConstants"/> pins draft-27; re-verified
+/// against the IETF datatracker — -27 (2026-11-16, IESG Evaluation) is the latest (PRD §12.2 / FR-17).
 /// </summary>
 public sealed class SdJwtVcProfileTests
 {
@@ -35,14 +35,14 @@ public sealed class SdJwtVcProfileTests
         ["address"] = new JsonObject { ["country"] = "US" },
     };
 
-    // ---- Fixture-driven verification (draft-16 worked examples) ----
+    // ---- Fixture-driven verification (draft-27 worked examples) ----
 
     [Fact]
     public async Task Fixture_presentation_without_kb_verifies_and_carries_vct()
     {
-        // sd-jwt-vc-16 §2.3.2 Figure 9/10: a presentation (typ dc+sd-jwt, no cnf/KB) disclosing
+        // sd-jwt-vc-27 §2.3.2 Figure 10/11: a presentation (typ dc+sd-jwt, no cnf/KB) disclosing
         // is_over_65 and address; the verifier yields the processed payload and the resolved vct.
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "example-presentation-no-kb.json");
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-presentation-no-kb.json");
         var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
         var expected = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("processed_sd_jwt_payload"));
 
@@ -57,8 +57,8 @@ public sealed class SdJwtVcProfileTests
     [Fact]
     public async Task Fixture_presentation_with_kb_verifies_audience_nonce_and_sd_hash()
     {
-        // sd-jwt-vc-16 §2.3.2 Figure 7/8: SD-JWT+KB disclosing address and is_over_65.
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "example-presentation-kb-jwt.json");
+        // sd-jwt-vc-27 §2.3.2 Figure 8/9: SD-JWT+KB disclosing address and is_over_65.
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-presentation-kb-jwt.json");
         var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
         var expected = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("processed_sd_jwt_payload"));
         var statedSdHash = doc.RootElement.GetProperty("kb_jwt").GetProperty("sd_hash").GetString()!;
@@ -84,7 +84,7 @@ public sealed class SdJwtVcProfileTests
     [Fact]
     public async Task Full_issued_vc_fixture_verifies_with_dc_sd_jwt_media_type()
     {
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "example-sd-jwt-vc.json");
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-sd-jwt-vc.json");
         var issued = doc.RootElement.GetProperty("sd_jwt_vc").GetString()!;
         doc.RootElement.GetProperty("issuer_signed_jwt_header").GetProperty("typ").GetString()
             .Should().Be(SdJwtVcConstants.MediaType, "the issuer-JWT typ is the dc+sd-jwt media type");
@@ -93,6 +93,51 @@ public sealed class SdJwtVcProfileTests
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
         result.Vct.Should().Be("https://credentials.example.com/identity_credential");
+    }
+
+    [Fact]
+    public async Task Appendix_a1_pid_issuance_verifies_with_every_disclosure()
+    {
+        // sd-jwt-vc-27 Appendix A.1 Figure 24: the issued PID SD-JWT VC, all 28 Disclosures attached
+        // (recursive address, place_of_birth and age_equal_or_over); the processed payload is the
+        // Figure 23 input data plus the iat/exp/cnf the issuer added.
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "appendix-a1-pid-issuance.json");
+        var issued = doc.RootElement.GetProperty("issued_sd_jwt").GetString()!;
+        var expected = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("input_data"));
+        var payload = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("sd_jwt_payload"));
+        foreach (var name in new[] { "iat", "exp", "cnf" })
+            expected[name] = payload[name]!.DeepClone();
+
+        var result = await SdJwtVcVerifier.VerifyAsync(issued, Resolver);
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+        result.Vct.Should().Be("urn:example:eudi:pid:aendgard:1");
+        SdJwtFixtureSupport.JsonEquivalent(result.DisclosedPayload, expected).Should().BeTrue(
+            $"expected {SdJwtFixtureSupport.Canonicalize(expected)} got {SdJwtFixtureSupport.Canonicalize(result.DisclosedPayload)}");
+    }
+
+    [Fact]
+    public async Task Appendix_a1_pid_presentation_with_kb_verifies()
+    {
+        // sd-jwt-vc-27 Appendix A.1 Figures 26-28: SD-JWT+KB disclosing nationalities and
+        // age_equal_or_over.18 through a recursive Disclosure.
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "appendix-a1-pid-presentation.json");
+        var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
+        var expected = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("processed_sd_jwt_payload"));
+        var kbPayload = doc.RootElement.GetProperty("kb_jwt").GetProperty("payload");
+
+        var options = new SdJwtVerificationOptions
+        {
+            RequireKeyBinding = true,
+            ExpectedAudience = kbPayload.GetProperty("aud").GetString(),
+            ExpectedNonce = kbPayload.GetProperty("nonce").GetString(),
+        };
+        var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, options);
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+        result.KeyBindingVerified.Should().BeTrue();
+        SdJwtFixtureSupport.JsonEquivalent(result.DisclosedPayload, expected).Should().BeTrue(
+            $"expected {SdJwtFixtureSupport.Canonicalize(expected)} got {SdJwtFixtureSupport.Canonicalize(result.DisclosedPayload)}");
     }
 
     // ---- vct presence + validation ----
@@ -136,27 +181,11 @@ public sealed class SdJwtVcProfileTests
         result.Errors.Should().ContainSingle().Which.Should().StartWith("VC_MEDIA_TYPE_INVALID");
     }
 
-    [Fact]
-    public async Task Verifier_accepts_the_transitional_vc_sd_jwt_media_type_on_input()
-    {
-        // draft-16 §3.5: the deprecated vc+sd-jwt typ is accepted on INPUT (older issuers). We
-        // issue a generic SD-JWT with that typ and a vct claim, then verify through the VC verifier.
-        var issuer = TestKeyMaterial.Generate(KeyType.P256, "issuer");
-        var frame = new DisclosureFrame().Disclose("given_name");
-        var issued = await SdJwtIssuer.IssueAsync(SampleVcClaims(), frame, issuer.Signer,
-            typ: SdJwtVcConstants.TransitionalMediaType);
-
-        var result = await SdJwtVcVerifier.VerifyAsync(issued.Issuance, _ => issuer.PublicJwk);
-
-        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
-        result.Vct.Should().Be("https://credentials.example.com/identity_credential");
-    }
-
-    // ---- registered must-not-disclose claim rules (§3.2.2.2) ----
+    // ---- registered must-not-disclose claim rules (§2.2.2.3) ----
 
     public static IEnumerable<object[]> RegisteredClaimsFromFixture()
     {
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "registered-claims.json");
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "registered-claims.json");
         foreach (var prop in doc.RootElement.GetProperty("must_not_be_selectively_disclosed").EnumerateObject())
         {
             // 'iss'/'nbf'/'exp'/'cnf' need claim values to exist before the frame is checked; we
@@ -168,12 +197,12 @@ public sealed class SdJwtVcProfileTests
     [Fact]
     public void Library_constants_match_the_fixtures_registered_must_not_disclose_set()
     {
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "registered-claims.json");
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "registered-claims.json");
         var fixtureSet = doc.RootElement.GetProperty("must_not_be_selectively_disclosed")
             .EnumerateObject().Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
 
         SdJwtVcConstants.MustNotBeSelectivelyDisclosed.Should().BeEquivalentTo(fixtureSet,
-            because: "draft-16 §2.2.2.2 lists exactly iss/nbf/exp/cnf/vct/vct#integrity/status");
+            because: "draft-27 §2.2.2.3 lists exactly iss/nbf/exp/cnf/vct/vct#integrity/aka_vcts/status");
     }
 
     [Theory]
@@ -187,14 +216,16 @@ public sealed class SdJwtVcProfileTests
         {
             "exp" or "nbf" => 1883000000,
             "cnf" => new JsonObject { ["jwk"] = new JsonObject { ["kty"] = "EC" } },
+            // A well-formed value, so the aka_vcts format rule (§2.2.2.2) is not what fires.
+            "aka_vcts" => new JsonArray("https://credentials.example.com/general_credential"),
             _ => "x",
         };
         var frame = new DisclosureFrame().Disclose(reserved);
 
         Func<Task> act = () => SdJwtVcIssuer.IssueAsync(claims, frame, issuer.Signer);
 
-        await act.Should().ThrowAsync<MalformedJoseException>().WithMessage($"*{reserved}*",
-            because: $"draft-16 §2.2.2.2 forbids selectively disclosing '{reserved}'");
+        await act.Should().ThrowAsync<MalformedJoseException>().WithMessage($"*'{reserved}' MUST NOT be selectively disclosed*",
+            because: $"draft-27 §2.2.2.3 forbids selectively disclosing '{reserved}'");
     }
 
     [Fact]
@@ -257,7 +288,7 @@ public sealed class SdJwtVcProfileTests
     [Fact]
     public async Task Type_metadata_is_resolved_from_the_local_cache_resolver()
     {
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "type-metadata-example.json");
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "type-metadata-example.json");
         var typeMetadataDoc = SdJwtFixtureSupport.ToJsonObject(doc.RootElement.GetProperty("type_metadata_document"));
         const string vct = "https://credentials.example.com/identity_credential";
 
@@ -267,7 +298,7 @@ public sealed class SdJwtVcProfileTests
             [vct] = typeMetadataDoc,
         });
 
-        using var presentationDoc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "example-presentation-no-kb.json");
+        using var presentationDoc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-presentation-no-kb.json");
         var presentation = presentationDoc.RootElement.GetProperty("presentation").GetString()!;
 
         var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, typeMetadataResolver: resolver);
@@ -283,7 +314,7 @@ public sealed class SdJwtVcProfileTests
         // Fail-closed offline default: an empty resolver returns null for any vct (FR-10/FR-17).
         var resolver = new LocalCacheTypeMetadataResolver();
 
-        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-16", "example-presentation-no-kb.json");
+        using var doc = SdJwtFixtureSupport.Load("sd-jwt-vc-27", "example-presentation-no-kb.json");
         var presentation = doc.RootElement.GetProperty("presentation").GetString()!;
 
         var result = await SdJwtVcVerifier.VerifyAsync(presentation, Resolver, typeMetadataResolver: resolver);

@@ -48,7 +48,7 @@ A non-zero exit from any sample marks the run as failed.
 | `Samples.Jwe` | Multi-recipient JWE: `ECDH-ES+A256KW`, `ECDH-1PU+A256KW`, `A256KW`; A256GCM / A256CBC-HS512 / XC20P; peek, apu/apv. |
 | `Samples.JwtAndJwk` | JWT claims validation (exp/nbf/iat/iss/aud/sub + clock skew, structured results); JWK ↔ Multikey conversion; RFC 7638 thumbprints / `kid`. |
 | `Samples.SdJwt` | SD-JWT issuance with flat / structured / recursive / array-element disclosures and decoy digests; holder presentation; KB-JWT. |
-| `Samples.SdJwtVc` | The SD-JWT VC profile end to end: `vct` rules, `dc+sd-jwt` media type, must-not-disclose claims, offline Type Metadata resolution. |
+| `Samples.SdJwtVc` | The SD-JWT VC profile (draft-27) end to end: `vct` and `aka_vcts` rules, the `dc+sd-jwt` media type (the former `vc+sd-jwt` is rejected), must-not-disclose claims and their subclaims (a nested claim that only shares the name is ordinary), offline Type Metadata resolution. |
 | `Samples.CoseCwt` | COSE_Sign1 for every v1 algorithm (detached payload, external AAD, tag control) and a CWT round trip with exp/nbf validation. |
 | `Samples.VcJoseCose` | Enveloping a VCDM 2.0 credential — the JOSE half (`vc+jwt`) and the COSE half (`application/vc+cose`). |
 | `Samples.DependencyInjection` | Composing the pipeline, suites, the enveloping families, and a caller-supplied resolver through `AddDataProofs`. The only sample that uses the DI package. |

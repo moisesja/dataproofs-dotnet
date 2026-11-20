@@ -1,0 +1,45 @@
+{
+  "description": "Presentation of the main SD-JWT VC example as SD-JWT+KB, disclosing only the address and is_over_65 claims (Figure 8), with the Key Binding JWT header/payload (decoded from the presentation string; the draft does not print them separately for this example), the sd_hash value, and the verified/processed SD-JWT payload (Figure 9).",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Section 2.3.2, Figures 8 and 9",
+  "presentation": "eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImRjK3NkLWp3dCIsICJraWQiOiAiZG9jLXNpZ25lci0wNS0yNS0yMDIyIn0.eyJfc2QiOiBbIjA5dktySk1PbHlUV00wc2pwdV9wZE9CVkJRMk0xeTNLaHBINTE1blhrcFkiLCAiMnJzakdiYUMwa3k4bVQwcEpyUGlvV1RxMF9kYXcxc1g3NnBvVWxnQ3diSSIsICJFa084ZGhXMGRIRUpidlVIbEVfVkNldUM5dVJFTE9pZUxaaGg3WGJVVHRBIiwgIklsRHpJS2VpWmREd3BxcEs2WmZieXBoRnZ6NUZnbldhLXNONndxUVhDaXciLCAiSnpZakg0c3ZsaUgwUjNQeUVNZmVadTZKdDY5dTVxZWhabzdGN0VQWWxTRSIsICJQb3JGYnBLdVZ1Nnh5bUphZ3ZrRnNGWEFiUm9jMkpHbEFVQTJCQTRvN2NJIiwgIlRHZjRvTGJnd2Q1SlFhSHlLVlFaVTlVZEdFMHc1cnREc3JaemZVYW9tTG8iLCAiamRyVEU4WWNiWTRFaWZ1Z2loaUFlX0JQZWt4SlFaSUNlaVVRd1k5UXF4SSIsICJqc3U5eVZ1bHdRUWxoRmxNXzNKbHpNYVNGemdsaFFHMERwZmF5UXdMVUs0Il0sICJpc3MiOiAiaHR0cHM6Ly9leGFtcGxlLmNvbS9pc3N1ZXIiLCAiaWF0IjogMTY4MzAwMDAwMCwgImV4cCI6IDE4ODMwMDAwMDAsICJ2Y3QiOiAiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwgIl9zZF9hbGciOiAic2hhLTI1NiIsICJjbmYiOiB7Imp3ayI6IHsia3R5IjogIkVDIiwgImNydiI6ICJQLTI1NiIsICJ4IjogIlRDQUVSMTladnUzT0hGNGo0VzR2ZlNWb0hJUDFJTGlsRGxzN3ZDZUdlbWMiLCAieSI6ICJaeGppV1diWk1RR0hWV0tWUTRoYlNJaXJzVmZ1ZWNDRTZ0NGpUOUYySFpRIn19fQ.3bSZrxmfIPZijaixnPeNsX7f58Ra67mYwOEsNkXZbsMI95ReYm52Axj4Tsf7PRzlHSn_S7ERudrXhAgqU1mm7Q~WyJsa2x4RjVqTVlsR1RQVW92TU5JdkNBIiwgImlzX292ZXJfNjUiLCB0cnVlXQ~WyJRZ19PNjR6cUF4ZTQxMmExMDhpcm9BIiwgImFkZHJlc3MiLCB7InN0cmVldF9hZGRyZXNzIjogIjEyMyBNYWluIFN0IiwgImxvY2FsaXR5IjogIkFueXRvd24iLCAicmVnaW9uIjogIkFueXN0YXRlIiwgImNvdW50cnkiOiAiVVMifV0~eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImtiK2p3dCJ9.eyJub25jZSI6ICIxMjM0NTY3ODkwIiwgImF1ZCI6ICJodHRwczovL2V4YW1wbGUuY29tL3ZlcmlmaWVyIiwgImlhdCI6IDE3OTQ4MjU4NDQsICJzZF9oYXNoIjogIlFINnMtSmJoVTY4dldyY0xGdWpmNkE0UFVDVWJfTGJpTll6eURBaUgxZFEifQ.drfp29bY8KJrCe9hRQ1kG3Zec-vc6_JUNAQS1qCzb1Y-hIQUzo4jQhXu6QKU8JNCHucUOEi8G-a07hnPRKfCwA",
+  "disclosed_claims": [
+    "is_over_65",
+    "address"
+  ],
+  "kb_jwt": {
+    "compact": "eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImtiK2p3dCJ9.eyJub25jZSI6ICIxMjM0NTY3ODkwIiwgImF1ZCI6ICJodHRwczovL2V4YW1wbGUuY29tL3ZlcmlmaWVyIiwgImlhdCI6IDE3OTQ4MjU4NDQsICJzZF9oYXNoIjogIlFINnMtSmJoVTY4dldyY0xGdWpmNkE0UFVDVWJfTGJpTll6eURBaUgxZFEifQ.drfp29bY8KJrCe9hRQ1kG3Zec-vc6_JUNAQS1qCzb1Y-hIQUzo4jQhXu6QKU8JNCHucUOEi8G-a07hnPRKfCwA",
+    "header": {
+      "alg": "ES256",
+      "typ": "kb+jwt"
+    },
+    "payload": {
+      "nonce": "1234567890",
+      "aud": "https://example.com/verifier",
+      "iat": 1794825844,
+      "sd_hash": "QH6s-JbhU68vWrcLFujf6A4PUCUb_LbiNYzyDAiH1dQ"
+    },
+    "sd_hash": "QH6s-JbhU68vWrcLFujf6A4PUCUb_LbiNYzyDAiH1dQ",
+    "note": "header and payload obtained by base64url-decoding the KB-JWT embedded in Figure 8; decode-verified"
+  },
+  "processed_sd_jwt_payload": {
+    "iss": "https://example.com/issuer",
+    "iat": 1683000000,
+    "exp": 1883000000,
+    "vct": "https://credentials.example.com/identity_credential",
+    "cnf": {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "TCAER19Zvu3OHF4j4W4vfSVoHIP1ILilDls7vCeGemc",
+        "y": "ZxjiWWbZMQGHVWKVQ4hbSIirsVfuecCE6t4jT9F2HZQ"
+      }
+    },
+    "is_over_65": true,
+    "address": {
+      "street_address": "123 Main St",
+      "locality": "Anytown",
+      "region": "Anystate",
+      "country": "US"
+    }
+  }
+}

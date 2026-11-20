@@ -1,6 +1,6 @@
 {
-  "description": "SD-JWT payload of the main SD-JWT VC example: 9 _sd digests, always-visible iss/iat/exp/vct, _sd_alg sha-256 and cnf Key Binding key (Figure 5; the figure caption in the draft erroneously repeats 'Unsecured Payload Example').",
-  "source_section": "draft-ietf-oauth-sd-jwt-vc-16 Section 2.3.1, Figure 5",
+  "description": "SD-JWT payload of the main SD-JWT VC example: 9 _sd digests, always-visible iss/iat/exp/vct, _sd_alg sha-256 and cnf Key Binding key (Figure 6).",
+  "source_section": "draft-ietf-oauth-sd-jwt-vc-27 Section 2.3.1, Figure 6",
   "sd_jwt_payload": {
     "_sd": [
       "09vKrJMOlyTWM0sjpu_pdOBVBQ2M1y3KhpH515nXkpY",
