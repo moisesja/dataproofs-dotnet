@@ -110,6 +110,29 @@ public sealed class X509CertificateChainTests
         Create(Assemble(Spki(key), version: null, withExtensions: false)).Should().NotBeNull();
     }
 
+    [Fact]
+    public void An_explicit_critical_FALSE_is_tolerated_and_an_extension_without_a_value_is_not()
+    {
+        // X.690 §11.5 would omit a DEFAULT FALSE; certificate parsers generally tolerate it, and so does this one.
+        var key = new DefaultKeyGenerator().Generate(KeyType.Ed25519);
+        Create(Assemble(Spki(key), withExtensions: false, tbsTail: w => Extensions(w, critical: false, withValue: true))).Should().NotBeNull();
+        ShouldBeMalformed(() => Create(Assemble(Spki(key), withExtensions: false, tbsTail: w => Extensions(w, critical: null, withValue: false))));
+
+        static void Extensions(AsnWriter w, bool? critical, bool withValue)
+        {
+            using (w.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 3, isConstructed: true)))
+            using (w.PushSequence())
+            using (w.PushSequence())
+            {
+                w.WriteObjectIdentifier("2.5.29.15");
+                if (critical is { } c)
+                    w.WriteBoolean(c);
+                if (withValue)
+                    w.WriteOctetString([0x03, 0x02, 0x07, 0x80]);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ count, duplicates, null
 
     [Fact]

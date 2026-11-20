@@ -100,6 +100,8 @@ public sealed class SdJwtX5cTests
 
     [Theory]
     [InlineData(KeyType.Ed25519)]
+    [InlineData(KeyType.P256)]
+    [InlineData(KeyType.P384)]
     [InlineData(KeyType.Secp256k1)]
     public async Task Every_v1_key_type_round_trips_through_the_generic_SD_JWT_verifier(KeyType keyType)
     {
@@ -107,11 +109,60 @@ public sealed class SdJwtX5cTests
         var signer = new JwsSigner(leaf.Signer.Signer) { CertificateChain = X509CertificateChain.Create([leaf.Certificate]) };
         var issued = await SdJwtIssuer.IssueAsync(Claims(), Frame(), signer, typ: "example+sd-jwt");
 
-        var result = SdJwtVerifier.VerifyWithCertificateChain(issued.Issuance, chain => chain.EndEntityCertificate.Span.SequenceEqual(leaf.Certificate));
+        var calls = new List<X509CertificateChain>();
+        var result = SdJwtVerifier.VerifyWithCertificateChain(issued.Issuance, chain =>
+        {
+            calls.Add(chain);
+            return chain.EndEntityCertificate.Span.SequenceEqual(leaf.Certificate);
+        });
 
         result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
-        result.IssuerCertificateChain.Should().NotBeNull();
         result.SignatureAlgorithm.Should().Be(signer.Algorithm);
+        calls.Should().ContainSingle().Which.Should().BeSameAs(result.IssuerCertificateChain);
+    }
+
+    [Theory]
+    [InlineData(KeyType.Ed25519)]
+    [InlineData(KeyType.P256)]
+    [InlineData(KeyType.P384)]
+    [InlineData(KeyType.Secp256k1)]
+    public async Task Every_v1_key_type_round_trips_through_the_SD_JWT_VC_verifier(KeyType keyType)
+    {
+        var leaf = CreateLeaf(keyType);
+        var signer = new JwsSigner(leaf.Signer.Signer) { CertificateChain = X509CertificateChain.Create([leaf.Certificate]) };
+        var issuance = await IssueVc(signer);
+
+        var calls = new List<X509CertificateChain>();
+        var result = await SdJwtVcVerifier.VerifyWithCertificateChainAsync(issuance, chain =>
+        {
+            calls.Add(chain);
+            return chain.EndEntityCertificate.Span.SequenceEqual(leaf.Certificate);
+        });
+
+        result.IsValid.Should().BeTrue(string.Join("; ", result.Errors));
+        result.Vct.Should().Be(Vct);
+        calls.Should().ContainSingle().Which.Should().BeSameAs(result.IssuerCertificateChain);
+    }
+
+    [Fact]
+    public async Task The_kid_methods_accept_a_malformed_x5c_as_they_always_did()
+    {
+        // Before issue #46 an x5c of any shape was an ignored header member; the kid paths still never read it.
+        var leaf = CreateLeaf(KeyType.Ed25519);
+        foreach (var x5c in new JsonNode?[] { 42, "garbage", new JsonArray(), new JsonArray((JsonNode)1, (JsonNode)2), null })
+        {
+            var issuance = await IssueWithHeader(
+                new JsonObject { ["alg"] = "EdDSA", ["typ"] = "dc+sd-jwt", ["kid"] = "k1", ["x5c"] = x5c?.DeepClone() }, leaf.Signer);
+            var document = Encoding.UTF8.GetBytes(new JsonObject { ["vct"] = Vct }.ToJsonString());
+            var typeMetadata = new TypeMetadataProcessingOptions(
+                new LocalCacheTypeMetadataDocumentResolver(new Dictionary<string, byte[]> { [Vct] = document }));
+
+            SdJwtVerifier.Verify(issuance, _ => leaf.PublicJwk).IsValid.Should().BeTrue();
+            (await SdJwtVcVerifier.VerifyAsync(issuance, _ => leaf.PublicJwk)).IsValid.Should().BeTrue();
+            var processed = await SdJwtVcVerifier.VerifyWithTypeMetadataAsync(issuance, _ => leaf.PublicJwk, typeMetadata);
+            processed.IsValid.Should().BeTrue(string.Join("; ", processed.Errors));
+            processed.IssuerCertificateChain.Should().BeNull();
+        }
     }
 
     [Fact]
@@ -286,6 +337,7 @@ public sealed class SdJwtX5cTests
         }, leaf.Signer);
 
         ShouldFail(await SdJwtVcVerifier.VerifyWithCertificateChainAsync(issuance, _ => true), "X5C_UNSUPPORTED_KEY");
+        ShouldFail(SdJwtVerifier.VerifyWithCertificateChain(issuance, _ => true), "X5C_UNSUPPORTED_KEY");
     }
 
     [Fact]

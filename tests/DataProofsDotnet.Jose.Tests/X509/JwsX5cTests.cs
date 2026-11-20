@@ -127,23 +127,34 @@ public sealed class JwsX5cTests
         hookCalls.Should().Be(0, "the hook only ever sees a chain whose end-entity key verified the signature");
     }
 
+    /// <summary>R = the base point B, S = 1: valid for every message under the identity key if a verifier accepts small-order keys.</summary>
+    private static readonly byte[] SmallOrderForgery =
+        [.. Convert.FromHexString("5866666666666666666666666666666666666666666666666666666666666666"), 0x01, .. new byte[31]];
+
     [Theory]
-    [InlineData("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f")] // y = p + 1: RFC 8032 §5.1.3 step 1 fails
+    [InlineData("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f")] // y = p + 1: no point (RFC 8032 §5.1.3 step 1); reduced mod p it is the identity
     [InlineData("0100000000000000000000000000000000000000000000000000000000000000")] // the identity, a small-order point
-    public async Task An_Ed25519_end_entity_key_that_is_no_point_fails_closed_at_the_signature(string keyHex)
+    [InlineData("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f")] // y = -1, the point of order 2
+    public async Task An_Ed25519_end_entity_key_that_is_no_point_or_small_order_fails_closed_at_the_signature(string keyHex)
     {
-        // Ed25519 keys are length-checked only, as an Ed25519 JWK is; the point is decoded by signature verification
-        // (RFC 8032 §5.1.7), which refuses it before any hook runs.
+        // Ed25519 keys are length-checked only, as an Ed25519 JWK is; signature verification decodes the point
+        // (RFC 8032 §5.1.7) and refuses these keys, before any hook runs. The forgery (R = B, S = 1) verifies for
+        // every message under the identity in a verifier that accepts small-order keys, or that reduces y mod p; it
+        // must fail here, as must an honest signature by another key.
         var signer = CreateLeaf(KeyType.Ed25519);
         var certificate = Assemble(Spki(Ed25519Oid, null, Convert.FromHexString(keyHex)));
         X509CertificateChain.Create([certificate]).Certificates.Should().ContainSingle();
-        var compact = await SignWithHeader(new JsonObject { ["alg"] = "EdDSA", ["x5c"] = X5c(certificate) }, signer.Signer);
+        var honest = await SignWithHeader(new JsonObject { ["alg"] = "EdDSA", ["x5c"] = X5c(certificate) }, signer.Signer);
+        var forged = honest[..honest.LastIndexOf('.')] + "." + Base64Url.Encode(SmallOrderForgery);
 
-        var hookCalls = 0;
-        var act = () => JwsParser.ParseCompactWithCertificateChain(compact, _ => { hookCalls++; return true; }, Crypto);
+        foreach (var compact in new[] { honest, forged })
+        {
+            var hookCalls = 0;
+            var act = () => JwsParser.ParseCompactWithCertificateChain(compact, _ => { hookCalls++; return true; }, Crypto);
 
-        act.Should().Throw<JoseCryptoException>().Which.Message.Should().Contain("did not verify");
-        hookCalls.Should().Be(0);
+            act.Should().Throw<JoseCryptoException>().Which.Message.Should().Contain("did not verify");
+            hookCalls.Should().Be(0);
+        }
     }
 
     [Fact]
@@ -279,11 +290,29 @@ public sealed class JwsX5cTests
     [Fact]
     public async Task The_kid_path_accepts_a_malformed_x5c_as_it_always_did()
     {
-        // Pins the unchanged accept-set: before issue #46 an x5c of any shape was an ignored extension member.
+        // Pins the unchanged accept-set: before issue #46 an x5c of any shape was an ignored extension member. Every
+        // kid-resolver entry point: compact, both JSON serializations (protected x5c), and VC-JOSE.
         var leaf = CreateLeaf(KeyType.Ed25519);
-        var compact = await SignWithHeader(new JsonObject { ["alg"] = "EdDSA", ["kid"] = "k1", ["x5c"] = 42 }, leaf.Signer);
+        var credential = """{"@context":["https://www.w3.org/ns/credentials/v2"]}"""u8.ToArray();
+        foreach (var x5c in new JsonNode?[] { 42, "garbage", new JsonArray(), new JsonArray((JsonNode)1, (JsonNode)2), null })
+        {
+            var header = new JsonObject { ["alg"] = "EdDSA", ["kid"] = "k1", ["x5c"] = x5c?.DeepClone() };
+            var compact = await SignWithHeader(header, leaf.Signer);
+            var segments = compact.Split('.');
+            var flattened = new JsonObject { ["payload"] = segments[1], ["protected"] = segments[0], ["signature"] = segments[2] }.ToJsonString();
+            var general = new JsonObject
+            {
+                ["payload"] = segments[1],
+                ["signatures"] = new JsonArray((JsonNode)new JsonObject { ["protected"] = segments[0], ["signature"] = segments[2] }),
+            }.ToJsonString();
+            var vcHeader = new JsonObject { ["alg"] = "EdDSA", ["kid"] = "k1", ["typ"] = "vc+jwt", ["cty"] = "vc", ["x5c"] = x5c?.DeepClone() };
+            var vc = await SignWithHeader(vcHeader, leaf.Signer, credential);
 
-        JwsParser.ParseCompact(compact, _ => leaf.PublicJwk, Crypto).PayloadBytes.Should().Equal(Payload);
+            JwsParser.ParseCompact(compact, _ => leaf.PublicJwk, Crypto).CertificateChain.Should().BeNull();
+            JwsParser.Parse(flattened, _ => leaf.PublicJwk, Crypto).PayloadBytes.Should().Equal(Payload);
+            JwsParser.Parse(general, _ => leaf.PublicJwk, Crypto).PayloadBytes.Should().Equal(Payload);
+            VcJose.VerifyCredential(vc, _ => leaf.PublicJwk, Crypto).Should().Equal(credential);
+        }
     }
 
     // ------------------------------------------------------------------ alg versus the certificate's key
