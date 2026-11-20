@@ -150,9 +150,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repeat only within one `_sd` array, or when a presented Disclosure was referenced twice; a decoy or
   withheld digest that repeated across `_sd` arrays and `...` placeholders was accepted. Such an SD-JWT now
   fails with `DISCLOSURE_INVALID`, and the message for every repeat is now `An SD-JWT digest appears more
-  than once in the payload, ...`. Every newly refused input is invalid under RFC 9901. *This library's own
-  output* is unaffected: `SdJwtIssuer` salts every Disclosure and draws every decoy at random. Found by
-  the issue #48 adversarial pass; it is a separate commit in that PR.
+  than once in the payload, ...`. The walk also skipped every `_sd_alg` member at any depth, dropping its
+  value unread, digests included; RFC 9901 §4.1.1 says `_sd_alg` "MUST NOT be used in any object nested
+  within the payload", so a nested `_sd_alg`, in the clear or in a disclosed value, now fails with
+  `DISCLOSURE_INVALID` instead of disappearing from the processed payload. Every newly refused input is
+  invalid under RFC 9901. *This library's own output:* `SdJwtIssuer` salts every Disclosure and draws every
+  decoy at random, so it never repeats a digest; it copies a nested `_sd_alg` from a caller's claims set
+  as given, and such an SD-JWT is now refused. Found by the issue #48 adversarial passes; these are
+  separate commits in that PR.
 
 ## [2.0.0] - 2026-11-02
 

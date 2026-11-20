@@ -125,8 +125,18 @@ internal static class SdJwtReconstructor
         // First copy non-control members, recursing into them.
         foreach (var (key, value) in obj.ToList())
         {
-            if (key is "_sd" or "_sd_alg")
+            if (key is "_sd")
                 continue;
+            if (key is "_sd_alg")
+            {
+                // RFC 9901 §4.1.1: _sd_alg "MUST appear at the top level of the SD-JWT payload. It MUST NOT be used
+                // in any object nested within the payload." Skipping a nested one would drop its value unread,
+                // digests included, so it is refused instead.
+                if (depth == 0)
+                    continue;
+                throw new MalformedJoseException(
+                    "SD-JWT '_sd_alg' MUST NOT be used in any object nested within the payload (RFC 9901 §4.1.1).");
+            }
             output[key] = ProcessNode(value?.DeepClone(), walk, depth + 1);
         }
 
