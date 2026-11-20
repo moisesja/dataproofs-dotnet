@@ -568,7 +568,8 @@ public sealed record JwsParseResult(string SignatureAlgorithm, string SignerKid,
     /// never reads <c>x5c</c>.
     /// </summary>
     /// <remarks>
-    /// When set, the caller's hook accepted this exact chain, and the signer is the subject of
+    /// When <see cref="JwsParser.ParseCompactWithCertificateChain"/> set it, the caller's hook accepted this exact
+    /// chain, and the signer is the subject of
     /// <see cref="X509CertificateChain.EndEntityCertificate"/>; <see cref="SignerKid"/> is then empty, because no
     /// <c>kid</c> selected the key.
     /// </remarks>

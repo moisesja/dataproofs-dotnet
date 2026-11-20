@@ -26,7 +26,8 @@ namespace DataProofsDotnet.Jose;
 /// </para>
 /// <para>
 /// A well-formed chain holds 1 to <see cref="MaxCertificates"/> certificates, no two identical. The end-entity
-/// certificate's key must be Ed25519, P-256, P-384 or secp256k1 (the JWS algorithms of PRD FR-13); later
+/// certificate's key must be Ed25519, P-256, P-384 or secp256k1 (the JWS algorithms of PRD FR-13), and an EC key must
+/// be a point on its curve (an Ed25519 key is checked for length only, as an Ed25519 JWK is); later
 /// certificates may hold any key type, since only the caller's path validation reads them. Certificates are parsed
 /// with <see cref="System.Formats.Asn1"/>, which performs no cryptography (PRD §2.2).
 /// </para>
@@ -78,7 +79,7 @@ public sealed class X509CertificateChain
     /// </summary>
     public Jwk EndEntityPublicKey => JwkConversion.ToPublicJwk(_endEntityKeyType, _endEntityPublicKey);
 
-    /// <summary>The end-entity key's NetCrypto type and compressed or raw public key bytes (verified on-curve).</summary>
+    /// <summary>The end-entity key's NetCrypto type and public key bytes: an EC point verified on its curve, or the raw Ed25519 key.</summary>
     internal (KeyType KeyType, byte[] PublicKey) EndEntityKey => (_endEntityKeyType, _endEntityPublicKey);
 
     /// <summary>
@@ -88,7 +89,10 @@ public sealed class X509CertificateChain
     /// <exception cref="ArgumentNullException">When <paramref name="certificates"/> is null.</exception>
     /// <exception cref="MalformedJoseException">
     /// <c>X5C_MALFORMED</c>: no certificate, more than <see cref="MaxCertificates"/>, an entry that is not exactly
-    /// one DER certificate, two identical entries, or an end-entity key that is not a valid encoding.
+    /// one DER certificate, two identical entries, or an end-entity key that is not a valid encoding: an EC key not on its
+    /// named curve, or an Ed25519 key that is not 32 bytes. Whether 32 Ed25519 bytes decode to a curve point is left to
+    /// signature verification (RFC 8032 §5.1.7), as for an Ed25519 JWK: a JWS under such a key fails as a signature that
+    /// does not verify, before any hook runs.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// <c>X5C_UNSUPPORTED_KEY</c>: the end-entity key is well formed but not Ed25519, P-256, P-384 or secp256k1.

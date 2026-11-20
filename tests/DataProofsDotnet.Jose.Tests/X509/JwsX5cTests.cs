@@ -127,6 +127,25 @@ public sealed class JwsX5cTests
         hookCalls.Should().Be(0, "the hook only ever sees a chain whose end-entity key verified the signature");
     }
 
+    [Theory]
+    [InlineData("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f")] // y = p + 1: RFC 8032 §5.1.3 step 1 fails
+    [InlineData("0100000000000000000000000000000000000000000000000000000000000000")] // the identity, a small-order point
+    public async Task An_Ed25519_end_entity_key_that_is_no_point_fails_closed_at_the_signature(string keyHex)
+    {
+        // Ed25519 keys are length-checked only, as an Ed25519 JWK is; the point is decoded by signature verification
+        // (RFC 8032 §5.1.7), which refuses it before any hook runs.
+        var signer = CreateLeaf(KeyType.Ed25519);
+        var certificate = Assemble(Spki(Ed25519Oid, null, Convert.FromHexString(keyHex)));
+        X509CertificateChain.Create([certificate]).Certificates.Should().ContainSingle();
+        var compact = await SignWithHeader(new JsonObject { ["alg"] = "EdDSA", ["x5c"] = X5c(certificate) }, signer.Signer);
+
+        var hookCalls = 0;
+        var act = () => JwsParser.ParseCompactWithCertificateChain(compact, _ => { hookCalls++; return true; }, Crypto);
+
+        act.Should().Throw<JoseCryptoException>().Which.Message.Should().Contain("did not verify");
+        hookCalls.Should().Be(0);
+    }
+
     [Fact]
     public async Task A_later_certificates_key_is_never_used()
     {
