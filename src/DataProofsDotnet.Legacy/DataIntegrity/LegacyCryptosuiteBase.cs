@@ -130,6 +130,9 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
+        // The proof is built from these options after the signer is awaited (issue #61).
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The document to secure must be a JSON object.");

@@ -81,6 +81,10 @@ public sealed class DataIntegrityProofPipeline
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
+        // The checks below and the suite read one copy the caller cannot reach, whatever the suite awaits
+        // (issue #61). The suites this library ships copy again, since their own entry points are public.
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+
         if (document.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The document to secure must be a JSON object.");
