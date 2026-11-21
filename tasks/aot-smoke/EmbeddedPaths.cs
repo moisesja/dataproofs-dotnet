@@ -191,7 +191,7 @@ internal sealed class Bbs2023Path : ISmokePath
         using (var store = new CapableInMemoryKeyStore(KeyGen, Crypto, new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256)))
         {
             var stored = await store.ImportAsync("bbs-issuer", Bbs());
-            var fromStore = await suite.CreateBaseProofWithKeyStoreAsync(
+            var fromStore = await suite.CreateBaseProofAsync(
                 BbsCredential(), Proof(Bbs2023Cryptosuite.CryptosuiteName, key), store, "bbs-issuer",
                 stored.InstanceId!.Value, HmacKey, Mandatory);
             Gate.Expect(fromStore.ProofValue == baseProof.ProofValue,

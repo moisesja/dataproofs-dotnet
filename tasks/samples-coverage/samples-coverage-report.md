@@ -595,7 +595,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite (type)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite..ctor(IRdfCanonicalizer)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync`
-- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateProofAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CryptosuiteName`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.DeriveProof`

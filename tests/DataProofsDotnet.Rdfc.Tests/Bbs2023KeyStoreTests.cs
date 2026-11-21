@@ -12,7 +12,7 @@ namespace DataProofsDotnet.Rdfc.Tests;
 
 /// <summary>
 /// Issue #44: a <c>bbs-2023</c> base proof created with a BLS12-381-G2 key held in an
-/// <see cref="ICapableKeyStore"/> (<see cref="Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync"/>).
+/// <see cref="ICapableKeyStore"/> (the <c>Bbs2023Cryptosuite.CreateBaseProofAsync</c> overload that takes one).
 /// It equals the raw-key base proof for the same key and inputs, derives and verifies the same way,
 /// touches only the store's info and BBS-signing members (AC-8), refuses a store that answers
 /// wrongly, and takes no private-key bytes.
@@ -86,7 +86,7 @@ public sealed class Bbs2023KeyStoreTests
         var suite = new Bbs2023Cryptosuite();
 
         var raw = await suite.CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, mandatory);
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, mandatory);
 
         // BBS signing is deterministic, so the whole proof, proofValue included, is the same.
@@ -104,7 +104,7 @@ public sealed class Bbs2023KeyStoreTests
         var suite = new Bbs2023Cryptosuite();
         var publicKey = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey);
 
-        var baseProof = await suite.CreateBaseProofWithKeyStoreAsync(
+        var baseProof = await suite.CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
         var reveal = suite.DeriveProof(Embed(WindDoc(), baseProof), selective, Convert.FromHexString("113377aa"));
 
@@ -124,7 +124,7 @@ public sealed class Bbs2023KeyStoreTests
         var (_, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
 
-        await new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        await new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         store.Calls.Should().Equal("GetInfoAsync(alias, instanceId)", nameof(ICapableKeyStore.SignBbsAsync));
@@ -140,7 +140,7 @@ public sealed class Bbs2023KeyStoreTests
         var (store, info) = await StoreWithVectorKeyAsync();
         using var cts = new CancellationTokenSource();
 
-        await new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        await new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory(), cts.Token);
 
         store.Tokens.Should().HaveCount(2).And.OnlyContain(token => token == cts.Token);
@@ -152,7 +152,7 @@ public sealed class Bbs2023KeyStoreTests
         var (_, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory(), new CancellationToken(canceled: true));
 
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -170,7 +170,7 @@ public sealed class Bbs2023KeyStoreTests
         reimported.InstanceId.Should().NotBe(info.InstanceId);
         store.ClearCalls();
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         await act.Should().ThrowAsync<KeyNotFoundException>();
@@ -185,7 +185,7 @@ public sealed class Bbs2023KeyStoreTests
         var info = await store.ImportAsync(Alias, Fx.KeyGen.Generate(KeyType.Ed25519));
         store.ClearCalls();
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*type Ed25519*BLS12-381-G2*");
@@ -199,7 +199,7 @@ public sealed class Bbs2023KeyStoreTests
         using var store = new RecordingCapableKeyStore(new CapableInMemoryKeyStore(Fx.KeyGen, Fx.Crypto, bbsProvider: null));
         var info = await store.ImportAsync(Alias, Fx.KeyGen.FromPrivateKey(KeyType.Bls12381G2, sk));
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         (await act.Should().ThrowAsync<KeyStoreException>()).Which.Error.Should().Be(KeyStoreError.Unsupported);
@@ -261,7 +261,7 @@ public sealed class Bbs2023KeyStoreTests
         var (store, info) = await StoreWithVectorKeyAsync();
         store.TamperSignature = (request, genuine) => WrongSignature(kind, request, genuine);
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*does not verify*");
@@ -298,7 +298,7 @@ public sealed class Bbs2023KeyStoreTests
         var (store, info) = await StoreWithVectorKeyAsync();
         store.TamperInfo = genuine => genuine with { PublicKey = WrongPublicKey(kind) };
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         (await act.Should().ThrowExactlyAsync<ProofGenerationException>()).WithMessage(message);
@@ -314,11 +314,11 @@ public sealed class Bbs2023KeyStoreTests
         var suite = new Bbs2023Cryptosuite(canonicalizer: null, new UnavailableBbs());
         var instance = new KeyInstanceId("any-instance");
 
-        var invalid = () => suite.CreateBaseProofWithKeyStoreAsync(
+        var invalid = () => suite.CreateBaseProofAsync(
             WindDoc(), BaseOptions() with { ProofPurpose = null! }, store, Alias, instance, hmacKey, WindMandatory());
         await invalid.Should().ThrowAsync<ProofGenerationException>();
 
-        var valid = () => suite.CreateBaseProofWithKeyStoreAsync(
+        var valid = () => suite.CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, instance, hmacKey, WindMandatory());
         await valid.Should().ThrowAsync<BbsUnavailableException>();
 
@@ -344,7 +344,7 @@ public sealed class Bbs2023KeyStoreTests
         };
         var suite = new Bbs2023Cryptosuite(canonicalizer: null, new FaultingVerifyBbs(toThrow));
 
-        var act = () => suite.CreateBaseProofWithKeyStoreAsync(
+        var act = () => suite.CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         if (fault == "unavailable")
@@ -417,7 +417,7 @@ public sealed class Bbs2023KeyStoreTests
             return genuine;
         };
 
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, callerHmac, callerPointers);
 
         stored.ProofValue.Should().Be(expected.ProofValue);
@@ -440,7 +440,7 @@ public sealed class Bbs2023KeyStoreTests
             return bbs.Sign(sk, request.Messages.Select(message => message.ToArray()).ToList(), request.Header.Span);
         };
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*does not verify*");
@@ -521,7 +521,7 @@ public sealed class Bbs2023KeyStoreTests
                 break;
         }
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             document, options, store, Alias, info.InstanceId!.Value, hmacKey, mandatory);
 
         await act.Should().ThrowAsync<ProofGenerationException>();
@@ -535,7 +535,7 @@ public sealed class Bbs2023KeyStoreTests
         var (_, hmacKey) = KeyMaterial();
         var (store, _) = await StoreWithVectorKeyAsync();
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, new KeyInstanceId("not-the-instance"), hmacKey, ["/no-such-member"]);
 
         await act.Should().ThrowAsync<ProofGenerationException>();
@@ -564,7 +564,7 @@ public sealed class Bbs2023KeyStoreTests
             return genuine;
         };
 
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default)
@@ -586,7 +586,7 @@ public sealed class Bbs2023KeyStoreTests
         };
 
         var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
         options.AdditionalProperties["note"] = Parse("\"changed\"");
 
@@ -619,7 +619,7 @@ public sealed class Bbs2023KeyStoreTests
             ((string[])options.PreviousProof!.Values)[0] = "urn:proof:changed";
             return genuine;
         };
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         var json = JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default);
@@ -643,7 +643,7 @@ public sealed class Bbs2023KeyStoreTests
         };
 
         var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
         ((string[])options.PreviousProof!.Values)[0] = "urn:proof:changed";
 
@@ -681,7 +681,7 @@ public sealed class Bbs2023KeyStoreTests
         };
 
         var raw = await suite.CreateBaseProofAsync(document, options, sk, hmacKey, []);
-        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+        var stored = await suite.CreateBaseProofAsync(
             document, options, store, Alias, info.InstanceId!.Value, hmacKey, []);
         var rawJson = JsonSerializer.Serialize(raw, DataProofsJsonOptions.Default);
         var storedJson = JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default);
@@ -701,7 +701,7 @@ public sealed class Bbs2023KeyStoreTests
         var (_, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
 
-        await new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+        await new Bbs2023Cryptosuite().CreateBaseProofAsync(
             WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
         var request = store.LastBbsRequest!;
@@ -721,17 +721,17 @@ public sealed class Bbs2023KeyStoreTests
         var suite = new Bbs2023Cryptosuite();
         var id = info.InstanceId!.Value;
 
-        await suite.Invoking(s => s.CreateBaseProofWithKeyStoreAsync(WindDoc(), BaseOptions(), null!, Alias, id, hmacKey, WindMandatory()))
+        await suite.Invoking(s => s.CreateBaseProofAsync(WindDoc(), BaseOptions(), null!, Alias, id, hmacKey, WindMandatory()))
             .Should().ThrowAsync<ArgumentNullException>().WithParameterName("keyStore");
-        await suite.Invoking(s => s.CreateBaseProofWithKeyStoreAsync(WindDoc(), BaseOptions(), store, null!, id, hmacKey, WindMandatory()))
+        await suite.Invoking(s => s.CreateBaseProofAsync(WindDoc(), BaseOptions(), store, null!, id, hmacKey, WindMandatory()))
             .Should().ThrowAsync<ArgumentNullException>().WithParameterName("alias");
-        await suite.Invoking(s => s.CreateBaseProofWithKeyStoreAsync(WindDoc(), BaseOptions(), store, "", id, hmacKey, WindMandatory()))
+        await suite.Invoking(s => s.CreateBaseProofAsync(WindDoc(), BaseOptions(), store, "", id, hmacKey, WindMandatory()))
             .Should().ThrowAsync<ArgumentException>().WithParameterName("alias");
-        await suite.Invoking(s => s.CreateBaseProofWithKeyStoreAsync(WindDoc(), BaseOptions(), store, Alias, default, hmacKey, WindMandatory()))
+        await suite.Invoking(s => s.CreateBaseProofAsync(WindDoc(), BaseOptions(), store, Alias, default, hmacKey, WindMandatory()))
             .Should().ThrowAsync<ArgumentException>().WithParameterName("instanceId");
-        await suite.Invoking(s => s.CreateBaseProofWithKeyStoreAsync(WindDoc(), null!, store, Alias, id, hmacKey, WindMandatory()))
+        await suite.Invoking(s => s.CreateBaseProofAsync(WindDoc(), null!, store, Alias, id, hmacKey, WindMandatory()))
             .Should().ThrowAsync<ArgumentNullException>().WithParameterName("proofOptions");
-        await suite.Invoking(s => s.CreateBaseProofWithKeyStoreAsync(WindDoc(), BaseOptions(), store, Alias, id, hmacKey, null!))
+        await suite.Invoking(s => s.CreateBaseProofAsync(WindDoc(), BaseOptions(), store, Alias, id, hmacKey, null!))
             .Should().ThrowAsync<ArgumentNullException>().WithParameterName("mandatoryPointers");
 
         store.Calls.Should().BeEmpty();
@@ -743,7 +743,11 @@ public sealed class Bbs2023KeyStoreTests
     {
         // The issue's "no API on that path accepts private-key bytes": the only byte parameter is the
         // HMAC key, which the holder receives inside the base proof.
-        var method = typeof(Bbs2023Cryptosuite).GetMethod(nameof(Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync))!;
+        // Two overloads share the name, so the key-store one is picked by its parameter types.
+        var overloads = typeof(Bbs2023Cryptosuite).GetMethods()
+            .Where(m => m.Name == nameof(Bbs2023Cryptosuite.CreateBaseProofAsync)).ToList();
+        overloads.Should().HaveCount(2);
+        var method = overloads.Single(m => m.GetParameters().Any(p => p.ParameterType == typeof(ICapableKeyStore)));
         var parameters = method.GetParameters();
 
         parameters.Select(p => p.ParameterType).Should().Contain(typeof(ICapableKeyStore));

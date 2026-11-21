@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Formats.Cbor;
 using System.Security.Cryptography;
 using System.Text;
@@ -43,10 +44,10 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// </para>
 /// <para>
 /// <b>Key custody (issue #44).</b> A base proof can be created with a key that never leaves a key
-/// store: <see cref="CreateBaseProofWithKeyStoreAsync"/> reads the public key from an
+/// store: the <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload reads the public key from an
 /// <see cref="ICapableKeyStore"/> and has the store produce the BBS signature
-/// (<see cref="ICapableKeyStore.SignBbsAsync"/>), and takes no private-key bytes.
-/// <see cref="CreateBaseProofAsync"/> takes the key as bytes; for the same key and inputs both produce
+/// (<see cref="ICapableKeyStore.SignBbsAsync"/>), and takes no private-key bytes. The
+/// <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload takes the key as bytes; for the same key and inputs both produce
 /// the same <c>proofValue</c>.
 /// Derivation and verification use only public material.
 /// </para>
@@ -126,9 +127,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
     /// <summary>
     /// Not supported: <c>bbs-2023</c> base proofs require an ordered BBS multi-message
-    /// signing key, not a single-message <see cref="ISigner"/>. Use
-    /// <see cref="CreateBaseProofWithKeyStoreAsync"/>, which signs with a key held in a key store, or
-    /// <see cref="CreateBaseProofAsync"/>, which takes the key as bytes.
+    /// signing key, not a single-message <see cref="ISigner"/>. Use a <c>CreateBaseProofAsync</c>
+    /// overload: <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> signs with a key held in a key store, and
+    /// <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> takes the key as bytes.
     /// </summary>
     /// <exception cref="NotSupportedException">Always.</exception>
     public Task<DataIntegrityProof> CreateProofAsync(
@@ -137,7 +138,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ISigner signer,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException(
-            "bbs-2023 base proofs are created with CreateBaseProofWithKeyStoreAsync or CreateBaseProofAsync (an ordered BBS key), not a single-message ISigner.");
+            "bbs-2023 base proofs are created with CreateBaseProofAsync (an ordered BBS key), not a single-message ISigner.");
 
     /// <summary>
     /// Creates a <c>bbs-2023</c> <b>base proof</b> over <paramref name="unsecuredDocument"/>
@@ -146,9 +147,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// holder via <see cref="DeriveProof"/>.
     /// </summary>
     /// <remarks>
-    /// This method takes the private key as bytes. An issuer whose key must stay in a key store
-    /// uses <see cref="CreateBaseProofWithKeyStoreAsync"/>, which produces the same
-    /// <c>proofValue</c> for the same key and inputs (issue #44).
+    /// This overload takes the private key as bytes. An issuer whose key must stay in a key store
+    /// uses the <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload, which produces the same <c>proofValue</c> for the
+    /// same key and inputs (issue #44).
     /// </remarks>
     /// <param name="unsecuredDocument">The JSON-LD object to secure.</param>
     /// <param name="proofOptions">The proof options (type <c>DataIntegrityProof</c>,
@@ -161,6 +162,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <returns>The completed base proof including its <c>u2V0C…</c> <c>proofValue</c>.</returns>
     /// <exception cref="ProofGenerationException">The options, document, pointers or keys are invalid for this suite.</exception>
     /// <exception cref="BbsUnavailableException">The BBS native library is unavailable.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters",
+        Justification = "Owner's choice (issue #44): the two overloads' required parameters differ in number and type, so no call binds to both.")]
     public Task<DataIntegrityProof> CreateBaseProofAsync(
         JsonElement unsecuredDocument,
         DataIntegrityProof proofOptions,
@@ -184,8 +187,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// (issuer side, spec §3.4.1) with a BLS12-381-G2 key that stays in
     /// <paramref name="keyStore"/>: the store produces the BBS signature
     /// (<see cref="ICapableKeyStore.SignBbsAsync"/>) and reports the public key, and no private-key
-    /// bytes pass through this method (issue #44). Everything else is as in
-    /// <see cref="CreateBaseProofAsync"/>, which takes the key as bytes and produces the same
+    /// bytes pass through this overload (issue #44). Everything else is as in the
+    /// <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload, which takes the key as bytes and produces the same
     /// <c>proofValue</c> for the same key and inputs.
     /// </summary>
     /// <remarks>
@@ -248,7 +251,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// raised before the store is called.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was
     /// canceled.</exception>
-    public async Task<DataIntegrityProof> CreateBaseProofWithKeyStoreAsync(
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters",
+        Justification = "Owner's choice (issue #44): the two overloads' required parameters differ in number and type, so no call binds to both.")]
+    public async Task<DataIntegrityProof> CreateBaseProofAsync(
         JsonElement unsecuredDocument,
         DataIntegrityProof proofOptions,
         ICapableKeyStore keyStore,
@@ -314,8 +319,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         return PackBaseProof(request, input, bbsSignature, publicKey);
     }
 
-    // What both base-proof methods take from the caller, checked, with the options, the HMAC key and
-    // the pointers copied: the key-store method awaits the store, and a caller that changes its objects
+    // What both base-proof overloads take from the caller, checked, with the options, the HMAC key and
+    // the pointers copied: the key-store overload awaits the store, and a caller that changes its objects
     // meanwhile must not get a proof whose packed parts differ from the ones it was computed with.
     private readonly record struct BaseProofRequest(
         JsonElement Document,
@@ -428,7 +433,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         return input.ProofConfig with { ProofValue = proofValue };
     }
 
-    // The key-store method's check of the signature it was handed. A signature of the wrong length,
+    // The key-store overload's check of the signature it was handed. A signature of the wrong length,
     // or a public key that is not a valid point, makes the provider throw rather than return false.
     private bool SignatureVerifies(byte[] publicKey, byte[] bbsSignature, BaseProofInput input)
     {

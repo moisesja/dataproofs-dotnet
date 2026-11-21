@@ -61,9 +61,9 @@ try
 {
     // --- 1. ISSUER: base proof, with a key that never leaves its key store (issue #44) ---
     // The store mints the BLS12-381 G2 key and keeps it; the issuer holds only the alias and the
-    // instance id. CreateBaseProofWithKeyStoreAsync reads the public key from the store and has the
-    // store sign (ICapableKeyStore.SignBbsAsync), so no private-key bytes reach this code. A KMS or
-    // HSM backend implementing ICapableKeyStore plugs in the same way.
+    // instance id. Given the store, CreateBaseProofAsync reads the public key from it and has it
+    // sign (ICapableKeyStore.SignBbsAsync), so no private-key bytes reach this code. A KMS or HSM
+    // backend implementing ICapableKeyStore plugs in the same way.
     using var keyStore = new CapableInMemoryKeyStore(
         keyGen, new DefaultCryptoProvider(), new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256));
     const string issuerAlias = "bbs-issuer";
@@ -81,7 +81,7 @@ try
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
 
-    DataIntegrityProof baseProof = await suite.CreateBaseProofWithKeyStoreAsync(
+    DataIntegrityProof baseProof = await suite.CreateBaseProofAsync(
         Unsigned(), baseOptions, keyStore, issuerAlias, issuerKey.InstanceId!.Value, hmacKey, mandatoryPointers);
 
     // Embed the base proof to form the secured base document the holder receives.
@@ -179,18 +179,19 @@ try
 
     // --- Not an issuer flow: a key held as bytes, such as a test fixture ---
     // An issuer keeps its key in a store, as in step 1. Code that already holds a BLS12-381 G2 key
-    // as bytes, a test fixture for instance, can use CreateBaseProofAsync instead. BBS signing is
-    // deterministic, so for the same key and inputs it gives the same proofValue as the store does.
+    // as bytes, a test fixture for instance, can pass the key bytes to CreateBaseProofAsync instead.
+    // BBS signing is deterministic, so for the same key and inputs it gives the same proofValue as
+    // the store does.
     KeyPair fixtureKey = keyGen.Generate(KeyType.Bls12381G2);
     byte[] fixtureScalar = fixtureKey.PrivateKey;
     StoredKeyInfo importedFixture = await keyStore.ImportAsync("bbs-fixture", fixtureKey); // the store now owns fixtureKey
     DataIntegrityProof fromBytes = await suite.CreateBaseProofAsync(
         Unsigned(), baseOptions, fixtureScalar, hmacKey, mandatoryPointers);
-    DataIntegrityProof fromStore = await suite.CreateBaseProofWithKeyStoreAsync(
+    DataIntegrityProof fromStore = await suite.CreateBaseProofAsync(
         Unsigned(), baseOptions, keyStore, "bbs-fixture", importedFixture.InstanceId!.Value, hmacKey, mandatoryPointers);
     CryptographicOperations.ZeroMemory(fixtureScalar);
-    Check(fromBytes.ProofValue == fromStore.ProofValue, "the raw-key and key-store methods give the same proofValue for the same key");
-    Console.WriteLine("  a key held as bytes (a test fixture) gives the same base proof through CreateBaseProofAsync");
+    Check(fromBytes.ProofValue == fromStore.ProofValue, "the raw-key and key-store overloads give the same proofValue for the same key");
+    Console.WriteLine("  a key held as bytes (a test fixture) gives the same base proof through the raw-key overload");
 }
 catch (BbsUnavailableException)
 {

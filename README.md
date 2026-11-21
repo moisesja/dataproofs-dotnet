@@ -18,8 +18,8 @@ multiformats (multibase, multicodec, `Multikey`) and JCS through
 exported — signing accepts an `ISigner` or key-store alias, and JWE ECDH key agreement accepts an
 opaque `IEcdhKey`, never raw private bytes. `bbs-2023`, whose multi-message signature no `ISigner` can
 produce, issues through a NetCrypto `ICapableKeyStore`
-(`Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync`); `Bbs2023Cryptosuite.CreateBaseProofAsync`, for
-a key held as bytes, is the one entry point that takes raw private key material.
+(a `Bbs2023Cryptosuite.CreateBaseProofAsync` overload); its other overload, for a key held as bytes, is
+the one entry point that takes raw private key material.
 
 ## Getting started
 
