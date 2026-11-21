@@ -56,6 +56,8 @@ internal static class JsonInputCheck
 
     private static readonly JavaScriptEncoder Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 
+    private const string OptionsValueDisposed = "The proof options hold a JSON value whose document has been disposed.";
+
     /// <summary>
     /// Returns why <paramref name="element"/> cannot be processed, as a predicate phrase for a
     /// message ("has a duplicate member name"), or <c>null</c> when it can. The phrase never
@@ -116,7 +118,7 @@ internal static class JsonInputCheck
     {
         return options with
         {
-            Context = options.Context is { } context ? Own(context) : null,
+            Context = options.Context is { } context ? Own(context, OptionsValueDisposed) : null,
             AdditionalProperties = options.AdditionalProperties is { } members ? OwnMembers(members) : null,
         };
 
@@ -131,7 +133,7 @@ internal static class JsonInputCheck
                 }
 
                 // A dictionary whose own comparer, or own enumeration, lets a name repeat.
-                if (!copy.TryAdd(name, Own(value)))
+                if (!copy.TryAdd(name, Own(value, OptionsValueDisposed)))
                 {
                     throw new ProofGenerationException("The proof options repeat an extension member name.");
                 }
@@ -139,18 +141,31 @@ internal static class JsonInputCheck
 
             return copy;
         }
+    }
 
-        // Reading a value of a disposed document, its kind included, throws ObjectDisposedException.
-        static JsonElement Own(JsonElement element)
+    /// <summary>
+    /// A copy of JSON the caller passed in, taken before anything reads it, that no code of the caller's can change
+    /// or dispose (PR #62). Creation awaits the signer, the pipeline also awaits the suite, and both read the document
+    /// again afterwards. <c>JsonDocument.Parse</c> over the caller's memory keeps reading that memory, and the caller
+    /// may dispose the document. A clone of an element whose document cannot be disposed is that element, whose bytes
+    /// cannot change. An undefined element is returned as it is, for the entry point's kind check to report.
+    /// </summary>
+    /// <param name="element">The caller's JSON.</param>
+    /// <param name="what">What the JSON is, as a sentence subject ("The document to secure").</param>
+    /// <returns>The copy to carry on with.</returns>
+    /// <exception cref="ProofGenerationException">The element belongs to a document that has been disposed.</exception>
+    public static JsonElement Owned(JsonElement element, string what) => Own(element, $"{what} has been disposed.");
+
+    // Reading a value of a disposed document, its kind included, throws ObjectDisposedException.
+    private static JsonElement Own(JsonElement element, string disposedMessage)
+    {
+        try
         {
-            try
-            {
-                return element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
-            }
-            catch (ObjectDisposedException ex)
-            {
-                throw new ProofGenerationException("The proof options hold a JSON value whose document has been disposed.", ex);
-            }
+            return element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+        }
+        catch (ObjectDisposedException ex)
+        {
+            throw new ProofGenerationException(disposedMessage, ex);
         }
     }
 

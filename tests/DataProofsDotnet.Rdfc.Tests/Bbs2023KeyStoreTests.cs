@@ -593,14 +593,36 @@ public sealed class Bbs2023KeyStoreTests
     // Both overloads, one call: the raw key's, or the key store's.
     private static Func<Task<DataIntegrityProof>> Issue(
         bool keyStore, DataIntegrityProof options, RecordingCapableKeyStore store, StoredKeyInfo info,
-        IReadOnlyList<string>? mandatory = null)
+        IReadOnlyList<string>? mandatory = null, JsonElement? document = null)
     {
         var (sk, hmacKey) = KeyMaterial();
         var suite = new Bbs2023Cryptosuite();
         mandatory ??= WindMandatory();
+        var unsecured = document ?? WindDoc();
         return keyStore
-            ? () => suite.CreateBaseProofAsync(WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, mandatory)
-            : () => suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, mandatory);
+            ? () => suite.CreateBaseProofAsync(unsecured, options, store, Alias, info.InstanceId!.Value, hmacKey, mandatory)
+            : () => suite.CreateBaseProofAsync(unsecured, options, sk, hmacKey, mandatory);
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADocumentDisposedBeforeTheCall_IsAProofGenerationException_BeforeTheStoreIsCalled(bool keyStore)
+    {
+        // Both overloads copy the document at entry, as every create entry point does (PR #62). Reading it raised the
+        // raw ObjectDisposedException.
+        var (store, info) = await StoreWithVectorKeyAsync();
+        JsonElement disposed;
+        using (var source = JsonDocument.Parse(WindDoc().GetRawText()))
+        {
+            disposed = source.RootElement;
+        }
+
+        var thrown = await Issue(keyStore, BaseOptions(), store, info, document: disposed)
+            .Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure has been disposed.");
+
+        thrown.WithInnerException<ObjectDisposedException>();
+        store.Calls.Should().BeEmpty();
     }
 
     [BbsTheory]

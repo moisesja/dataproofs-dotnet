@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
 using DataProofsDotnet.DataIntegrity;
 using FluentAssertions;
@@ -408,31 +409,115 @@ public abstract class Issue61OptionsCopyTestsBase
         }
     }
 
-    /// <summary>
-    /// Asserts that a document the signer's <c>KeyType</c> getter disposes, before the suite reads the document, is a
-    /// <see cref="ProofGenerationException"/>. The legacy RDFC variants run it: they read the document's
-    /// <c>@context</c> outside the mapping for a while (PR #62 review). The other suites let the raw exception out,
-    /// on main too, a document-side fault reported apart from issue #61.
-    /// </summary>
-    protected async Task AssertADocumentTheSignersKeyTypeDisposes_IsAProofGenerationException()
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ASignerWhoseKeyTypeDisposesTheCallersDocument_StillGetsTheProofItAskedFor(bool throughThePipeline)
     {
+        // The getter runs before the suite reads the document: the JCS, RDFC and legacy suites let the raw
+        // ObjectDisposedException out until the document was copied at entry (PR #62).
+        var expected = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
         var document = JsonDocument.Parse(HostileJson.BaseDocument);
         var signer = new MutatingSigner(Signer, () => { }, onKeyType: document.Dispose);
 
-        var act = () => Suite.CreateProofAsync(document.RootElement, WithNote(), signer);
+        var proof = await IssueAsync(document.RootElement, WithNote(), signer, throughThePipeline);
 
-        (await act.Should().ThrowAsync<ProofGenerationException>()).WithInnerException<ObjectDisposedException>();
+        WithoutSignature(proof).Should().Be(WithoutSignature(expected));
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
     }
 
-    private async Task<DataIntegrityProof> IssueAsync(DataIntegrityProof options, ISigner signer, bool throughThePipeline)
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ASignerWhoseKeyTypeChangesAfterItsFirstRead_StillGetsTheProofItAskedFor(bool throughThePipeline)
+    {
+        // The steps that depend on the key type (the support check, the hash, the RDFC canonicalization hash, the
+        // signature encoding) each read KeyType again, so a signer that answered differently got a proof made with
+        // two key types. The suites now read it once (PR #62 follow-up d3).
+        var later = Signer.KeyType == KeyType.P384 ? KeyType.P256 : KeyType.P384;
+
+        var proof = await IssueAsync(WithNote(), new ShiftingKeyTypeSigner(Signer, later), throughThePipeline);
+
+        WithoutSignature(proof).Should().Be(WithoutSignature(await Suite.CreateProofAsync(Document(), WithNote(), Signer)));
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    public static TheoryData<string, bool> RewriteCases() => new()
+    {
+        { "KeyType", false }, { "KeyType", true }, { "SignAsync", false }, { "SignAsync", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(RewriteCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ASignerThatRewritesTheCallersBuffer_StillGetsTheProofItAskedFor(string when, bool throughThePipeline)
+    {
+        // JsonDocument.Parse(ReadOnlyMemory<byte>) reads the caller's memory, so the caller can change the document
+        // while caller code runs. The proof must be over the document as given (PR #62).
+        var buffer = Encoding.UTF8.GetBytes(HostileJson.BaseDocument);
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        void Rewrite() => buffer[Array.LastIndexOf(buffer, (byte)'1')] = (byte)'2';
+        var signer = when == "KeyType"
+            ? new MutatingSigner(Signer, () => { }, onKeyType: Rewrite)
+            : new MutatingSigner(Signer, Rewrite);
+
+        var proof = await IssueAsync(document.RootElement, WithNote(), signer, throughThePipeline);
+
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    public static TheoryData<string> RenamedMemberValues() => ["\"abc\"", "null", "[\"x\"]"];
+
+    [Theory]
+    [MemberData(nameof(RenamedMemberValues), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ThroughThePipeline_AMemberRenamedToProofWhileTheSignerRuns_LeavesTheSecuredDocumentAsGiven(string value)
+    {
+        // The pipeline assembles its output from the document after the suite is awaited. Renaming a member to
+        // "proof" meanwhile made that a raw InvalidCastException, a NullReferenceException, or a document that does
+        // not verify (PR #62 review).
+        var json = HostileJson.BaseDocument.TrimEnd('}') + ",\"spare\":" + value + "}";
+        var buffer = Encoding.UTF8.GetBytes(json);
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("\"spare\""u8);
+        var pipeline = Pipeline();
+        var signer = new MutatingSigner(Signer, () => "\"proof\""u8.CopyTo(buffer.AsSpan(at)));
+
+        var secured = await pipeline.AddProofAsync(document.RootElement, WithNote(), signer);
+
+        JsonSerializer.Serialize(secured.GetProperty("spare")).Should().Be(value);
+        secured.GetProperty("proof").ValueKind.Should().Be(JsonValueKind.Object);
+        pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ADocumentDisposedBeforeTheCall_IsAProofGenerationException(bool throughThePipeline)
+    {
+        // Reading it raised the raw ObjectDisposedException; the copy at entry reports it as a disposed options value is.
+        JsonElement disposed;
+        using (var document = JsonDocument.Parse(HostileJson.BaseDocument))
+        {
+            disposed = document.RootElement;
+        }
+
+        Func<Task> act = throughThePipeline
+            ? () => Pipeline().AddProofAsync(disposed, WithNote(), Signer)
+            : () => Suite.CreateProofAsync(disposed, WithNote(), Signer);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure has been disposed."))
+            .WithInnerException<ObjectDisposedException>();
+    }
+
+    private Task<DataIntegrityProof> IssueAsync(DataIntegrityProof options, ISigner signer, bool throughThePipeline)
+        => IssueAsync(Document(), options, signer, throughThePipeline);
+
+    private async Task<DataIntegrityProof> IssueAsync(
+        JsonElement document, DataIntegrityProof options, ISigner signer, bool throughThePipeline)
     {
         if (!throughThePipeline)
         {
-            return await Suite.CreateProofAsync(Document(), options, signer);
+            return await Suite.CreateProofAsync(document, options, signer);
         }
 
         var pipeline = Pipeline();
-        var secured = await pipeline.AddProofAsync(Document(), options, signer);
+        var secured = await pipeline.AddProofAsync(document, options, signer);
         pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue();
         secured.GetProperty("proof").EnumerateObject().Count(member => member.Name == "proofValue").Should().Be(1);
         return secured.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
@@ -466,6 +551,28 @@ public abstract class Issue61OptionsCopyTestsBase
             during();
             return await inner.SignAsync(data, ct);
         }
+    }
+
+    /// <summary>A signer whose <see cref="ISigner.KeyType"/> is the inner signer's on its first read and <paramref name="later"/> after.</summary>
+    private sealed class ShiftingKeyTypeSigner(ISigner inner, KeyType later) : ISigner
+    {
+        private bool _read;
+
+        public KeyType KeyType
+        {
+            get
+            {
+                var first = !_read;
+                _read = true;
+                return first ? inner.KeyType : later;
+            }
+        }
+
+        public ReadOnlyMemory<byte> PublicKey => inner.PublicKey;
+
+        public string MultibasePublicKey => inner.MultibasePublicKey;
+
+        public Task<byte[]> SignAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default) => inner.SignAsync(data, ct);
     }
 }
 

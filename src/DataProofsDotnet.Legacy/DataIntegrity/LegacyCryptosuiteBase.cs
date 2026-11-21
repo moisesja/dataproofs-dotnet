@@ -130,8 +130,12 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
-        // The proof is built from these options after the signer is awaited (issue #61).
+        // The proof is built from these options and this document after the signer is awaited (issue #61), and the
+        // signer's KeyType getter is the caller's code too. So copy both before anything reads them, then read
+        // KeyType once: every step below sees the same options, document and key type (PR #62).
         proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        var keyType = signer.KeyType;
 
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
@@ -142,10 +146,10 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         // member names and materialize the document (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
-        if (!IsSupportedKeyType(signer.KeyType))
+        if (!IsSupportedKeyType(keyType))
         {
             throw new ProofGenerationException(
-                $"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
+                $"Key type {keyType} is not supported by the {Name} cryptosuite.");
         }
 
         // The legacy family is dispatched by type and names its algorithm by type. Accept
@@ -211,14 +215,12 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
             // one); for RDFC the proof options carry the document's @context. Either way the
             // emitted proof must equal the proofConfig that was used to build the signing input,
-            // so it is fixed here: after the signer is awaited, the caller's document is not read
-            // again (issue #61 adversarial review). It reads the document, so it is inside the try,
-            // whose filter maps a document disposed by then (PR #62 review).
+            // so it is fixed here, before the signer is awaited (issue #61 adversarial review).
             wireProof = _canonicalization == LegacyCanonicalization.Rdfc
                 ? WithDocumentContext(proofConfig, unsecuredDocument)
                 : proofConfig;
             signingInput = _canonicalization == LegacyCanonicalization.Rdfc
-                ? BuildRdfcSigningInput(unsecuredDocument, wireProof, signer.KeyType, out mismatch)
+                ? BuildRdfcSigningInput(unsecuredDocument, wireProof, keyType, out mismatch)
                 : BuildJcsSigningInput(unsecuredDocument, proofConfig);
         }
         catch (JcsFormatException ex)
@@ -253,7 +255,7 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         }
 
         var rawSignature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
-        var signature = NormalizeSignature(rawSignature, signer.KeyType)
+        var signature = NormalizeSignature(rawSignature, keyType)
             ?? throw new ProofGenerationException("The signer returned a signature in an unrecognized encoding.");
 
         return wireProof with

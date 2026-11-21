@@ -3,7 +3,6 @@ using DataProofsDotnet.Legacy.DataIntegrity;
 using DataProofsDotnet.Legacy.Tests.TestSupport;
 using DataProofsDotnet.Tests.Shared;
 using NetCrypto;
-using Xunit;
 
 namespace DataProofsDotnet.Legacy.Tests;
 
@@ -25,14 +24,6 @@ public abstract class Issue61LegacyOptionsCopyTestsBase : Issue61OptionsCopyTest
     };
 }
 
-/// <summary>The RDFC variants, which read the document's <c>@context</c> for the proof.</summary>
-public abstract class Issue61LegacyRdfcOptionsCopyTestsBase : Issue61LegacyOptionsCopyTestsBase
-{
-    [Fact]
-    public Task ASignerWhoseKeyTypeDisposesTheCallersDocument_IsAProofGenerationException()
-        => AssertADocumentTheSignersKeyTypeDisposes_IsAProofGenerationException();
-}
-
 public sealed class Issue61Ed25519Signature2020JcsOptionsCopyTests : Issue61LegacyOptionsCopyTestsBase
 {
     protected override ICryptosuite Suite { get; } = new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Jcs);
@@ -43,7 +34,7 @@ public sealed class Issue61Ed25519Signature2020JcsOptionsCopyTests : Issue61Lega
     protected override bool SecuresAProofChain => false;
 }
 
-public sealed class Issue61Ed25519Signature2020RdfcOptionsCopyTests : Issue61LegacyRdfcOptionsCopyTestsBase
+public sealed class Issue61Ed25519Signature2020RdfcOptionsCopyTests : Issue61LegacyOptionsCopyTestsBase
 {
     protected override ICryptosuite Suite { get; } = new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Rdfc);
 
@@ -60,7 +51,7 @@ public sealed class Issue61EcdsaSecp256r1Signature2019JcsOptionsCopyTests : Issu
     protected override bool SecuresAProofChain => false;
 }
 
-public sealed class Issue61EcdsaSecp256r1Signature2019RdfcOptionsCopyTests : Issue61LegacyRdfcOptionsCopyTestsBase
+public sealed class Issue61EcdsaSecp256r1Signature2019RdfcOptionsCopyTests : Issue61LegacyOptionsCopyTestsBase
 {
     protected override ICryptosuite Suite { get; } = new EcdsaSecp256r1Signature2019Cryptosuite(LegacyCanonicalization.Rdfc);
 

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using DataProofsDotnet.Core.Tests.TestSupport;
 using DataProofsDotnet.DataIntegrity;
@@ -99,5 +100,54 @@ public sealed class Issue61PipelineOptionsCopyTests
 
         public ProofVerificationResult VerifyProof(JsonElement unsecuredDocument, DataIntegrityProof proof, PublicKeyMaterial publicKey)
             => throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// PR #62: the pipeline verifies each proof after awaiting its resolver, which is the caller's code. A resolver that
+/// rewrites the memory behind the caller's document must not change what the later proofs are verified against.
+/// </summary>
+public sealed class Issue61PipelineVerifyCopyTests
+{
+    [Fact]
+    public async Task AResolverThatRewritesTheCallersBuffer_LeavesEveryResultAboutTheDocumentAsGiven()
+    {
+        var signer = Fx.Signer(Fx.SeedKey(0x21));
+        var pipeline = new DataIntegrityProofPipeline(CryptosuiteRegistry.CreateDefault());
+        var options = new DataIntegrityProof
+        {
+            Cryptosuite = EddsaJcs2022Cryptosuite.CryptosuiteName,
+            Created = "2026-01-02T00:00:00Z",
+            VerificationMethod = "did:example:x#k",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+        };
+        var secured = await pipeline.AddProofAsync(HostileJson.Parse(HostileJson.BaseDocument), options, signer);
+        secured = await pipeline.AddProofAsync(secured, options, signer);
+        var buffer = Encoding.UTF8.GetBytes(secured.GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("\"a\":1"u8) + 4;
+        var resolver = new RewritingResolver(
+            new ResolvedVerificationMethod
+            {
+                Id = "did:example:x#k",
+                Controller = "did:example:x",
+                PublicKey = PublicKeyMaterial.FromRaw(signer.KeyType, signer.PublicKey.Span),
+                Relationships = new HashSet<string>(StringComparer.Ordinal) { ProofPurposes.AssertionMethod },
+            },
+            () => buffer[at] = (byte)'2');
+
+        var result = await pipeline.VerifyAsync(document.RootElement, resolver);
+
+        result.ProofResults.Should().HaveCount(2).And.OnlyContain(proof => proof.Verified);
+        result.Verified.Should().BeTrue();
+    }
+
+    private sealed class RewritingResolver(ResolvedVerificationMethod method, Action rewrite) : IVerificationMethodResolver
+    {
+        public Task<ResolvedVerificationMethod?> ResolveAsync(string verificationMethodUrl, CancellationToken cancellationToken = default)
+        {
+            rewrite();
+            return Task.FromResult<ResolvedVerificationMethod?>(method);
+        }
     }
 }

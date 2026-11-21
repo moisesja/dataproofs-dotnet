@@ -343,7 +343,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
 
+        // The document too: a canonicalizer of the caller's runs while the base proof is prepared (PR #62).
         proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
         ValidateProofOptions(proofOptions);
 
         // The base proof parser requires this length, as the reference does, so a proof issued with

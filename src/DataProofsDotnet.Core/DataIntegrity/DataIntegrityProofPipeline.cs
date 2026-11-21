@@ -84,7 +84,10 @@ public sealed class DataIntegrityProofPipeline
 
         // The checks below and the suite read one copy the caller cannot reach, whatever the suite awaits
         // (issue #61). The suites this library ships copy again, since their own entry points are public.
+        // The secured document is assembled from the document after the suite is awaited, so it is copied
+        // too: a buffer rewritten meanwhile once escaped as a raw InvalidCastException (PR #62 review).
         proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        document = JsonInputCheck.Owned(document, "The document to secure");
 
         if (document.ValueKind != JsonValueKind.Object)
         {
@@ -300,6 +303,10 @@ public sealed class DataIntegrityProofPipeline
         {
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.");
         }
+
+        // Each proof is verified after its resolver is awaited, and the resolver is the caller's code: verify a copy
+        // it cannot rewrite or dispose, so every result is about the document as given (PR #62).
+        securedDocument = securedDocument.Clone();
 
         // FR-3: a document whose member names or strings cannot be read, or whose members repeat,
         // fails here as a result — before any proof is parsed or any resolver is called — rather

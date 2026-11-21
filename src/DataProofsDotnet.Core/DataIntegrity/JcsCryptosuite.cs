@@ -56,8 +56,12 @@ internal abstract class JcsCryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
-        // The proof is built from these options after the signer is awaited (issue #61).
+        // The proof is built from these options and this document after the signer is awaited (issue #61), and the
+        // signer's KeyType getter is the caller's code too. So copy both before anything reads them, then read
+        // KeyType once: every step below sees the same options, document and key type (PR #62).
         proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        var keyType = signer.KeyType;
 
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
@@ -67,9 +71,9 @@ internal abstract class JcsCryptosuite : ICryptosuite
         // Before the @context lookup below, which compares member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
-        if (!IsSupportedKeyType(signer.KeyType))
+        if (!IsSupportedKeyType(keyType))
         {
-            throw new ProofGenerationException($"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
+            throw new ProofGenerationException($"Key type {keyType} is not supported by the {Name} cryptosuite.");
         }
 
         if (!string.Equals(proofOptions.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal))
@@ -133,10 +137,10 @@ internal abstract class JcsCryptosuite : ICryptosuite
             throw new ProofGenerationException("The document or proof configuration could not be JCS-canonicalized.", ex);
         }
 
-        var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, signer.KeyType);
+        var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, keyType);
 
         var rawSignature = await signer.SignAsync(hashData, cancellationToken).ConfigureAwait(false);
-        var signature = NormalizeSignature(rawSignature, signer.KeyType)
+        var signature = NormalizeSignature(rawSignature, keyType)
             ?? throw new ProofGenerationException("The signer returned a signature in an unrecognized encoding.");
 
         return proofConfig with
