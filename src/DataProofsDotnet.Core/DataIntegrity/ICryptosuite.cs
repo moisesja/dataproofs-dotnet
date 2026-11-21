@@ -41,7 +41,9 @@ public interface ICryptosuite
     /// transform → hash → serialize pipeline. For proof chains the pipeline passes a
     /// document that already embeds the matching previous proofs.
     /// </summary>
-    /// <param name="unsecuredDocument">The JSON object to secure (without the proof being created).</param>
+    /// <param name="unsecuredDocument">The JSON object to secure (without the proof being created). The suites this
+    /// library ships copy it before reading it, so the proof is over the document as given, even if the memory behind
+    /// it changes or its document is disposed while the signer runs (PR #62).</param>
     /// <param name="proofOptions">The proof options (no <c>proofValue</c>). The suites this library ships copy
     /// them before reading them, so the returned proof shares no mutable state with them: changing them while the
     /// signer runs, or changing or disposing them afterwards, leaves the proof as it was asked for (issue #61).</param>

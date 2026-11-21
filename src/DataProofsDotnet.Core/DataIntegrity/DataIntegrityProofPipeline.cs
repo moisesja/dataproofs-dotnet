@@ -65,7 +65,8 @@ public sealed class DataIntegrityProofPipeline
     /// per the proof-chain rules, and every reference must match the <c>id</c> of an
     /// existing proof.
     /// </summary>
-    /// <param name="document">The JSON object to secure.</param>
+    /// <param name="document">The JSON object to secure. Copied before anything reads it, so the secured document is
+    /// built from the document as given (PR #62).</param>
     /// <param name="proofOptions">The proof options naming the cryptosuite; no <c>proofValue</c>. Copied before
     /// anything reads them, and the suite receives the copy (issue #61).</param>
     /// <param name="signer">The NetCrypto signer.</param>
@@ -189,7 +190,8 @@ public sealed class DataIntegrityProofPipeline
     /// public key — the signature-only raw-key form (FR-7); no controller authorization is
     /// performed because no controller document is available.
     /// </summary>
-    /// <param name="securedDocument">The secured JSON document.</param>
+    /// <param name="securedDocument">The secured JSON document. Copied before it is read, so every result is about the
+    /// document as given (PR #62).</param>
     /// <param name="publicKey">The verification key for every proof.</param>
     /// <param name="options">Verifier expectations (purpose, domain, challenge, clock).</param>
     public DocumentVerificationResult Verify(
@@ -216,7 +218,8 @@ public sealed class DataIntegrityProofPipeline
     /// (<see cref="ProofProblemCodes.InvalidVerificationMethod"/> otherwise), and the
     /// controller must control the method.
     /// </summary>
-    /// <param name="securedDocument">The secured JSON document.</param>
+    /// <param name="securedDocument">The secured JSON document. Copied before it is read, so every result is about the
+    /// document as given (PR #62).</param>
     /// <param name="resolver">The verification-method resolver.</param>
     /// <param name="options">Verifier expectations (purpose, domain, challenge, clock).</param>
     /// <param name="cancellationToken">Cancels resolution.</param>
