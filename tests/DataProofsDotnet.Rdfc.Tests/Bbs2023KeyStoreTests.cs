@@ -819,6 +819,71 @@ public sealed class Bbs2023KeyStoreTests
         VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
     }
 
+    private static JsonElement WithoutProof(JsonElement document)
+    {
+        var node = JsonObject.Create(document)!;
+        node.Remove("proof");
+        return JsonSerializer.SerializeToElement(node, DataProofsJsonOptions.Default);
+    }
+
+    [BbsFact]
+    public async Task SelectivePointersFromACollectionThatKeepsItsArray_AreThePointersThatWereAskedFor()
+    {
+        // DeriveProof used the caller's pointers several times, and Concat(...).ToList() handed the collection the
+        // list's own array, which the reveal document was selected with after a canonicalizer of the caller's ran
+        // (PR #62 follow-up c).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var header = Convert.FromHexString("113377aa");
+        var expected = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], header);
+        var pointers = new CapturingIds("/credentialSubject/sails/0");
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(
+            () => pointers.ReplaceInHandedArray("/credentialSubject/sails/0", "/credentialSubject/sails/1")));
+
+        var reveal = suite.DeriveProof(secured, pointers, header);
+
+        JsonElement.DeepEquals(WithoutProof(reveal), WithoutProof(expected)).Should().BeTrue();
+        VerifyReveal(new Bbs2023Cryptosuite(), reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task APresentationHeaderChangedWhileTheProofIsDerived_IsTheHeaderThatWasGiven()
+    {
+        // The header was read for the BBS proof and again for the derived proofValue, with a canonicalizer of the
+        // caller's in between, so the two could differ and the derived proof did not verify (PR #62 follow-up d2).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var header = Convert.FromHexString("113377aa");
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(() => header[0]++));
+
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], header);
+
+        VerifyReveal(new Bbs2023Cryptosuite(), reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task APrivateKeyChangedWhileTheBaseProofIsPrepared_SignsWithTheKeyThatWasGiven()
+    {
+        // The raw-key overload derived the public key before a canonicalizer of the caller's ran and signed after it,
+        // reading the key each time, so the proof could pack one key's public key with another's signature
+        // (PR #62 follow-up d1).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var other = new byte[sk.Length];
+        other[^1] = 7;
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(() => other.CopyTo(sk, 0)));
+
+        var proof = await suite.CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+        var plain = new Bbs2023Cryptosuite();
+        var reveal = plain.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(plain, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
     // A canonicalizer of the caller's: the RDFC one, after running during on every call.
     private sealed class HookedCanonicalizer(Action during) : IRdfCanonicalizer
     {

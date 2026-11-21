@@ -149,7 +149,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <remarks>
     /// This overload takes the private key as bytes. An issuer whose key must stay in a key store
     /// uses the <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload, which produces the same <c>proofValue</c> for the
-    /// same key and inputs (issue #44).
+    /// same key and inputs (issue #44). The key is read once, into a pinned copy that is cleared after use, and the
+    /// public key the proof carries and the signature both come from that copy.
     /// </remarks>
     /// <param name="unsecuredDocument">The JSON-LD object to secure.</param>
     /// <param name="proofOptions">The proof options (type <c>DataIntegrityProof</c>,
@@ -175,11 +176,23 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var publicKey = PublicKeyOf(bbsPrivateKey.Span);
-        var input = PrepareBaseProof(request);
-        var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, input.Messages, input.BbsHeader);
+        // One read of the caller's key. A canonicalizer of the caller's runs between deriving the public key and
+        // signing, so both use this copy; otherwise the proof could pack one key's public key with another key's
+        // signature (PR #62 follow-up d1). It is pinned, so the collector leaves no copy behind, and cleared after use.
+        var privateKey = GC.AllocateUninitializedArray<byte>(bbsPrivateKey.Length, pinned: true);
+        try
+        {
+            bbsPrivateKey.Span.CopyTo(privateKey);
+            var publicKey = PublicKeyOf(privateKey);
+            var input = PrepareBaseProof(request);
+            var bbsSignature = _bbs.Sign(privateKey, input.Messages, input.BbsHeader);
 
-        return Task.FromResult(PackBaseProof(request, input, bbsSignature, publicKey));
+            return Task.FromResult(PackBaseProof(request, input, bbsSignature, publicKey));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(privateKey);
+        }
     }
 
     /// <summary>
@@ -433,6 +446,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// carrying a base proof, discloses the mandatory group plus the values addressed by
     /// <paramref name="selectivePointers"/>, replacing the base proof with a derived proof.
     /// </summary>
+    /// <remarks>
+    /// The base document, the selective pointers and the presentation header are copied before a canonicalizer of the
+    /// caller's runs, and each is read once, so code that changes them meanwhile does not change the derived proof.
+    /// </remarks>
     /// <param name="securedBaseDocument">The document secured with a <c>bbs-2023</c> base proof.</param>
     /// <param name="selectivePointers">RFC 6901 JSON Pointers selecting additional values to reveal.</param>
     /// <param name="presentationHeader">The holder's presentation header (binds the derived proof).</param>
@@ -468,15 +485,23 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException("The base proofValue is not a valid bbs-2023 base proof.", ex);
         }
 
+        // A canonicalizer of the caller's runs while the proof is derived, and the selective pointers and the header
+        // are each used more than once, so both are copied here, before the first caller code, and read once. ToArray
+        // passes the array it returns to the CopyTo of a collection that implements ICollection<T>, which can keep it,
+        // so the clone is the array used (PR #62 follow-ups c and d2). The base document needs no copy: SplitProof
+        // took one before.
+        var pointers = (string[])selectivePointers.ToArray().Clone();
+        var header = presentationHeader.ToArray();
+
         // The mandatory pointers come from the issuer's document, the selective ones from the
         // caller; both are parsed here so a malformed one fails as the documented exception.
         RequirePointers(components.MandatoryPointers, "The base proof carries an invalid mandatory pointer.");
-        RequirePointers(selectivePointers, "A selective pointer is invalid.");
+        RequirePointers(pointers, "A selective pointer is invalid.");
 
         DisclosureData disclosure;
         try
         {
-            disclosure = CreateDisclosureData(unsecured, baseProof, components, selectivePointers, presentationHeader.Span);
+            disclosure = CreateDisclosureData(unsecured, baseProof, components, pointers, header);
         }
         catch (CryptographicException ex) when (ex is not BbsUnavailableException)
         {
@@ -490,7 +515,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         var revealDocument = (JsonObject)disclosure.RevealDocument;
         var derivedProofValue = Bbs2023ProofValue.SerializeDerivedProof(
             disclosure.BbsProof, disclosure.LabelMap, disclosure.MandatoryIndexes,
-            disclosure.SelectiveIndexes, presentationHeader.Span);
+            disclosure.SelectiveIndexes, header);
 
         // Add Derived Proof copies the proof and replaces only proofValue. A document can be
         // re-compacted without changing its RDF; its current context need not interpret the

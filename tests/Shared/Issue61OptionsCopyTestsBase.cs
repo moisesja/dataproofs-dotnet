@@ -683,6 +683,21 @@ public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, I
         }
     }
 
+    /// <summary>Replaces every <paramref name="from"/> in the array <c>CopyTo</c> was last handed, if any, with <paramref name="to"/>.</summary>
+    public void ReplaceInHandedArray(string from, string to)
+    {
+        if (_handed is { } handed)
+        {
+            for (var i = 0; i < handed.Length; i++)
+            {
+                if (handed[i] == from)
+                {
+                    handed[i] = to;
+                }
+            }
+        }
+    }
+
     public IEnumerator<string> GetEnumerator() => ((IEnumerable<string>)ids).GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
