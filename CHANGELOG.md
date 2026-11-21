@@ -254,16 +254,22 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   `Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync` takes a NetCrypto `ICapableKeyStore`, the key's alias and
   the `KeyInstanceId` the alias must hold, and no private-key bytes. Until now `CreateBaseProofAsync`, which takes
   the BLS12-381 G2 private key as bytes, was the only way to issue `bbs-2023`, so an issuer that must not handle raw
-  key material could not issue it at all. The method checks every input before it calls the store. It reads the
+  key material could not issue it at all. The method checks every input, including the pointer and skolemization
+  checks that need the document transformed, before it calls the store. It reads the
   public key with `GetInfoAsync(alias, instanceId)`, so an alias rebound to another key fails with
   `KeyNotFoundException` instead of signing. It then has the store sign with `SignBbsAsync` under
   `KeyStoreAlgorithms.BbsBls12381Sha256`, and verifies the signature it gets back before assembling the proof, so a
   store that answers with another key's signature, or a malformed one, issues no proof (`ProofGenerationException`).
   Store exceptions propagate unchanged. The HMAC key stays the caller's to supply, 32 bytes as before: the holder
-  receives it inside the base proof, so it is not signing-key material. Draw a fresh one per credential. BBS signing
+  receives it inside the base proof, so it is not signing-key material. Draw a fresh one per credential. **The store
+  sees the credential's selectively disclosable content:** a BBS signature covers the messages, not a hash of them,
+  so `SignBbsAsync` receives the non-mandatory statements as N-Quads in the clear. The mandatory statements reach it
+  only as a hash in the header, and the HMAC key not at all. Weigh this before signing with a remote key service. BBS signing
   is deterministic, so for the same key and inputs the new method's `proofValue` is byte-identical to
-  `CreateBaseProofAsync`'s, and derivation and verification are unchanged. `CreateBaseProofAsync` is unchanged too,
-  apart from sharing its validation with the new method. `CreateProofAsync(ISigner)` still throws
+  `CreateBaseProofAsync`'s, and derivation and verification are unchanged. `CreateBaseProofAsync` emits the same
+  bytes as before. Both methods now copy the proof options, the HMAC key and the pointers at entry, so a returned
+  proof no longer shares the caller's `AdditionalProperties` dictionary, and changing the options later leaves it
+  as issued. `CreateProofAsync(ISigner)` still throws
   `NotSupportedException`; its message now names both methods. Not provided: a key store without `ICapableKeyStore`.
   A plain `IKeyStore` has no multi-message BBS operation. The sample `Samples.BbsSelectiveDisclosure` now issues
   through a key store.

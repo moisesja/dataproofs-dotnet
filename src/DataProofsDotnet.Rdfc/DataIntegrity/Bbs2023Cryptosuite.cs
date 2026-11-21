@@ -198,6 +198,14 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// other lifecycle methods do.
     /// </para>
     /// <para>
+    /// <b>What the store sees.</b> A BBS signature covers the messages themselves, not a hash of them,
+    /// so the store receives the document's non-mandatory statements as canonical N-Quads, in the
+    /// clear: the claims a holder may later withhold. The mandatory statements reach it only through
+    /// the header, as a SHA-256 hash, and the HMAC key does not reach it. A remote key service
+    /// therefore learns the credential's selectively disclosable content, which an
+    /// <see cref="ISigner"/> for the other suites, signing a hash, never sees.
+    /// </para>
+    /// <para>
     /// The HMAC key is not signing-key material: the holder receives it inside the base proof to
     /// derive. Draw a fresh one per credential, for example with
     /// <c>RandomNumberGenerator.GetBytes(32)</c>.
@@ -259,6 +267,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new BbsUnavailableException("The BBS native library is not available on this host, so bbs-2023 cannot be used.");
         }
 
+        // Everything that reads the caller's inputs runs before the first await, so every input fault
+        // is reported before the store is called and nothing the caller holds is read after it.
+        var input = PrepareBaseProof(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
         var info = await keyStore.GetInfoAsync(alias, instanceId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"The key store holds no key under alias '{alias}' with the given instance id.");
         if (info.KeyType != KeyType.Bls12381G2)
@@ -272,8 +285,6 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             throw new ProofGenerationException(
                 $"The key store reported a BLS12-381-G2 public key of {publicKey.Length} bytes, not {Bbs2023ProofValue.BbsPublicKeyLength}.");
         }
-
-        var input = PrepareBaseProof(request);
 
         // The store gets copies, so whatever it does with the buffers it is handed, the check below
         // runs over the messages and header this method computed.
@@ -296,9 +307,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         return PackBaseProof(request, input, bbsSignature, publicKey);
     }
 
-    // What both base-proof methods take from the caller, checked, with the HMAC key and the pointers
-    // copied: the key-store method awaits the store, and a caller that changes its buffers meanwhile
-    // must not get a proof whose packed HMAC key or pointers differ from the ones it was computed with.
+    // What both base-proof methods take from the caller, checked, with the options, the HMAC key and
+    // the pointers copied: the key-store method awaits the store, and a caller that changes its objects
+    // meanwhile must not get a proof whose packed parts differ from the ones it was computed with.
     private readonly record struct BaseProofRequest(
         JsonElement Document,
         DataIntegrityProof ProofOptions,
@@ -319,6 +330,14 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     {
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
+
+        // A private copy of the options: Type and AdditionalProperties are settable, and the returned
+        // proof must carry the options that were checked and signed, not whatever the caller's object
+        // holds later (adversarial review, issue #44).
+        proofOptions = proofOptions with
+        {
+            AdditionalProperties = proofOptions.AdditionalProperties is { } extra ? new Dictionary<string, JsonElement>(extra) : null,
+        };
         ValidateProofOptions(proofOptions);
 
         // The base proof parser requires this length, as the reference does, so a proof issued with

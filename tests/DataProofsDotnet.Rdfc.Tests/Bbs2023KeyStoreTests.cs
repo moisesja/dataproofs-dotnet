@@ -53,6 +53,8 @@ public sealed class Bbs2023KeyStoreTests
         return (store, info);
     }
 
+    private static JsonElement Parse(string json) => JsonSerializer.Deserialize<JsonElement>(json);
+
     private static JsonElement Embed(JsonElement document, DataIntegrityProof proof)
     {
         var secured = JsonObject.Create(document)!;
@@ -312,7 +314,8 @@ public sealed class Bbs2023KeyStoreTests
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*does not verify*");
     }
 
-    // Inputs the suite refuses before it calls the store.
+    // Inputs the suite refuses before it calls the store: the argument checks, and those that need the
+    // document transformed (adversarial review: these used to run after the public key was read).
     public static TheoryData<string> InvalidRequests() => new()
     {
         "proof type",
@@ -325,6 +328,14 @@ public sealed class Bbs2023KeyStoreTests
         "duplicate member in document",
         "malformed pointer",
         "null pointer",
+        "pointer matches nothing",
+        "pointer selects part of a value",
+        "every statement mandatory",
+        "nested @context in document",
+        "urn:bnid: IRI in document",
+        "extension member named proofValue",
+        "extension member with a duplicate member name",
+        "options @context with a duplicate member, no document @context",
     };
 
     [BbsTheory]
@@ -351,6 +362,26 @@ public sealed class Bbs2023KeyStoreTests
                 break;
             case "malformed pointer": mandatory = ["issuer"]; break;
             case "null pointer": mandatory = [null!]; break;
+            case "pointer matches nothing": mandatory = ["/no-such-member"]; break;
+            case "pointer selects part of a value":
+                document = Fx.Mutate(document, d => d["credentialSubject"]!.AsObject()["name"] = JsonNode.Parse("""{"@value": "Alice", "@language": "en"}"""));
+                mandatory = ["/credentialSubject/name/@language"];
+                break;
+            case "every statement mandatory": mandatory = [""]; break;
+            case "nested @context in document":
+                document = Fx.Mutate(document, d => d["credentialSubject"]!.AsObject()["@context"] = JsonNode.Parse("""{"x": "https://x.example/"}"""));
+                break;
+            case "urn:bnid: IRI in document": document = Fx.Mutate(document, d => d["id"] = "urn:bnid:_:b0"); break;
+            case "extension member named proofValue":
+                options.AdditionalProperties = new Dictionary<string, JsonElement> { ["proofValue"] = Parse("\"x\"") };
+                break;
+            case "extension member with a duplicate member name":
+                options.AdditionalProperties = new Dictionary<string, JsonElement> { ["ext"] = Parse("""{"a": 1, "a": 2}""") };
+                break;
+            case "options @context with a duplicate member, no document @context":
+                document = Fx.Mutate(document, d => d.Remove("@context"));
+                options = options with { Context = Parse("""{"@vocab": "https://a.example/", "@vocab": "https://b.example/"}""") };
+                break;
         }
 
         var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
@@ -361,17 +392,88 @@ public sealed class Bbs2023KeyStoreTests
     }
 
     [BbsFact]
-    public async Task APointerThatMatchesNothing_IsRefusedWithoutSigning()
+    public async Task AnInputFault_IsReportedBeforeAStoreFault()
     {
-        // Found only once the document is transformed, after the public key is read; still no signature.
+        // A pointer that matches nothing and an instance id the store does not hold: the input fault wins.
+        var (_, hmacKey) = KeyMaterial();
+        var (store, _) = await StoreWithVectorKeyAsync();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), BaseOptions(), store, Alias, new KeyInstanceId("not-the-instance"), hmacKey, ["/no-such-member"]);
+
+        await act.Should().ThrowAsync<ProofGenerationException>();
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsFact]
+    public async Task ACallerThatChangesItsProofOptionsWhileTheStoreSigns_StillGetsTheProofItAskedFor()
+    {
+        // Type and AdditionalProperties are settable; the proof carries the options that were checked and signed.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var suite = new Bbs2023Cryptosuite();
+        DataIntegrityProof WithNote() => BaseOptions() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement> { ["note"] = Parse("\"as signed\"") },
+        };
+        var expected = await suite.CreateBaseProofAsync(WindDoc(), WithNote(), sk, hmacKey, WindMandatory());
+
+        var options = WithNote();
+        store.TamperSignature = (_, genuine) =>
+        {
+            options.Type = "Ed25519Signature2020";
+            options.AdditionalProperties!["note"] = Parse("\"changed later\"");
+            options.AdditionalProperties["proofValue"] = Parse("\"uFORGED\"");
+            return genuine;
+        };
+
+        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+
+        JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default)
+            .Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
+        var reveal = suite.DeriveProof(Embed(WindDoc(), stored), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task TheReturnedProof_DoesNotShareTheCallersExtensionMembers()
+    {
+        // Both methods: changing the options after the call leaves the issued proof as it was.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var suite = new Bbs2023Cryptosuite();
+        var options = BaseOptions() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement> { ["note"] = Parse("\"x\"") },
+        };
+
+        var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
+        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+        options.AdditionalProperties["note"] = Parse("\"changed\"");
+
+        raw.AdditionalProperties!["note"].GetString().Should().Be("x");
+        stored.AdditionalProperties!["note"].GetString().Should().Be("x");
+    }
+
+    [BbsFact]
+    public async Task TheStoreSeesTheNonMandatoryStatements_ButNotTheMandatoryOnesNorTheHmacKey()
+    {
+        // What the XML docs say a remote key service learns: BBS signs the messages, not a hash of them.
         var (_, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
 
-        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
-            WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, ["/no-such-member"]);
+        await new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
 
-        await act.Should().ThrowAsync<ProofGenerationException>();
-        store.Calls.Should().NotContain(nameof(ICapableKeyStore.SignBbsAsync));
+        var request = store.LastBbsRequest!;
+        var bytes = request.Messages.SelectMany(message => message.ToArray()).Concat(request.Header.ToArray()).ToArray();
+        bytes.AsSpan().IndexOf(hmacKey).Should().Be(-1);
+        var text = string.Concat(request.Messages.Select(message => System.Text.Encoding.UTF8.GetString(message.Span)));
+        text.Should().Contain("Kihei", "a non-mandatory claim reaches the store in the clear");
+        text.Should().NotContain("racecommittee", "the mandatory issuer statement reaches it only hashed, in the header");
+        request.Header.Length.Should().Be(64);
     }
 
     [BbsFact]
