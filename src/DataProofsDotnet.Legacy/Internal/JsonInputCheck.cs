@@ -107,7 +107,12 @@ internal static class JsonInputCheck
     /// cloned. <see cref="PreviousProofReference"/> and strings are immutable, so they are shared. An
     /// undefined element is kept as it is, for <see cref="SerializeChecked"/> to report.
     /// </summary>
-    /// <exception cref="ProofGenerationException">The extension dictionary lists a name twice under ordinal comparison.</exception>
+    /// <remarks>
+    /// The extension members are copied as enumeration yields them, as serialization reads them, never sized
+    /// from the caller's <c>Count</c>. The messages never quote a member name (FR-23).
+    /// </remarks>
+    /// <exception cref="ProofGenerationException">An extension member has a null name, or a name that repeats
+    /// under ordinal comparison, or a JSON value of the options belongs to a document that has been disposed.</exception>
     public static DataIntegrityProof OwnedCopy(DataIntegrityProof options)
     {
         try
@@ -115,14 +120,32 @@ internal static class JsonInputCheck
             return options with
             {
                 Context = options.Context is { } context ? Own(context) : null,
-                AdditionalProperties = options.AdditionalProperties?.ToDictionary(
-                    member => member.Key, member => Own(member.Value), StringComparer.Ordinal),
+                AdditionalProperties = options.AdditionalProperties is { } members ? OwnMembers(members) : null,
             };
         }
-        catch (ArgumentException ex)
+        catch (ObjectDisposedException ex)
         {
-            // A dictionary whose own comparer, or own enumeration, lets a name repeat.
-            throw new ProofGenerationException("The proof options are invalid: " + ex.Message, ex);
+            throw new ProofGenerationException("The proof options hold a JSON value whose document has been disposed.", ex);
+        }
+
+        static Dictionary<string, JsonElement> OwnMembers(IDictionary<string, JsonElement> members)
+        {
+            var copy = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var (name, value) in members)
+            {
+                if (name is null)
+                {
+                    throw new ProofGenerationException("The proof options have an extension member with a null name.");
+                }
+
+                // A dictionary whose own comparer, or own enumeration, lets a name repeat.
+                if (!copy.TryAdd(name, Own(value)))
+                {
+                    throw new ProofGenerationException("The proof options repeat an extension member name.");
+                }
+            }
+
+            return copy;
         }
 
         static JsonElement Own(JsonElement element)

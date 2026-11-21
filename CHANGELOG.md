@@ -460,6 +460,19 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   already copied its options (issue #44) and now runs the same code. The pipeline's copy also covers a suite this
   library does not ship. Emitted bytes do not change. The returned proof's `AdditionalProperties` is now a new
   `Dictionary<string, JsonElement>`, not the caller's object.
+  - **Faults the copy reports.** The copy is the first step to read the options, so it reports what they hold with
+    `ProofGenerationException`, and the message never quotes a member name (FR-23). Three faults:
+    - a JSON value whose `JsonDocument` has been disposed, which used to escape as a raw `ObjectDisposedException`;
+    - an extension member with a null name;
+    - a name that a dictionary with its own comparer lists twice.
+
+    **One input that worked is refused.** The JCS and RDFC suites used to replace the options' `@context` with the
+    document's without reading it, so a disposed one went unnoticed. It is now refused like any other disposed
+    value. Because the copy runs first, these faults are also reported before the document's.
+  - **Legacy RDFC no longer reads the document after signing.** Both legacy suites' RDFC variant took the proof's
+    `@context` from the caller's document a second time once the signer returned. A document disposed while the
+    signer ran then threw `ObjectDisposedException` after the signature was made. A document whose buffer changed in
+    that time gave a proof whose `@context` differed from the one signed. The proof is now fixed before signing.
   - **`PreviousProofReference` is immutable.** `Values`, typed `IReadOnlyList<string>`, returned the backing
     `string[]`, so `((string[])reference.Values)[0] = "…"` changed every proof and options object that shared the
     reference. It now returns a read-only view. That cast throws `InvalidCastException`, and a write through

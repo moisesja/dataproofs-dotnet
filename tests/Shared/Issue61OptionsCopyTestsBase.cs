@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using DataProofsDotnet.DataIntegrity;
 using FluentAssertions;
@@ -131,6 +133,137 @@ public abstract class Issue61OptionsCopyTestsBase
         }
 
         WithoutSignature(proof).Should().Be(WithoutSignature(expected));
+    }
+
+    [Fact]
+    public async Task ASignerThatDisposesTheCallersDocumentWhileItSigns_StillGetsTheProofItAskedFor()
+    {
+        // After the await nothing reads the caller's document again: the legacy RDFC variant took the proof's
+        // @context from it a second time (issue #61 adversarial review).
+        var expected = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var document = JsonDocument.Parse(HostileJson.BaseDocument);
+
+        var proof = await Suite.CreateProofAsync(document.RootElement, WithNote(), new MutatingSigner(Signer, document.Dispose));
+
+        WithoutSignature(proof).Should().Be(WithoutSignature(expected));
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    public static TheoryData<string, bool> DisposedValueCases() => new()
+    {
+        { "@context", false }, { "@context", true }, { "extension value", false }, { "extension value", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(DisposedValueCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task AnOptionsValueFromADisposedDocument_IsAProofGenerationException(string member, bool throughThePipeline)
+    {
+        // Even an options @context the suite would replace with the document's: the copy reads every value.
+        JsonElement disposed;
+        using (var source = JsonDocument.Parse(member == "@context" ? FallbackContext : "\"x\""))
+        {
+            disposed = source.RootElement;
+        }
+
+        var options = member == "@context"
+            ? Options() with { Context = disposed }
+            : Options() with { AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = disposed } };
+
+        await CreateAsync(options, throughThePipeline).Should().ThrowAsync<ProofGenerationException>()
+            .WithMessage("The proof options hold a JSON value whose document has been disposed.");
+    }
+
+    public static TheoryData<string, bool> BadNameCases() => new()
+    {
+        { "null", false }, { "null", true }, { "repeated", false }, { "repeated", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(BadNameCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ANullOrRepeatedExtensionName_IsAProofGenerationException_ThatQuotesNoName(string fault, bool throughThePipeline)
+    {
+        // A dictionary of the caller's own making can enumerate either; the message must not quote the name (FR-23).
+        const string secret = "https://example.org/vocab#secret-claim-name";
+        var value = HostileJson.Parse("\"x\"");
+        var members = fault == "null"
+            ? new ScriptedDictionary([new(null!, value)], count: 1)
+            : new ScriptedDictionary([new(secret, value), new(secret, value)], count: 2);
+
+        var thrown = await CreateAsync(Options() with { AdditionalProperties = members }, throughThePipeline)
+            .Should().ThrowAsync<ProofGenerationException>();
+
+        thrown.Which.Message.Should().Be(fault == "null"
+            ? "The proof options have an extension member with a null name."
+            : "The proof options repeat an extension member name.");
+        thrown.Which.ToString().Should().NotContain("secret-claim-name");
+    }
+
+    [Fact]
+    public async Task ExtensionMembers_AreCopiedAsTheyEnumerate_NotSizedByTheCallersCount()
+    {
+        // A count of 0 once made the copy skip enumeration and drop the member that serialization would have written.
+        var options = Options() with
+        {
+            AdditionalProperties = new ScriptedDictionary([new(NoteName, HostileJson.Parse("\"as signed\""))], count: 0),
+        };
+
+        var proof = await Suite.CreateProofAsync(Document(), options, Signer);
+
+        proof.AdditionalProperties![NoteName].GetString().Should().Be("as signed");
+        WithoutSignature(proof).Should().Be(WithoutSignature(await Suite.CreateProofAsync(Document(), WithNote(), Signer)));
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    private Func<Task> CreateAsync(DataIntegrityProof options, bool throughThePipeline) => throughThePipeline
+        ? () => Pipeline().AddProofAsync(Document(), options, Signer)
+        : () => Suite.CreateProofAsync(Document(), options, Signer);
+
+    /// <summary>
+    /// A caller-made dictionary that enumerates <paramref name="members"/> as given, whatever they hold, and reports
+    /// <paramref name="count"/> as its <c>Count</c>.
+    /// </summary>
+    private sealed class ScriptedDictionary(KeyValuePair<string, JsonElement>[] members, int count) : IDictionary<string, JsonElement>
+    {
+        public int Count => count;
+
+        public bool IsReadOnly => true;
+
+        public ICollection<string> Keys => members.Select(member => member.Key).ToArray();
+
+        public ICollection<JsonElement> Values => members.Select(member => member.Value).ToArray();
+
+        public JsonElement this[string key]
+        {
+            get => members.First(member => member.Key == key).Value;
+            set => throw new NotSupportedException();
+        }
+
+        public IEnumerator<KeyValuePair<string, JsonElement>> GetEnumerator() => ((IEnumerable<KeyValuePair<string, JsonElement>>)members).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public bool ContainsKey(string key) => members.Any(member => member.Key == key);
+
+        public bool TryGetValue(string key, [MaybeNullWhen(false)] out JsonElement value)
+        {
+            var found = members.Where(member => member.Key == key).ToArray();
+            value = found.Length > 0 ? found[0].Value : default;
+            return found.Length > 0;
+        }
+
+        public bool Contains(KeyValuePair<string, JsonElement> item) => members.Contains(item);
+
+        public void CopyTo(KeyValuePair<string, JsonElement>[] array, int arrayIndex) => members.CopyTo(array, arrayIndex);
+
+        public void Add(string key, JsonElement value) => throw new NotSupportedException();
+
+        public void Add(KeyValuePair<string, JsonElement> item) => throw new NotSupportedException();
+
+        public bool Remove(string key) => throw new NotSupportedException();
+
+        public bool Remove(KeyValuePair<string, JsonElement> item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
     }
 
     /// <summary>A signer that runs <paramref name="during"/> before it signs, as a key store's await allows.</summary>
