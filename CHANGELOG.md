@@ -272,8 +272,10 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   - **Same bytes.** BBS signing is deterministic, so for the same key and inputs the new overload's `proofValue` is
     byte-identical to the raw-key overload's. The raw-key overload emits the same bytes as before, and derivation
     and verification are unchanged.
-  - **Copies at entry.** Both overloads now copy the proof options, the HMAC key and the pointers. The returned proof
-    no longer shares the caller's `AdditionalProperties` dictionary, and its extension values and `@context` no
+  - **Copies at entry.** Both overloads now copy the proof options, the HMAC key and the pointers. The pointers are
+    kept in an array no code of the caller's was handed: `ToArray` passes the array it returns to the `CopyTo` of a
+    collection that implements `ICollection<T>`, which could keep it and change the pointers between grouping and
+    packing (PR #62 review). The returned proof no longer shares the caller's `AdditionalProperties` dictionary, and its extension values and `@context` no
     longer live in the caller's `JsonDocument`s. `previousProof` can no longer be changed at all (issue #61, under
     *Fixed*). Changing or disposing the caller's options later therefore leaves the proof as issued.
   - **Reflection.** `CreateBaseProofAsync` is now overloaded, so a reflection lookup by name alone
@@ -478,7 +480,9 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
     reference. It now returns a list that implements `IReadOnlyList<string>` and nothing else, so no public interface
     reaches the ids. A cast to `string[]`, to a writable interface such as `IList<string>`, or to the non-generic
     `ICollection` (whose `SyncRoot` is how `ReadOnlyCollection<T>` hands out the array it wraps) throws
-    `InvalidCastException`. The declared type is unchanged.
+    `InvalidCastException`. The declared type is unchanged. `FromValues` also kept the array that `ToArray` had
+    passed to the `CopyTo` of the caller's collection, so a collection that kept it could rewrite the reference
+    later. It now keeps a copy made after `CopyTo` returns, and checks that copy (PR #62 review).
 
 ### Why this is a minor and not a major
 

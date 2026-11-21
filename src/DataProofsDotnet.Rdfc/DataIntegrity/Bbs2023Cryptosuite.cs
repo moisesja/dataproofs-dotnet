@@ -360,7 +360,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Before skolemization and the @context lookup, which read member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
-        var pointers = mandatoryPointers.ToArray();
+        // ToArray passes the array it returns to the CopyTo of a collection that implements ICollection<T>, which
+        // can keep it and change it while the store or a canonicalizer of the caller's runs. The clone is the array
+        // grouped, checked and packed (PR #62 review).
+        var pointers = (string[])mandatoryPointers.ToArray().Clone();
         RequirePointers(pointers, "A mandatory pointer is invalid.");
 
         return new BaseProofRequest(unsecuredDocument, proofOptions, hmacKey.ToArray(), pointers);

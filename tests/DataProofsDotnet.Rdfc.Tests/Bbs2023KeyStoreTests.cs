@@ -590,45 +590,104 @@ public sealed class Bbs2023KeyStoreTests
         stored.AdditionalProperties!["note"].GetString().Should().Be("x");
     }
 
-    public static TheoryData<bool> PreviousProofForms() => new() { false, true };
-
     [BbsTheory]
-    [MemberData(nameof(PreviousProofForms))]
-    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesBothProofsAsIssuedAndDerivable(bool arrayForm)
+    [MemberData(nameof(Issue61OptionsCopyTestsBase.PreviousProofForms), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesBothProofsAsIssuedAndDerivable(string form)
     {
-        // The options copy shares previousProof, which nothing can change (issue #61). Every public write route is
-        // tried on the caller's options while the store signs and again after both calls, ICollection.SyncRoot
-        // included: the read-only wrapper first used handed out the array through it (PR #62 review). Both proofs
-        // keep the ids and the wire form that were signed, and both still derive.
+        // The options copy shares previousProof, which nothing can change (issue #61). Every write its caller can
+        // make is tried while the store signs and again after both calls: each public route through Values,
+        // ICollection.SyncRoot included, and the array a collection of the caller's was handed when FromValues copied
+        // it (PR #62 review, twice). Both proofs keep the ids and the wire form that were signed, and both still derive.
         var (sk, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
         var suite = new Bbs2023Cryptosuite();
-        DataIntegrityProof Chained() => BaseOptions() with
-        {
-            PreviousProof = arrayForm
-                ? PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"])
-                : PreviousProofReference.FromSingle("urn:proof:original"),
-        };
         var expected = JsonSerializer.Serialize(
-            await suite.CreateBaseProofAsync(WindDoc(), Chained(), sk, hmacKey, WindMandatory()), DataProofsJsonOptions.Default);
+            await suite.CreateBaseProofAsync(
+                WindDoc(), BaseOptions() with { PreviousProof = Issue61OptionsCopyTestsBase.CallersPreviousProof(form).Reference },
+                sk, hmacKey, WindMandatory()),
+            DataProofsJsonOptions.Default);
 
-        var options = Chained();
+        var (previousProof, rewrite) = Issue61OptionsCopyTestsBase.CallersPreviousProof(form);
+        var options = BaseOptions() with { PreviousProof = previousProof };
         store.TamperSignature = (_, genuine) =>
         {
-            Issue61OptionsCopyTestsBase.TryToRewrite(options.PreviousProof!);
+            rewrite();
             return genuine;
         };
         var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
         var stored = await suite.CreateBaseProofAsync(
             WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
-        Issue61OptionsCopyTestsBase.TryToRewrite(options.PreviousProof!);
+        rewrite();
 
-        expected.Should().Contain(arrayForm ? "\"previousProof\":[\"urn:proof:original\"" : "\"previousProof\":\"urn:proof:original\"");
+        expected.Should().Contain(form == "string" ? "\"previousProof\":\"urn:proof:original\"" : "\"previousProof\":[\"urn:proof:original\"");
         foreach (var proof in new[] { raw, stored })
         {
             JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default).Should().Be(expected);
             var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
             VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+        }
+    }
+
+    public static TheoryData<string> CallerCodeThatRunsDuringIssuance() => ["the key store", "a canonicalizer of the caller's"];
+
+    [BbsTheory]
+    [MemberData(nameof(CallerCodeThatRunsDuringIssuance))]
+    public async Task MandatoryPointersFromACollectionThatKeepsItsArray_AreThePointersThatWereAskedFor(string callerCode)
+    {
+        // ToArray hands a collection that implements ICollection<T> the array it returns. The suite groups the
+        // pointers, runs the caller's code, then packs them, so it must keep an array the collection was never
+        // handed, whichever overload runs the caller's code (PR #62 review).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var mandatory = WindMandatory();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, mandatory);
+        var pointers = new CapturingIds(mandatory);
+        void Rewrite() => pointers.WriteToHandedArray(0, mandatory[1]);
+
+        DataIntegrityProof proof;
+        if (callerCode == "the key store")
+        {
+            store.TamperSignature = (_, genuine) =>
+            {
+                Rewrite();
+                return genuine;
+            };
+            proof = await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, pointers);
+        }
+        else
+        {
+            proof = await new Bbs2023Cryptosuite(new HookedCanonicalizer(Rewrite)).CreateBaseProofAsync(
+                WindDoc(), BaseOptions(), sk, hmacKey, pointers);
+        }
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+        var suite = new Bbs2023Cryptosuite();
+        var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    // A canonicalizer of the caller's: the RDFC one, after running during on every call.
+    private sealed class HookedCanonicalizer(Action during) : IRdfCanonicalizer
+    {
+        private readonly RdfcDocumentCanonicalizer _inner = new();
+
+        public byte[] CanonicalizeJsonLd(JsonElement document, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256)
+        {
+            during();
+            return _inner.CanonicalizeJsonLd(document, hashAlgorithm);
+        }
+
+        public string CanonicalizeNQuads(string nQuads, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256)
+        {
+            during();
+            return _inner.CanonicalizeNQuads(nQuads, hashAlgorithm);
+        }
+
+        public IReadOnlyDictionary<string, string> CanonicalizeNQuadsToMap(string nQuads, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256)
+        {
+            during();
+            return _inner.CanonicalizeNQuadsToMap(nQuads, hashAlgorithm);
         }
     }
 

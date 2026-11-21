@@ -7,7 +7,8 @@ namespace DataProofsDotnet.DataIntegrity;
 /// The value of a proof's <c>previousProof</c> member (FR-1/FR-6): either a single proof
 /// id (wire form: bare string) or a set of proof ids (wire form: array of strings).
 /// The original wire shape is preserved on round-trip. Immutable: proofs and their options share
-/// a reference, so a change to one would change them all (issue #61).
+/// a reference, so a change to one would change them all (issue #61). No code of the caller's ever holds
+/// the ids array, neither through <see cref="Values"/> nor while <see cref="FromValues"/> copies them.
 /// </summary>
 [JsonConverter(typeof(PreviousProofReferenceJsonConverter))]
 public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
@@ -39,12 +40,18 @@ public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
         return new PreviousProofReference([proofId], isArrayForm: false);
     }
 
-    /// <summary>Creates a set reference that serializes as an array of strings.</summary>
+    /// <summary>
+    /// Creates a set reference that serializes as an array of strings. The reference keeps its own copy of the ids,
+    /// one no code of the caller's was handed, so changing <paramref name="proofIds"/> afterwards changes nothing.
+    /// </summary>
     /// <exception cref="ArgumentException">The set is empty or contains a null/empty id.</exception>
     public static PreviousProofReference FromValues(IEnumerable<string> proofIds)
     {
         ArgumentNullException.ThrowIfNull(proofIds);
-        var values = proofIds.ToArray();
+
+        // ToArray passes the array it returns to the CopyTo of a source that implements ICollection<T>, and a
+        // collection of the caller's can keep it. The clone is the array this reference keeps and checks below.
+        var values = (string[])proofIds.ToArray().Clone();
         if (values.Length == 0)
         {
             throw new ArgumentException("previousProof must reference at least one proof.", nameof(proofIds));

@@ -29,6 +29,9 @@ public sealed class Issue61Ed25519Signature2020JcsOptionsCopyTests : Issue61Lega
     protected override ICryptosuite Suite { get; } = new Ed25519Signature2020Cryptosuite(LegacyCanonicalization.Jcs);
 
     protected override ISigner Signer { get; } = Fx.Signer(Fx.SeedKey(0x21));
+
+    // The JCS variant has no representation for a proof chain (LegacyCryptosuiteBase).
+    protected override bool SecuresAProofChain => false;
 }
 
 public sealed class Issue61Ed25519Signature2020RdfcOptionsCopyTests : Issue61LegacyOptionsCopyTestsBase
@@ -43,6 +46,9 @@ public sealed class Issue61EcdsaSecp256r1Signature2019JcsOptionsCopyTests : Issu
     protected override ICryptosuite Suite { get; } = new EcdsaSecp256r1Signature2019Cryptosuite(LegacyCanonicalization.Jcs);
 
     protected override ISigner Signer { get; } = Fx.Signer(Fx.SeedKey(0x21, KeyType.P256));
+
+    // The JCS variant has no representation for a proof chain (LegacyCryptosuiteBase).
+    protected override bool SecuresAProofChain => false;
 }
 
 public sealed class Issue61EcdsaSecp256r1Signature2019RdfcOptionsCopyTests : Issue61LegacyOptionsCopyTestsBase

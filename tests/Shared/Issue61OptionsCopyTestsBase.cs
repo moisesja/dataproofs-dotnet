@@ -32,6 +32,9 @@ public abstract class Issue61OptionsCopyTestsBase
     /// <summary>The <c>type</c> the suite emits.</summary>
     protected virtual string ProofType => DataIntegrityProof.DataIntegrityProofType;
 
+    /// <summary>Whether the suite secures a proof chain; the legacy JCS variant refuses one.</summary>
+    protected virtual bool SecuresAProofChain => true;
+
     private PublicKeyMaterial PublicKey => PublicKeyMaterial.FromRaw(Signer.KeyType, Signer.PublicKey.Span);
 
     private static JsonElement Document() => HostileJson.Parse(HostileJson.BaseDocument);
@@ -114,7 +117,9 @@ public abstract class Issue61OptionsCopyTestsBase
     public async Task TheProof_OutlivesTheCallersJsonDocuments()
     {
         // An extension value and the options' fallback @context, read from documents the caller disposes after
-        // the call: serializing the proof must not reach back into them.
+        // the call: serializing the proof must not reach back into them. It compares bytes and does not verify:
+        // with options @context and none in the document, the JCS suites issue a proof their own verifier refuses,
+        // a defect older than issue #61 and reported apart from it (PR #62 review).
         var expected = await Suite.CreateProofAsync(ContextlessDocument(), Options() with
         {
             Context = HostileJson.Parse(FallbackContext),
@@ -136,9 +141,10 @@ public abstract class Issue61OptionsCopyTestsBase
     }
 
     /// <summary>
-    /// Tries every public way a caller holding <paramref name="reference"/> might write to the ids it holds, and
-    /// asserts that each one is refused. The wrapper first used for <see cref="PreviousProofReference.Values"/>,
+    /// Tries every public way a caller holding <paramref name="reference"/> might write to its ids through
+    /// <see cref="PreviousProofReference.Values"/>, and asserts that each one is refused. The wrapper first used,
     /// <c>ReadOnlyCollection&lt;string&gt;</c>, gave the array away through <c>ICollection.SyncRoot</c> (PR #62 review).
+    /// The route at construction, a collection that keeps the array it is copied into, is <see cref="CapturingIds"/>'s.
     /// </summary>
     public static void TryToRewrite(PreviousProofReference reference)
     {
@@ -169,30 +175,77 @@ public abstract class Issue61OptionsCopyTestsBase
         written.Should().BeEmpty("no public route may write to a previousProof reference");
     }
 
-    public static TheoryData<bool> PreviousProofForms() => [false, true];
+    /// <summary>
+    /// The ways a caller builds a <c>previousProof</c>: a bare string, an array, and an array from a collection of its
+    /// own that keeps the array its <c>CopyTo</c> is handed (PR #62 review). See <see cref="CallersPreviousProof"/>.
+    /// </summary>
+    public static TheoryData<string> PreviousProofForms() => ["string", "array", "array from the caller's collection"];
+
+    /// <summary>
+    /// The <c>previousProof</c> that <paramref name="form"/> names, with the ids "urn:proof:original" and, in the array
+    /// forms, "urn:proof:second", and an action that makes every write its caller can try: each public route through
+    /// <see cref="PreviousProofReference.Values"/>, then the array its collection was handed, if it was handed one.
+    /// </summary>
+    public static (PreviousProofReference Reference, Action Rewrite) CallersPreviousProof(string form)
+    {
+        var ids = new CapturingIds("urn:proof:original", "urn:proof:second");
+        var reference = form switch
+        {
+            "string" => PreviousProofReference.FromSingle("urn:proof:original"),
+            "array" => PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"]),
+            _ => PreviousProofReference.FromValues(ids),
+        };
+
+        return (reference, () =>
+        {
+            TryToRewrite(reference);
+            ids.WriteToHandedArray(0, "urn:proof:changed");
+        });
+    }
 
     [Theory]
     [MemberData(nameof(PreviousProofForms), MemberType = typeof(Issue61OptionsCopyTestsBase))]
-    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesTheProofAsIssued(bool arrayForm)
+    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesTheProofAsIssued(string form)
     {
         // The copy shares previousProof because nothing can change it: tried while the signer runs and after the call.
-        DataIntegrityProof Chained() => Options() with
-        {
-            PreviousProof = arrayForm
-                ? PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"])
-                : PreviousProofReference.FromSingle("urn:proof:original"),
-        };
-        var expected = await Suite.CreateProofAsync(Document(), Chained(), Signer);
-        var options = Chained();
+        var expected = await Suite.CreateProofAsync(
+            Document(), Options() with { PreviousProof = CallersPreviousProof(form).Reference }, Signer);
+        var (previousProof, rewrite) = CallersPreviousProof(form);
 
         var proof = await Suite.CreateProofAsync(
-            Document(), options, new MutatingSigner(Signer, () => TryToRewrite(options.PreviousProof!)));
-        TryToRewrite(options.PreviousProof!);
+            Document(), Options() with { PreviousProof = previousProof }, new MutatingSigner(Signer, rewrite));
+        rewrite();
 
         WithoutSignature(proof).Should().Be(WithoutSignature(expected));
         proof.PreviousProof!.Values[0].Should().Be("urn:proof:original");
-        proof.PreviousProof.IsArrayForm.Should().Be(arrayForm);
+        proof.PreviousProof.IsArrayForm.Should().Be(form != "string");
         Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(PreviousProofForms), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ThroughThePipeline_ACallerThatTriesToRewriteItsPreviousProof_GetsTheProofItAskedFor(string form)
+    {
+        // The proofs previousProof names are already in the document, so the pipeline's lookup finds them.
+        var pipeline = Pipeline();
+        var chain = await pipeline.AddProofAsync(Document(), Options() with { Id = "urn:proof:original" }, Signer);
+        chain = await pipeline.AddProofAsync(chain, Options() with { Id = "urn:proof:second" }, Signer);
+        var (previousProof, rewrite) = CallersPreviousProof(form);
+        if (!SecuresAProofChain)
+        {
+            // No chain to rewrite: the pipeline hands the suite the predecessors under "proof", which it refuses.
+            await FluentActions.Awaiting(() => pipeline.AddProofAsync(chain, Options() with { PreviousProof = previousProof }, Signer))
+                .Should().ThrowAsync<ProofGenerationException>().WithMessage("*already carries a 'proof' member*");
+            return;
+        }
+
+        var secured = await pipeline.AddProofAsync(
+            chain, Options() with { PreviousProof = previousProof }, new MutatingSigner(Signer, rewrite));
+
+        var proof = secured.GetProperty("proof").EnumerateArray().Last();
+        JsonSerializer.Serialize(proof.GetProperty("previousProof")).Should().Be(
+            form == "string" ? "\"urn:proof:original\"" : "[\"urn:proof:original\",\"urn:proof:second\"]");
+        pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue();
     }
 
     [Fact]
@@ -341,4 +394,48 @@ public abstract class Issue61OptionsCopyTestsBase
             return await inner.SignAsync(data, ct);
         }
     }
+}
+
+/// <summary>
+/// A caller's collection of ids that keeps the array its <c>CopyTo</c> is handed. <c>Enumerable.ToArray</c> passes a
+/// source that implements <see cref="ICollection{T}"/> the very array it returns, so a copy made that way alone is
+/// one the caller can still write to (PR #62 review). It is an <see cref="IReadOnlyList{T}"/> too, the type the
+/// bbs-2023 mandatory pointers are given as.
+/// </summary>
+public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, ICollection<string>
+{
+    private string[]? _handed;
+
+    public int Count => ids.Length;
+
+    public bool IsReadOnly => true;
+
+    public string this[int index] => ids[index];
+
+    public void CopyTo(string[] array, int arrayIndex)
+    {
+        _handed = array;
+        ids.CopyTo(array, arrayIndex);
+    }
+
+    /// <summary>Writes <paramref name="value"/> at <paramref name="index"/> of the array <c>CopyTo</c> was last handed, if any.</summary>
+    public void WriteToHandedArray(int index, string value)
+    {
+        if (_handed is { } handed)
+        {
+            handed[index] = value;
+        }
+    }
+
+    public IEnumerator<string> GetEnumerator() => ((IEnumerable<string>)ids).GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    public bool Contains(string item) => Array.IndexOf(ids, item) >= 0;
+
+    public void Add(string item) => throw new NotSupportedException();
+
+    public bool Remove(string item) => throw new NotSupportedException();
+
+    public void Clear() => throw new NotSupportedException();
 }

@@ -114,4 +114,17 @@ public class PreviousProofReferenceTests
 
         reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
     }
+
+    [Fact]
+    public void FromValues_KeepsNoArrayTheCallersCollectionWasHanded()
+    {
+        // A string[]'s CopyTo is the runtime's, so the test above cannot see this: ToArray hands a collection that
+        // implements ICollection<T> the very array it returns, and FromValues kept that array (PR #62 review).
+        var ids = new CapturingIds("urn:uuid:0", "urn:uuid:1");
+        var reference = PreviousProofReference.FromValues(ids);
+
+        ids.WriteToHandedArray(0, "urn:uuid:changed");
+
+        reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
+    }
 }
