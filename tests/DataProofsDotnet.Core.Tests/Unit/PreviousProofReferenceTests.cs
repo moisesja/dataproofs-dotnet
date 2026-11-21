@@ -1,4 +1,6 @@
+using System.Text.Json;
 using DataProofsDotnet.DataIntegrity;
+using DataProofsDotnet.Tests.Shared;
 using FluentAssertions;
 using Xunit;
 
@@ -62,19 +64,44 @@ public class PreviousProofReferenceTests
             .Should().Be(PreviousProofReference.FromSingle("a").GetHashCode());
     }
 
-    public static TheoryData<string> Forms() => ["single", "array"];
+    public static TheoryData<string> Forms() => ["FromSingle", "FromValues", "implicit", "JSON string", "JSON array"];
+
+    private static PreviousProofReference Create(string form) => form switch
+    {
+        "FromSingle" => PreviousProofReference.FromSingle("urn:uuid:0"),
+        "FromValues" => PreviousProofReference.FromValues(["urn:uuid:0"]),
+        "implicit" => "urn:uuid:0",
+        "JSON string" => Parsed("\"urn:uuid:0\""),
+        _ => Parsed("[\"urn:uuid:0\"]"),
+    };
+
+    // Through the converter, as a parsed proof's previousProof is built.
+    private static PreviousProofReference Parsed(string previousProof)
+        => JsonSerializer.Deserialize<DataIntegrityProof>(
+            "{\"previousProof\":" + previousProof + "}", DataProofsJsonOptions.Default)!.PreviousProof!;
 
     [Theory]
     [MemberData(nameof(Forms))]
-    public void Values_CannotBeChangedThroughTheList(string form)
+    public void Values_CannotBeChangedThroughAnyPublicInterface(string form)
     {
         // Issue #61: proofs and their options share the reference, so a change would rewrite every one of them.
-        var reference = form == "single" ? PreviousProofReference.FromSingle("urn:uuid:0") : PreviousProofReference.FromValues(["urn:uuid:0"]);
+        var reference = Create(form);
 
-        reference.Values.Should().NotBeAssignableTo<string[]>();
-        FluentActions.Invoking(() => ((IList<string>)reference.Values)[0] = "urn:uuid:changed")
-            .Should().Throw<NotSupportedException>();
+        Issue61OptionsCopyTestsBase.TryToRewrite(reference);
+
         reference.Values.Should().Equal("urn:uuid:0");
+    }
+
+    [Theory]
+    [MemberData(nameof(Forms))]
+    public void Values_ImplementsOnlyTheReadOnlyListInterfaces(string form)
+    {
+        // Any further interface (ICollection's SyncRoot, a writable list) would need a reason; PR #62 review.
+        var type = Create(form).Values.GetType();
+
+        type.IsArray.Should().BeFalse();
+        type.GetInterfaces().Should().BeEquivalentTo(
+            [typeof(IReadOnlyList<string>), typeof(IReadOnlyCollection<string>), typeof(IEnumerable<string>), typeof(System.Collections.IEnumerable)]);
     }
 
     [Fact]

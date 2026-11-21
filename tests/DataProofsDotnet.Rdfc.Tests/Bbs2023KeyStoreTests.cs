@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Rdfc.DataIntegrity;
 using DataProofsDotnet.Rdfc.Tests.TestSupport;
+using DataProofsDotnet.Tests.Shared;
 using FluentAssertions;
 using NetCrypto;
 using Xunit;
@@ -593,10 +594,12 @@ public sealed class Bbs2023KeyStoreTests
 
     [BbsTheory]
     [MemberData(nameof(PreviousProofForms))]
-    public async Task AChainedBaseProofThroughTheStore_KeepsThePreviousProofItWasGiven(bool arrayForm)
+    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesBothProofsAsIssuedAndDerivable(bool arrayForm)
     {
-        // The options copy shares previousProof, which is immutable (issue #61; PreviousProofReferenceTests).
-        // The returned proof keeps the ids and the wire form that were signed.
+        // The options copy shares previousProof, which nothing can change (issue #61). Every public write route is
+        // tried on the caller's options while the store signs and again after both calls, ICollection.SyncRoot
+        // included: the read-only wrapper first used handed out the array through it (PR #62 review). Both proofs
+        // keep the ids and the wire form that were signed, and both still derive.
         var (sk, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
         var suite = new Bbs2023Cryptosuite();
@@ -606,16 +609,27 @@ public sealed class Bbs2023KeyStoreTests
                 ? PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"])
                 : PreviousProofReference.FromSingle("urn:proof:original"),
         };
-        var expected = await suite.CreateBaseProofAsync(WindDoc(), Chained(), sk, hmacKey, WindMandatory());
+        var expected = JsonSerializer.Serialize(
+            await suite.CreateBaseProofAsync(WindDoc(), Chained(), sk, hmacKey, WindMandatory()), DataProofsJsonOptions.Default);
 
+        var options = Chained();
+        store.TamperSignature = (_, genuine) =>
+        {
+            Issue61OptionsCopyTestsBase.TryToRewrite(options.PreviousProof!);
+            return genuine;
+        };
+        var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
         var stored = await suite.CreateBaseProofAsync(
-            WindDoc(), Chained(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+            WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+        Issue61OptionsCopyTestsBase.TryToRewrite(options.PreviousProof!);
 
-        var json = JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default);
-        json.Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
-        json.Should().Contain(arrayForm ? "\"previousProof\":[\"urn:proof:original\"" : "\"previousProof\":\"urn:proof:original\"");
-        var reveal = suite.DeriveProof(Embed(WindDoc(), stored), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
-        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+        expected.Should().Contain(arrayForm ? "\"previousProof\":[\"urn:proof:original\"" : "\"previousProof\":\"urn:proof:original\"");
+        foreach (var proof in new[] { raw, stored })
+        {
+            JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default).Should().Be(expected);
+            var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+            VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+        }
     }
 
     [BbsFact]

@@ -475,8 +475,10 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
     that time gave a proof whose `@context` differed from the one signed. The proof is now fixed before signing.
   - **`PreviousProofReference` is immutable.** `Values`, typed `IReadOnlyList<string>`, returned the backing
     `string[]`, so `((string[])reference.Values)[0] = "…"` changed every proof and options object that shared the
-    reference. It now returns a read-only view. That cast throws `InvalidCastException`, and a write through
-    `IList<string>` throws `NotSupportedException`. The declared type is unchanged.
+    reference. It now returns a list that implements `IReadOnlyList<string>` and nothing else, so no public interface
+    reaches the ids. A cast to `string[]`, to a writable interface such as `IList<string>`, or to the non-generic
+    `ICollection` (whose `SyncRoot` is how `ReadOnlyCollection<T>` hands out the array it wraps) throws
+    `InvalidCastException`. The declared type is unchanged.
 
 ### Why this is a minor and not a major
 
@@ -500,8 +502,9 @@ was held to that. The owner added issue #44 to it on 2026-11-20, under the same 
 - *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
   appears only when the caller sets `JwsSigner.CertificateChain`.
 - *`PreviousProofReference.Values` no longer hands out its backing array (issue #61).* Its declared type,
-  `IReadOnlyList<string>`, is unchanged and never promised an array. Code that cast it to `string[]` still compiles
-  but now throws `InvalidCastException`. This release counts that as a fix, not a break.
+  `IReadOnlyList<string>`, is unchanged and never promised an array. Code that cast it to `string[]` or to another
+  collection interface the array implements, such as `IList<string>`, still compiles but now throws
+  `InvalidCastException`. This release counts that as a fix, not a break.
 - *The accept-set narrows, partly for spec-valid input, which is minor or major material and never a patch.* Most of
   what is newly refused was invalid under the governing RFC: expired and not-yet-valid credentials and non-number
   times (RFC 9901 §7.1 step 6, §7.3 step 5.h; RFC 7519 §4.1.4, §4.1.5), a repeated digest (RFC 9901 §7.1 step 4), a

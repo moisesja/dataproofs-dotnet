@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+using System.Collections;
 using System.Text.Json.Serialization;
 
 namespace DataProofsDotnet.DataIntegrity;
@@ -13,19 +13,19 @@ namespace DataProofsDotnet.DataIntegrity;
 public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
 {
     private readonly string[] _values;
-    private readonly ReadOnlyCollection<string> _readOnlyValues;
+    private readonly ReadOnlyIds _readOnlyValues;
 
     private PreviousProofReference(string[] values, bool isArrayForm)
     {
         _values = values;
-        _readOnlyValues = Array.AsReadOnly(values);
+        _readOnlyValues = new ReadOnlyIds(values);
         IsArrayForm = isArrayForm;
     }
 
     /// <summary>
-    /// The referenced proof ids, in wire order. A read-only view: it cannot be cast to a mutable array
-    /// (it was the backing array before issue #61), and writing through <see cref="IList{T}"/> throws
-    /// <see cref="NotSupportedException"/>.
+    /// The referenced proof ids, in wire order. The list implements <see cref="IReadOnlyList{T}"/> and
+    /// nothing else, so no public interface reaches the ids it holds: casting it to an array or to a
+    /// writable or non-generic collection interface throws <see cref="InvalidCastException"/> (issue #61).
     /// </summary>
     public IReadOnlyList<string> Values => _readOnlyValues;
 
@@ -81,5 +81,25 @@ public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
         }
 
         return hash.ToHashCode();
+    }
+
+    // Only the read-only interface. The array itself would let a caller rewrite every proof that shares this
+    // reference, and so would a writable interface. ReadOnlyCollection<T> is not enough either: its
+    // ICollection.SyncRoot returns the array it wraps (PR #62 review).
+    private sealed class ReadOnlyIds(string[] ids) : IReadOnlyList<string>
+    {
+        public int Count => ids.Length;
+
+        public string this[int index] => ids[index];
+
+        public IEnumerator<string> GetEnumerator()
+        {
+            foreach (var id in ids)
+            {
+                yield return id;
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

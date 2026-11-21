@@ -135,6 +135,66 @@ public abstract class Issue61OptionsCopyTestsBase
         WithoutSignature(proof).Should().Be(WithoutSignature(expected));
     }
 
+    /// <summary>
+    /// Tries every public way a caller holding <paramref name="reference"/> might write to the ids it holds, and
+    /// asserts that each one is refused. The wrapper first used for <see cref="PreviousProofReference.Values"/>,
+    /// <c>ReadOnlyCollection&lt;string&gt;</c>, gave the array away through <c>ICollection.SyncRoot</c> (PR #62 review).
+    /// </summary>
+    public static void TryToRewrite(PreviousProofReference reference)
+    {
+        object values = reference.Values;
+        var written = new List<string>();
+        void Try(string route, Action write)
+        {
+            try
+            {
+                write();
+                written.Add(route);
+            }
+            catch (InvalidCastException)
+            {
+            }
+            catch (NotSupportedException)
+            {
+            }
+        }
+
+        Try("string[]", () => ((string[])values)[0] = "urn:proof:changed");
+        Try("IList<string>", () => ((IList<string>)values)[0] = "urn:proof:changed");
+        Try("ICollection<string>", () => ((ICollection<string>)values).Clear());
+        Try("IList", () => ((IList)values)[0] = "urn:proof:changed");
+        Try("ICollection.SyncRoot", () => ((string[])((ICollection)values).SyncRoot)[0] = "urn:proof:changed");
+        Try("ICollection.SyncRoot as IList", () => ((IList)((ICollection)values).SyncRoot)[0] = "urn:proof:changed");
+
+        written.Should().BeEmpty("no public route may write to a previousProof reference");
+    }
+
+    public static TheoryData<bool> PreviousProofForms() => [false, true];
+
+    [Theory]
+    [MemberData(nameof(PreviousProofForms), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesTheProofAsIssued(bool arrayForm)
+    {
+        // The copy shares previousProof because nothing can change it: tried while the signer runs and after the call.
+        DataIntegrityProof Chained() => Options() with
+        {
+            PreviousProof = arrayForm
+                ? PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"])
+                : PreviousProofReference.FromSingle("urn:proof:original"),
+        };
+        var expected = await Suite.CreateProofAsync(Document(), Chained(), Signer);
+        var options = Chained();
+
+        var proof = await Suite.CreateProofAsync(
+            Document(), options, new MutatingSigner(Signer, () => TryToRewrite(options.PreviousProof!)));
+        TryToRewrite(options.PreviousProof!);
+
+        WithoutSignature(proof).Should().Be(WithoutSignature(expected));
+        proof.PreviousProof!.Values[0].Should().Be("urn:proof:original");
+        proof.PreviousProof.IsArrayForm.Should().Be(arrayForm);
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
     [Fact]
     public async Task ASignerThatDisposesTheCallersDocumentWhileItSigns_StillGetsTheProofItAskedFor()
     {
