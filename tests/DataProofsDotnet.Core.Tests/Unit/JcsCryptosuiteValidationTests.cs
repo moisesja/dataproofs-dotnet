@@ -89,6 +89,30 @@ public class JcsCryptosuiteValidationTests
             "The proof options carry an @context but the document to secure has none, so the proof would not verify.");
     }
 
+    [Theory]
+    [MemberData(nameof(ContextlessCases))]
+    public async Task ADocumentWithANullContext_IsRefused(string cryptosuite, bool throughThePipeline)
+    {
+        // The proof was signed with "@context":null, but a proof read back from JSON has no @context, so neither the
+        // suite nor the pipeline verified it (PR #62 review).
+        ICryptosuite suite = cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
+            ? new EddsaJcs2022Cryptosuite()
+            : new EcdsaJcs2019Cryptosuite();
+        var signer = Fx.Signer(cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
+            ? Fx.SeedKey(0x01)
+            : Fx.SeedKey(0x01, KeyType.P256));
+        var document = JsonDocument.Parse("""{"@context":null,"k":"v"}""").RootElement.Clone();
+        var registry = new CryptosuiteRegistry();
+        registry.Register(suite);
+
+        Func<Task> act = throughThePipeline
+            ? () => new DataIntegrityProofPipeline(registry).AddProofAsync(document, Options(cryptosuite), signer)
+            : () => suite.CreateProofAsync(document, Options(cryptosuite), signer);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(
+            "The document to secure has a null @context, which the proof cannot carry, so the proof would not verify.");
+    }
+
     [Fact]
     public async Task ADocumentWithoutContext_StillVerifies_WhenTheOptionsCarryNone()
     {

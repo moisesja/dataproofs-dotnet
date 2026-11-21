@@ -86,9 +86,10 @@ public sealed class DataIntegrityProofPipeline
         // The checks below and the suite read one copy the caller cannot reach, whatever the suite awaits
         // (issue #61). The suites this library ships copy again, since their own entry points are public.
         // The secured document is assembled from the document after the suite is awaited, so it is copied
-        // too: a buffer rewritten meanwhile once escaped as a raw InvalidCastException (PR #62 review).
-        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        // too: a buffer rewritten meanwhile once escaped as a raw InvalidCastException (PR #62 review). It is
+        // copied first, since reading the options' extension dictionary runs code of the caller's.
         document = JsonInputCheck.Owned(document, "The document to secure");
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
 
         if (document.ValueKind != JsonValueKind.Object)
         {

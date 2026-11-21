@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Text.Json.Serialization;
+using DataProofsDotnet.Internal;
 
 namespace DataProofsDotnet.DataIntegrity;
 
@@ -49,9 +50,9 @@ public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
     {
         ArgumentNullException.ThrowIfNull(proofIds);
 
-        // ToArray passes the array it returns to the CopyTo of a source that implements ICollection<T>, and a
-        // collection of the caller's can keep it. The clone is the array this reference keeps and checks below.
-        var values = (string[])proofIds.ToArray().Clone();
+        // Copied by enumeration: ToArray would size the array from the caller's Count and pass it to the caller's
+        // CopyTo, which could keep it (PR #62 review). This copy is the array the reference keeps and checks below.
+        var values = JsonInputCheck.OwnedArray(proofIds);
         if (values.Length == 0)
         {
             throw new ArgumentException("previousProof must reference at least one proof.", nameof(proofIds));

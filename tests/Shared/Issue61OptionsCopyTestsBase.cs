@@ -458,7 +458,8 @@ public abstract class Issue61OptionsCopyTestsBase
         // while caller code runs. The proof must be over the document as given (PR #62).
         var buffer = Encoding.UTF8.GetBytes(HostileJson.BaseDocument);
         using var document = JsonDocument.Parse(buffer.AsMemory());
-        void Rewrite() => buffer[Array.LastIndexOf(buffer, (byte)'1')] = (byte)'2';
+        var at = Array.LastIndexOf(buffer, (byte)'1');
+        void Rewrite() => buffer[at] = (byte)'2';
         var signer = when == "KeyType"
             ? new MutatingSigner(Signer, () => { }, onKeyType: Rewrite)
             : new MutatingSigner(Signer, Rewrite);
@@ -466,6 +467,37 @@ public abstract class Issue61OptionsCopyTestsBase
         var proof = await IssueAsync(document.RootElement, WithNote(), signer, throughThePipeline);
 
         Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task AnExtensionDictionaryThatRewritesTheCallersBuffer_CannotChangeTheDocument(bool throughThePipeline)
+    {
+        // Reading the options' dictionary runs the caller's code, so the document is copied before it: the copy of the
+        // document runs none (PR #62 review: the dictionary ran first, and the proof was over the rewritten document).
+        var buffer = Encoding.UTF8.GetBytes(HostileJson.BaseDocument);
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = Array.LastIndexOf(buffer, (byte)'1');
+        var options = Options() with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new(NoteName, HostileJson.Parse("\"as signed\""))], count: 1, onRead: () => buffer[at] = (byte)'2'),
+        };
+
+        var proof = await IssueAsync(document.RootElement, options, Signer, throughThePipeline);
+
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ASignerWhoseKeyTypeThrows_IsReadOnlyAfterTheDocumentIsChecked()
+    {
+        // KeyType is read once, where the suites first read it, so a document fault is still reported first
+        // (PR #62 review: reading it at entry let the getter's exception out instead).
+        var signer = new MutatingSigner(Signer, () => { }, onKeyType: () => throw new NotSupportedException("the caller's own"));
+
+        await FluentActions.Awaiting(() => Suite.CreateProofAsync(HostileJson.Parse("[1]"), WithNote(), signer))
+            .Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure must be a JSON object.");
     }
 
     public static TheoryData<string> RenamedMemberValues() => ["\"abc\"", "null", "[\"x\"]"];
@@ -585,12 +617,14 @@ public abstract class Issue61OptionsCopyTestsBase
 /// A caller-made dictionary that yields <paramref name="members"/> as given, whatever they hold, and reports
 /// <paramref name="count"/> as its <c>Count</c>. Given <paramref name="later"/>, it yields that on every read of its
 /// contents after the first, enumeration and lookups alike. Given <paramref name="fault"/>, it throws that on any read.
+/// Given <paramref name="onRead"/>, it runs that on every read first.
 /// </summary>
 public sealed class ScriptedDictionary(
     KeyValuePair<string, JsonElement>[] members,
     int count,
     KeyValuePair<string, JsonElement>[]? later = null,
-    Exception? fault = null) : IDictionary<string, JsonElement>
+    Exception? fault = null,
+    Action? onRead = null) : IDictionary<string, JsonElement>
 {
     private bool _read;
 
@@ -610,6 +644,7 @@ public sealed class ScriptedDictionary(
 
     private KeyValuePair<string, JsonElement>[] Read()
     {
+        onRead?.Invoke();
         if (fault is not null)
         {
             throw fault;
@@ -658,10 +693,13 @@ public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, I
 {
     private string[]? _handed;
 
-    /// <summary>Runs each time <c>CopyTo</c> is called, as any code of the caller's could.</summary>
-    public Action? OnCopyTo { get; init; }
+    /// <summary>Runs each time the collection is copied or enumerated, as any code of the caller's could.</summary>
+    public Action? OnRead { get; init; }
 
-    public int Count => ids.Length;
+    /// <summary>The <c>Count</c> the collection reports, if not its true one: a caller's collection can lie.</summary>
+    public int? ReportedCount { get; init; }
+
+    public int Count => ReportedCount ?? ids.Length;
 
     public bool IsReadOnly => true;
 
@@ -669,7 +707,7 @@ public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, I
 
     public void CopyTo(string[] array, int arrayIndex)
     {
-        OnCopyTo?.Invoke();
+        OnRead?.Invoke();
         _handed = array;
         ids.CopyTo(array, arrayIndex);
     }
@@ -698,7 +736,11 @@ public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, I
         }
     }
 
-    public IEnumerator<string> GetEnumerator() => ((IEnumerable<string>)ids).GetEnumerator();
+    public IEnumerator<string> GetEnumerator()
+    {
+        OnRead?.Invoke();
+        return ((IEnumerable<string>)ids).GetEnumerator();
+    }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 

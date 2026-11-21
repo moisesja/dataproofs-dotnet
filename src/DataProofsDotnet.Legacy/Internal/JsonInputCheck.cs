@@ -106,8 +106,8 @@ internal static class JsonInputCheck
     /// and <see cref="DataIntegrityProof.AdditionalProperties"/> are settable, and the options' JSON values
     /// live in the caller's documents, which it may change or dispose. The record copy covers the scalar
     /// members, the extension dictionary is rebuilt with ordinal names, and <c>@context</c> and every extension
-    /// value are cloned (a clone of an element whose document cannot be disposed is that element, whose bytes
-    /// cannot change). Strings and <see cref="PreviousProofReference"/> are shared: a reference keeps ids that no
+    /// value are cloned (a clone of an element whose document cannot be disposed is that element, whose bytes safe
+    /// code cannot change). Strings and <see cref="PreviousProofReference"/> are shared: a reference keeps ids that no
     /// code of the caller's ever held (PR #62 review). An undefined element is kept as it is, for
     /// <see cref="SerializeChecked"/> to report.
     /// </summary>
@@ -153,13 +153,32 @@ internal static class JsonInputCheck
     /// or dispose (PR #62). Creation awaits the signer, the pipeline also awaits the suite, and both read the document
     /// again afterwards. <c>JsonDocument.Parse</c> over the caller's memory keeps reading that memory, and the caller
     /// may dispose the document. A clone of an element whose document cannot be disposed is that element, whose bytes
-    /// cannot change. An undefined element is returned as it is, for the entry point's kind check to report.
+    /// safe code cannot change. An undefined element is returned as it is, for the entry point's kind check to report.
+    /// The copy is taken from the memory as it is when this runs: a document whose memory changed after it was parsed
+    /// breaks <c>JsonDocument</c>'s own contract, and its copy is no better than the original.
     /// </summary>
     /// <param name="element">The caller's JSON.</param>
     /// <param name="what">What the JSON is, as a sentence subject ("The document to secure").</param>
     /// <returns>The copy to carry on with.</returns>
     /// <exception cref="ProofGenerationException">The element belongs to a document that has been disposed.</exception>
     public static JsonElement Owned(JsonElement element, string what) => Own(element, $"{what} has been disposed.");
+
+    /// <summary>
+    /// A copy of the caller's strings, taken by enumeration, one read (PR #62 review). It is never sized from the
+    /// caller's <c>Count</c>, which can lie, and it never hands the caller's <c>CopyTo</c> an array, which the caller
+    /// could keep and change later. <c>ToArray</c> and the <c>List</c> constructor do both for a collection that
+    /// implements <c>ICollection&lt;T&gt;</c>. What the caller's enumerator throws propagates unchanged.
+    /// </summary>
+    public static string[] OwnedArray(IEnumerable<string> values)
+    {
+        var copy = new List<string>();
+        foreach (var value in values)
+        {
+            copy.Add(value);
+        }
+
+        return copy.ToArray();
+    }
 
     // Reading a value of a disposed document, its kind included, throws ObjectDisposedException.
     private static JsonElement Own(JsonElement element, string disposedMessage)

@@ -173,16 +173,18 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         IReadOnlyList<string> mandatoryPointers,
         CancellationToken cancellationToken = default)
     {
-        var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // One read of the caller's key. A canonicalizer of the caller's runs between deriving the public key and
-        // signing, so both use this copy; otherwise the proof could pack one key's public key with another key's
-        // signature (PR #62 follow-up d1). It is pinned, so the collector leaves no copy behind, and cleared after use.
+        // One read of the caller's key, taken first: copying it runs no code of the caller's, so neither the options'
+        // dictionary nor the pointer collection can change it before it is read. A canonicalizer of the caller's runs
+        // between deriving the public key and signing, so both use this copy; otherwise the proof could pack one key's
+        // public key with another key's signature (PR #62 follow-up d1). The copy is pinned, so the collector never
+        // moves it, and it is cleared after use.
         var privateKey = GC.AllocateUninitializedArray<byte>(bbsPrivateKey.Length, pinned: true);
         try
         {
             bbsPrivateKey.Span.CopyTo(privateKey);
+            var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
+            cancellationToken.ThrowIfCancellationRequested();
+
             var publicKey = PublicKeyOf(privateKey);
             var input = PrepareBaseProof(request);
             var bbsSignature = _bbs.Sign(privateKey, input.Messages, input.BbsHeader);
@@ -356,14 +358,18 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
 
-        // The document too: a canonicalizer of the caller's runs while the base proof is prepared (PR #62).
-        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        // A canonicalizer of the caller's runs while the base proof is prepared, and the key-store overload then awaits
+        // the store, so every input is copied first (PR #62). The document and the HMAC key come before the options
+        // and the pointers: copying them runs no code of the caller's, while reading the options' dictionary and the
+        // pointer collection does, and that code must not change an input not yet copied.
         unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        var hmac = hmacKey.ToArray();
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
         ValidateProofOptions(proofOptions);
 
         // The base proof parser requires this length, as the reference does, so a proof issued with
         // another could never be derived from.
-        if (hmacKey.Length != Bbs2023ProofValue.HmacKeyLength)
+        if (hmac.Length != Bbs2023ProofValue.HmacKeyLength)
         {
             throw new ProofGenerationException($"The bbs-2023 HMAC key must be {Bbs2023ProofValue.HmacKeyLength} bytes.");
         }
@@ -375,13 +381,12 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Before skolemization and the @context lookup, which read member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
-        // ToArray passes the array it returns to the CopyTo of a collection that implements ICollection<T>, which
-        // can keep it and change it while the store or a canonicalizer of the caller's runs. The clone is the array
-        // grouped, checked and packed (PR #62 review).
-        var pointers = (string[])mandatoryPointers.ToArray().Clone();
+        // Copied by enumeration, so no array the caller's collection was handed is grouped, checked and packed while
+        // the store or a canonicalizer of the caller's runs, and its Count is not trusted (PR #62 review).
+        var pointers = JsonInputCheck.OwnedArray(mandatoryPointers);
         RequirePointers(pointers, "A mandatory pointer is invalid.");
 
-        return new BaseProofRequest(unsecuredDocument, proofOptions, hmacKey.ToArray(), pointers);
+        return new BaseProofRequest(unsecuredDocument, proofOptions, hmac, pointers);
     }
 
     private BaseProofInput PrepareBaseProof(BaseProofRequest request)
@@ -462,6 +467,16 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ReadOnlyMemory<byte> presentationHeader)
     {
         ArgumentNullException.ThrowIfNull(selectivePointers);
+
+        // A canonicalizer of the caller's runs while the proof is derived, and the selective pointers and the header
+        // are each used more than once. So every input is copied once, before it is read. The document and the
+        // header come first, because copying them runs no code of the caller's. The pointers come last, because
+        // enumerating them does. The pointers are copied by enumeration, so their Count is not trusted and their
+        // CopyTo is not handed an array (PR #62 follow-ups c and d2).
+        securedBaseDocument = JsonInputCheck.Owned(securedBaseDocument, "The secured base document");
+        var header = presentationHeader.ToArray();
+        var pointers = JsonInputCheck.OwnedArray(selectivePointers);
+
         if (securedBaseDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The secured base document must be a JSON object.");
@@ -484,14 +499,6 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             // malformed encoding as CborContentException (PR #35 review).
             throw new ProofGenerationException("The base proofValue is not a valid bbs-2023 base proof.", ex);
         }
-
-        // A canonicalizer of the caller's runs while the proof is derived, and the selective pointers and the header
-        // are each used more than once, so both are copied here, before the first caller code, and read once. ToArray
-        // passes the array it returns to the CopyTo of a collection that implements ICollection<T>, which can keep it,
-        // so the clone is the array used (PR #62 follow-ups c and d2). The base document needs no copy: SplitProof
-        // took one before.
-        var pointers = (string[])selectivePointers.ToArray().Clone();
-        var header = presentationHeader.ToArray();
 
         // The mandatory pointers come from the issuer's document, the selective ones from the
         // caller; both are parsed here so a malformed one fails as the documented exception.
@@ -1094,7 +1101,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     {
         try
         {
-            return KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, privateKey).PublicKey;
+            // The key pair keeps its own pinned copy of the private key, which only Dispose clears, and PublicKey
+            // returns a copy, read before the dispose (PR #62 review).
+            using var keyPair = KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, privateKey);
+            return keyPair.PublicKey;
         }
         catch (ArgumentException ex)
         {

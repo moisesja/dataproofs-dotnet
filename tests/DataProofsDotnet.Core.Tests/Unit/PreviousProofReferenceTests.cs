@@ -127,4 +127,18 @@ public class PreviousProofReferenceTests
 
         reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
     }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(5)]
+    [InlineData(int.MaxValue)]
+    public void FromValues_DoesNotTrustTheCallersCount(int count)
+    {
+        // ToArray sized its array from Count: -1 and int.MaxValue escaped as a raw OverflowException, and a Count of 0
+        // or one above the true count gave other ids (PR #62 review). The copy is now taken by enumeration.
+        var reference = PreviousProofReference.FromValues(new CapturingIds("urn:uuid:0", "urn:uuid:1") { ReportedCount = count });
+
+        reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
+    }
 }

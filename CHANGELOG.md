@@ -22,8 +22,8 @@ library issued.** Read these entries before upgrading:
   named `_sd_alg` (*Fixed*, issue #48).
 
 The SD-JWT issuers also refuse to sign several of these shapes, and each entry says which. The JCS suites refuse
-to issue one proof that 2.0.0 issued and could never verify: options carrying `@context` over a document without
-one (*Fixed*, PR #62). A consumer that references `System.Formats.Cbor` directly below 10.0.15 must raise that
+to issue two proofs that 2.0.0 issued and could never verify: one for options carrying `@context` over a document
+without one, and one for a document whose `@context` is `null` (*Fixed*, PR #62). A consumer that references `System.Formats.Cbor` directly below 10.0.15 must raise that
 reference (*Security*, issue #50). The reasons this is a minor are under *Why this is a minor and not a major*, at
 the end of this section.
 
@@ -274,10 +274,12 @@ the end of this section.
   - **Same bytes.** BBS signing is deterministic, so for the same key and inputs the new overload's `proofValue` is
     byte-identical to the raw-key overload's. The raw-key overload emits the same bytes as before, and derivation
     and verification are unchanged.
-  - **Copies at entry.** Both overloads now copy the proof options, the document, the HMAC key and the pointers. The pointers are
-    kept in an array no code of the caller's was handed: `ToArray` passes the array it returns to the `CopyTo` of a
-    collection that implements `ICollection<T>`, which could keep it and change the pointers between grouping and
-    packing (PR #62 review). The returned proof no longer shares the caller's `AdditionalProperties` dictionary, and its extension values and `@context` no
+  - **Copies at entry.** Both overloads now copy the proof options, the document, the HMAC key and the pointers. The
+    pointers are copied by enumeration. `ToArray` sized its array from the caller's `Count` and passed it to the
+    caller's `CopyTo`, so a collection that kept the array could change the pointers between grouping and packing,
+    and one that misreported its `Count` dropped them or escaped as a raw `OverflowException` (PR #62 review). The
+    document and the HMAC key are copied before the options and the pointers, because reading those runs the
+    caller's code. The returned proof no longer shares the caller's `AdditionalProperties` dictionary, and its extension values and `@context` no
     longer live in the caller's `JsonDocument`s. `previousProof` can no longer be changed at all (issue #61, under
     *Fixed*). Changing or disposing the caller's options later therefore leaves the proof as issued.
   - **Reflection.** `CreateBaseProofAsync` is now overloaded, so a reflection lookup by name alone
@@ -477,7 +479,8 @@ the end of this section.
 
     **One input that worked is refused.** The JCS and RDFC suites used to replace the options' `@context` with the
     document's without reading it, so a disposed one went unnoticed. It is now refused like any other disposed
-    value. Because the copy runs first, these faults are also reported before the document's.
+    value. Because the copy runs first, these faults are also reported before the document's, except that the
+    document's own copy comes first and reports a disposed document (PR #62).
   - **Legacy RDFC no longer reads the document after signing.** Both legacy suites' RDFC variant took the proof's
     `@context` from the caller's document a second time once the signer returned. A document disposed while the
     signer ran then threw `ObjectDisposedException` after the signature was made. A document whose buffer changed in
@@ -489,7 +492,8 @@ the end of this section.
     `ICollection` (whose `SyncRoot` is how `ReadOnlyCollection<T>` hands out the array it wraps) throws
     `InvalidCastException`. The declared type is unchanged. `FromValues` also kept the array that `ToArray` had
     passed to the `CopyTo` of the caller's collection, so a collection that kept it could rewrite the reference
-    later. It now keeps a copy made after `CopyTo` returns, and checks that copy (PR #62 review).
+    later. It now copies the ids by enumeration, without calling `CopyTo` or trusting `Count`, and checks that copy
+    (PR #62 review).
 - **Data Integrity: creation and verification no longer read the caller's document after the caller's code runs**
   (PR #62, follow-ups of issue #61). `JsonDocument.Parse(ReadOnlyMemory<byte>)` keeps reading the caller's memory,
   and a signer, a resolver or a canonicalizer is the caller's code. Two faults followed:
@@ -500,30 +504,35 @@ the end of this section.
     and legacy JCS suites.
 
   Every create entry point now copies the document before reading it, as it copies the options: the JCS, RDFC and
-  legacy suites, both `bbs-2023` base-proof overloads, and `AddProofAsync`. `VerifyAsync` and `Verify` copy the
+  legacy suites, both `bbs-2023` base-proof overloads, and `AddProofAsync`. It is copied before the options, because
+  reading the options' extension dictionary runs the caller's code. `DeriveProof` copies the base document too.
+  `VerifyAsync` and `Verify` copy the
   secured document too, because they verify each proof after its resolver is awaited. A document disposed before a
-  create call is now a `ProofGenerationException` ("The document to secure has been disposed."), as a disposed
-  options value is. Verification is unchanged for such a document: it still throws `ObjectDisposedException`. The
-  JCS, RDFC and legacy suites also read `ISigner.KeyType` once, after the copies. They used to read it for the
+  create call, or to `DeriveProof`, is now a `ProofGenerationException` ("The document to secure has been disposed.",
+  "The secured base document has been disposed."), as a disposed options value is. Verification is unchanged for such a document: it still throws `ObjectDisposedException`. The
+  JCS, RDFC and legacy suites also read `ISigner.KeyType` once, where they first read it before. They used to read it for the
   support check, the hash and the signature encoding, and the RDFC suites read it between the proof-options binding
   check and the hash. Emitted bytes do not change.
-- **JCS: options with `@context` over a document without one are refused** (PR #62). Create Proof step 2 of
+- **JCS: proofs their own verifier refuses are no longer issued** (PR #62). Create Proof step 2 of
   `eddsa-jcs-2022` and `ecdsa-jcs-2019` copies the document's `@context` into the proof only when the document has
   one. Otherwise the proof kept the options' `@context`, and Verify Proof step 4.1 refuses a proof whose `@context`
   the document's does not start with. So the suites issued a proof they could never verify. They now throw
-  `ProofGenerationException` instead, as the RDFC suites do for a proof their verifier would refuse. Every other
-  input gets the same bytes. The legacy JCS variant is unaffected: its proof for that shape verifies.
+  `ProofGenerationException` instead, as the RDFC suites do for a proof their verifier would refuse. A document
+  whose `@context` is JSON `null` is refused too. Its proof was signed with `"@context":null`, but a proof read
+  back from JSON has no `@context`, so neither the suite nor the pipeline verified it. Every other input gets the
+  same bytes. The legacy JCS variant is unaffected: it verifies its proofs for both shapes.
 - **`bbs-2023`: caller values are read once around a caller's canonicalizer** (PR #62). In each case below, a
   canonicalizer passed to the constructor ran between two reads of a value the caller still held. Each fault
   failed closed:
   - `DeriveProof` used the selective pointers several times. `Concat(...).ToList()` handed the caller's collection
-    the list's own array, which the reveal document was then selected with. The pointers are now copied before any
-    caller code runs, with the same copy after `ToArray` as the mandatory pointers.
+    the list's own array, which the reveal document was then selected with. The pointers are now copied once, by
+    enumeration, as the mandatory pointers are.
   - `DeriveProof` read the presentation header for the BBS proof and again for the derived `proofValue`. It is now
-    copied once.
+    copied once, with the base document, before the pointers are read.
   - The raw-key `CreateBaseProofAsync` derived the public key before the canonicalizer ran and signed after it. So a
-    base proof could pack one key's public key with another key's signature. The key is now read once, into a
-    pinned copy that is cleared after use. The key-store overload needed no change: NetCrypto's
+    base proof could pack one key's public key with another key's signature. The key is now read once, first, into a
+    pinned copy that is cleared after use, and the NetCrypto key pair that derives the public key is disposed, which
+    clears its own copy of the key. The key-store overload needed no change: NetCrypto's
     `StoredKeyInfo.PublicKey` returns a copy.
 
 ### Why this is a minor and not a major
@@ -547,8 +556,9 @@ was held to that. The owner added issue #44 to it on 2026-11-20, under the same 
   the 2.0.0 rule makes a major.
 - *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
   appears only when the caller sets `JwsSigner.CertificateChain`.
-  One input that 2.0.0 issued is now refused: JCS options carrying `@context` over a document without one. 2.0.0's
-  own verifier refused every such proof, so no consumer could rely on it. This release counts that as a fix.
+  Two JCS inputs that 2.0.0 issued are now refused: options carrying `@context` over a document without one, and a
+  document whose `@context` is `null`. 2.0.0's own verifier refused every such proof, so no consumer could rely on
+  it. This release counts that as a fix.
 - *`PreviousProofReference.Values` no longer hands out its backing array (issue #61).* Its declared type,
   `IReadOnlyList<string>`, is unchanged and never promised an array. Code that cast it to `string[]` or to another
   collection interface the array implements, such as `IList<string>`, still compiles but now throws

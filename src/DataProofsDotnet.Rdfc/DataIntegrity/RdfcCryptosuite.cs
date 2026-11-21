@@ -66,12 +66,12 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
-        // The proof is built from these options and this document after the signer is awaited (issue #61), and the
-        // signer's KeyType getter is the caller's code too. So copy both before anything reads them, then read
-        // KeyType once: every step below sees the same options, document and key type (PR #62).
-        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+        // The proof is built from this document and these options after the signer is awaited (issue #61), so both
+        // are copied before anything reads them. The document comes first: copying it runs no code of the caller's,
+        // while reading the options' extension dictionary does, and that code must not change the document before it
+        // is copied (PR #62).
         unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
-        var keyType = signer.KeyType;
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
 
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
@@ -82,6 +82,9 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         // would otherwise resolve duplicates and invalid text silently (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
+        // The signer's KeyType getter is the caller's code too. Read it once, where it was first read, so every step
+        // below sees one key type and the checks above keep their precedence (PR #62 follow-up d3).
+        var keyType = signer.KeyType;
         if (!IsSupportedKeyType(keyType))
         {
             throw new ProofGenerationException($"Key type {keyType} is not supported by the {Name} cryptosuite.");
