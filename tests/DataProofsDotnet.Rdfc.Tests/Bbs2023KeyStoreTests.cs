@@ -468,6 +468,7 @@ public sealed class Bbs2023KeyStoreTests
         "extension member named proofValue",
         "extension member with a duplicate member name",
         "options @context with a duplicate member, no document @context",
+        "previousProof id emptied after construction",
     };
 
     [BbsTheory]
@@ -513,6 +514,10 @@ public sealed class Bbs2023KeyStoreTests
             case "options @context with a duplicate member, no document @context":
                 document = Fx.Mutate(document, d => d.Remove("@context"));
                 options = options with { Context = Parse("""{"@vocab": "https://a.example/", "@vocab": "https://b.example/"}""") };
+                break;
+            case "previousProof id emptied after construction":
+                options = options with { PreviousProof = PreviousProofReference.FromValues(["urn:proof:a"]) };
+                ((string[])options.PreviousProof!.Values)[0] = "";
                 break;
         }
 
@@ -587,6 +592,106 @@ public sealed class Bbs2023KeyStoreTests
 
         raw.AdditionalProperties!["note"].GetString().Should().Be("x");
         stored.AdditionalProperties!["note"].GetString().Should().Be("x");
+    }
+
+    public static TheoryData<bool> PreviousProofForms() => new() { false, true };
+
+    [BbsTheory]
+    [MemberData(nameof(PreviousProofForms))]
+    public async Task ACallerThatChangesItsPreviousProofWhileTheStoreSigns_StillGetsTheProofItAskedFor(bool arrayForm)
+    {
+        // PreviousProofReference.Values exposes its array, so a record copy of the options is not enough
+        // (PR #60 review). The returned proof keeps the ids and the wire form that were signed.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var suite = new Bbs2023Cryptosuite();
+        DataIntegrityProof Chained() => BaseOptions() with
+        {
+            PreviousProof = arrayForm
+                ? PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"])
+                : PreviousProofReference.FromSingle("urn:proof:original"),
+        };
+        var expected = await suite.CreateBaseProofAsync(WindDoc(), Chained(), sk, hmacKey, WindMandatory());
+
+        var options = Chained();
+        store.TamperSignature = (_, genuine) =>
+        {
+            ((string[])options.PreviousProof!.Values)[0] = "urn:proof:changed";
+            return genuine;
+        };
+        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+
+        var json = JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default);
+        json.Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
+        json.Should().Contain(arrayForm ? "\"previousProof\":[\"urn:proof:original\"" : "\"previousProof\":\"urn:proof:original\"");
+        var reveal = suite.DeriveProof(Embed(WindDoc(), stored), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [MemberData(nameof(PreviousProofForms))]
+    public async Task TheReturnedProof_DoesNotShareTheCallersPreviousProof(bool arrayForm)
+    {
+        // Both methods: changing the caller's previousProof after the call leaves the issued proof as it was.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var suite = new Bbs2023Cryptosuite();
+        var options = BaseOptions() with
+        {
+            PreviousProof = arrayForm ? PreviousProofReference.FromValues(["urn:proof:original"]) : "urn:proof:original",
+        };
+
+        var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
+        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+        ((string[])options.PreviousProof!.Values)[0] = "urn:proof:changed";
+
+        foreach (var proof in new[] { raw, stored })
+        {
+            proof.PreviousProof!.Values.Should().Equal("urn:proof:original");
+            proof.PreviousProof.IsArrayForm.Should().Be(arrayForm);
+        }
+    }
+
+    [BbsFact]
+    public async Task TheReturnedProof_OutlivesTheCallersJsonDocuments()
+    {
+        // An extension value and the options' fallback @context, read from documents the caller disposes
+        // after the call: the issued proof must not depend on them (PR #60 review).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var suite = new Bbs2023Cryptosuite();
+
+        // No @context in the document, so the proof configuration takes the options' context.
+        var document = Parse("""
+            {
+              "@id": "urn:example:credential",
+              "https://example.org/vocab#name": "Alice",
+              "https://example.org/vocab#color": "purple"
+            }
+            """);
+        using var noteDocument = JsonDocument.Parse("\"kept\"");
+        using var contextDocument = JsonDocument.Parse("\"https://www.w3.org/ns/credentials/v2\"");
+        var options = BaseOptions() with
+        {
+            Context = contextDocument.RootElement,
+            // An absolute IRI, so the proof configuration needs no context definition for it.
+            AdditionalProperties = new Dictionary<string, JsonElement> { ["https://example.org/vocab#note"] = noteDocument.RootElement },
+        };
+
+        var raw = await suite.CreateBaseProofAsync(document, options, sk, hmacKey, []);
+        var stored = await suite.CreateBaseProofWithKeyStoreAsync(
+            document, options, store, Alias, info.InstanceId!.Value, hmacKey, []);
+        var rawJson = JsonSerializer.Serialize(raw, DataProofsJsonOptions.Default);
+        var storedJson = JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default);
+        storedJson.Should().Be(rawJson).And.Contain("credentials/v2").And.Contain("vocab#note\":\"kept\"");
+
+        noteDocument.Dispose();
+        contextDocument.Dispose();
+
+        JsonSerializer.Serialize(raw, DataProofsJsonOptions.Default).Should().Be(rawJson);
+        JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default).Should().Be(storedJson);
     }
 
     [BbsFact]

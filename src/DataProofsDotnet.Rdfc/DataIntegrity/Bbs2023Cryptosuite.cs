@@ -338,13 +338,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
 
-        // A private copy of the options: Type and AdditionalProperties are settable, and the returned
-        // proof must carry the options that were checked and signed, not whatever the caller's object
-        // holds later (adversarial review, issue #44).
-        proofOptions = proofOptions with
-        {
-            AdditionalProperties = proofOptions.AdditionalProperties is { } extra ? new Dictionary<string, JsonElement>(extra) : null,
-        };
+        proofOptions = CopyOptions(proofOptions);
         ValidateProofOptions(proofOptions);
 
         // The base proof parser requires this length, as the reference does, so a proof issued with
@@ -365,6 +359,35 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         RequirePointers(pointers, "A mandatory pointer is invalid.");
 
         return new BaseProofRequest(unsecuredDocument, proofOptions, hmacKey.ToArray(), pointers);
+    }
+
+    // A copy of the options that shares nothing with the caller's object, so the returned proof carries
+    // the options that were checked and signed and depends on nothing the caller still holds: Type and
+    // AdditionalProperties are settable, PreviousProofReference.Values exposes its array, and JSON values
+    // live in the caller's documents, which it may dispose (adversarial review; PR #60 review). Strings
+    // are immutable; an undefined JsonElement is kept as it is, for the input check to report.
+    private static DataIntegrityProof CopyOptions(DataIntegrityProof options)
+    {
+        try
+        {
+            return options with
+            {
+                PreviousProof = options.PreviousProof is not { } previous ? null
+                    : previous.IsArrayForm ? PreviousProofReference.FromValues(previous.Values)
+                    : PreviousProofReference.FromSingle(previous.Values[0]),
+                Context = options.Context is { } context ? Own(context) : null,
+                AdditionalProperties = options.AdditionalProperties?.ToDictionary(
+                    member => member.Key, member => Own(member.Value), StringComparer.Ordinal),
+            };
+        }
+        catch (ArgumentException ex)
+        {
+            // A previousProof id emptied after construction, or a dictionary that repeats a name.
+            throw new ProofGenerationException("The proof options are invalid: " + ex.Message, ex);
+        }
+
+        static JsonElement Own(JsonElement element)
+            => element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
     }
 
     private BaseProofInput PrepareBaseProof(BaseProofRequest request)

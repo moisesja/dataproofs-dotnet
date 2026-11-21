@@ -267,9 +267,10 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   only as a hash in the header, and the HMAC key not at all. Weigh this before signing with a remote key service. BBS signing
   is deterministic, so for the same key and inputs the new method's `proofValue` is byte-identical to
   `CreateBaseProofAsync`'s, and derivation and verification are unchanged. `CreateBaseProofAsync` emits the same
-  bytes as before. Both methods now copy the proof options, the HMAC key and the pointers at entry, so a returned
-  proof no longer shares the caller's `AdditionalProperties` dictionary, and changing the options later leaves it
-  as issued. `CreateProofAsync(ISigner)` still throws
+  bytes as before. Both methods now copy the proof options, the HMAC key and the pointers at entry. The returned
+  proof no longer shares the caller's `AdditionalProperties` dictionary or `previousProof`, and its extension values
+  and `@context` no longer live in the caller's `JsonDocument`s, so changing or disposing the caller's options later
+  leaves it as issued. `CreateProofAsync(ISigner)` still throws
   `NotSupportedException`; its message now names both methods. Not provided: a key store without `ICapableKeyStore`.
   A plain `IKeyStore` has no multi-message BBS operation. The sample `Samples.BbsSelectiveDisclosure` now issues
   through a key store.
