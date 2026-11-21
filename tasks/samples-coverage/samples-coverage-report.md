@@ -1,7 +1,7 @@
 # Samples coverage report (FR-21 / AC-9)
 
-- Public members across 6 packages: **631**
-- Covered by at least one sample: **629**
+- Public members across 6 packages: **632**
+- Covered by at least one sample: **630**
 - Allowlisted (excused, with justification): **2**
 - Uncovered: **0**
 
@@ -595,6 +595,7 @@ Samples directory: `samples` · Allowlist: `tasks/samples-coverage/allowlist.txt
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite (type)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite..ctor(IRdfCanonicalizer)`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofAsync`
+- `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CreateProofAsync`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.CryptosuiteName`
 - `DataProofsDotnet.Rdfc.DataIntegrity.Bbs2023Cryptosuite.DeriveProof`

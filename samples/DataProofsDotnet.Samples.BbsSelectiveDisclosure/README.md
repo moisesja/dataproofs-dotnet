@@ -2,6 +2,8 @@
 
 Run `dotnet run --project samples/DataProofsDotnet.Samples.BbsSelectiveDisclosure` from the repository root. The sample verifies its lifecycle and admission checks; native BBS must be installed to exercise them.
 
+The issuer's BLS12-381 G2 key stays in a NetCrypto `ICapableKeyStore`: `Bbs2023Cryptosuite.CreateBaseProofWithKeyStoreAsync` reads its public key from the store and has the store sign, so no private-key bytes reach the issuer's code (issue #44). The sample also shows that `CreateBaseProofAsync`, for a key held as bytes, gives the same `proofValue` for the same key and inputs.
+
 `VerificationAdmission.cs` demonstrates a deliberately small credential service profile:
 
 | Boundary | Example policy |

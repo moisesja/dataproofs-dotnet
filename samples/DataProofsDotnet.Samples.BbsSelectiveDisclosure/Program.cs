@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet;
@@ -11,7 +12,7 @@ using NetCrypto;
 // FR-12: the BBS Data Integrity lifecycle — three distinct roles.
 //   1. ISSUER creates a BASE proof over the document with a set of MANDATORY JSON pointers
 //      (RFC 6901) that must always be revealed, plus an HMAC key that pseudonymizes blank
-//      nodes. The base proof's proofValue is the W3C base wire form (multibase 'u', CBOR
+//      nodes. Its BLS12-381 G2 key stays in a key store, which signs (issue #44). The base proof's proofValue is the W3C base wire form (multibase 'u', CBOR
 //      header u2V0C) and carries everything a holder needs to derive.
 //   2. HOLDER derives a DERIVED proof revealing only the mandatory fields plus a chosen set of
 //      SELECTIVE pointers — a zero-knowledge BBS proof, no issuer interaction. The derived
@@ -58,29 +59,50 @@ string[] mandatoryPointers = ["/issuer", "/credentialSubject/id"];
 
 try
 {
-    // --- 1. ISSUER: base proof ---
-    KeyPair bbsKey = keyGen.Generate(KeyType.Bls12381G2);
-    byte[] hmacKey = new byte[32];
-    new Random(42).NextBytes(hmacKey); // a sample HMAC key (use NetCrypto randomness in production)
+    // --- 1. ISSUER: base proof, with a key that never leaves its key store (issue #44) ---
+    // The store mints the BLS12-381 G2 key and keeps it; the issuer holds only the alias and the
+    // instance id. CreateBaseProofWithKeyStoreAsync reads the public key from the store and has the
+    // store sign (ICapableKeyStore.SignBbsAsync), so no private-key bytes reach this code. A KMS or
+    // HSM backend implementing ICapableKeyStore plugs in the same way.
+    using var keyStore = new CapableInMemoryKeyStore(
+        keyGen, new DefaultCryptoProvider(), new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256));
+    const string issuerAlias = "bbs-issuer";
+    StoredKeyInfo issuerKey = await keyStore.GenerateAsync(issuerAlias, KeyType.Bls12381G2);
+
+    // The HMAC key is not signing-key material: the holder receives it inside the base proof.
+    // Draw a fresh one per credential.
+    byte[] hmacKey = RandomNumberGenerator.GetBytes(32);
 
     var baseOptions = new DataIntegrityProof
     {
         Cryptosuite = Bbs2023Cryptosuite.CryptosuiteName,
         Created = "2026-01-02T00:00:00Z",
-        VerificationMethod = $"did:key:{bbsKey.MultibasePublicKey}#{bbsKey.MultibasePublicKey}",
+        VerificationMethod = $"did:key:{issuerKey.MultibasePublicKey}#{issuerKey.MultibasePublicKey}",
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
 
-    DataIntegrityProof baseProof = await suite.CreateBaseProofAsync(
-        Unsigned(), baseOptions, bbsKey.PrivateKey, hmacKey, mandatoryPointers);
+    DataIntegrityProof baseProof = await suite.CreateBaseProofWithKeyStoreAsync(
+        Unsigned(), baseOptions, keyStore, issuerAlias, issuerKey.InstanceId!.Value, hmacKey, mandatoryPointers);
 
     // Embed the base proof to form the secured base document the holder receives.
     JsonElement securedBase = Embed(Unsigned(), baseProof);
     string baseProofValue = baseProof.ProofValue!;
-    Console.WriteLine($"  ISSUER  base proofValue: {baseProofValue[..12]}... ({baseProofValue.Length} chars)");
+    Console.WriteLine($"  ISSUER  base proofValue: {baseProofValue[..12]}... ({baseProofValue.Length} chars), signed inside the key store");
     Check(baseProofValue.StartsWith("u2V0C", StringComparison.Ordinal), "base proof is the W3C base wire form (u2V0C)");
 
-    PublicKeyMaterial issuerPublicKey = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, bbsKey.PublicKey);
+    PublicKeyMaterial issuerPublicKey = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, issuerKey.PublicKey);
+
+    // A key held as bytes (a test fixture, say) goes through CreateBaseProofAsync instead. For the
+    // same key and inputs both methods produce the same proofValue: BBS signing is deterministic.
+    KeyPair bytesKey = keyGen.Generate(KeyType.Bls12381G2);
+    byte[] bytesKeyScalar = bytesKey.PrivateKey;
+    StoredKeyInfo importedKey = await keyStore.ImportAsync("bbs-imported", bytesKey); // the store now owns bytesKey
+    DataIntegrityProof fromBytes = await suite.CreateBaseProofAsync(
+        Unsigned(), baseOptions, bytesKeyScalar, hmacKey, mandatoryPointers);
+    DataIntegrityProof fromStore = await suite.CreateBaseProofWithKeyStoreAsync(
+        Unsigned(), baseOptions, keyStore, "bbs-imported", importedKey.InstanceId!.Value, hmacKey, mandatoryPointers);
+    CryptographicOperations.ZeroMemory(bytesKeyScalar);
+    Check(fromBytes.ProofValue == fromStore.ProofValue, "the raw-key and key-store methods give the same proofValue for the same key");
 
     // --- 2. HOLDER: derive a proof revealing gpa but withholding favoriteColor ---
     string[] selectivePointers = ["/credentialSubject/gpa"];
@@ -131,9 +153,9 @@ try
         var export = new JsonObject
         {
             ["reveals"] = new JsonArray(JsonNode.Parse(reveal.GetRawText()), JsonNode.Parse(reveal2.GetRawText())),
-            ["publicKeyMultibase"] = bbsKey.MultibasePublicKey,
+            ["publicKeyMultibase"] = issuerKey.MultibasePublicKey,
             ["verificationMethod"] = baseOptions.VerificationMethod,
-            ["controller"] = $"did:key:{bbsKey.MultibasePublicKey}",
+            ["controller"] = $"did:key:{issuerKey.MultibasePublicKey}",
         };
         File.WriteAllText(outputPath, export.ToJsonString(DataProofsJsonOptions.Default));
     }
@@ -164,7 +186,7 @@ try
     {
         genericUnsupported = true;
     }
-    Check(genericUnsupported, "the generic ICryptosuite signer path is unsupported for BBS (needs CreateBaseProofAsync)");
+    Check(genericUnsupported, "the generic ICryptosuite signer path is unsupported for BBS (needs a base-proof method)");
     Console.WriteLine("  the generic ICryptosuite.CreateProofAsync path throws NotSupportedException (BBS needs the base-proof API)");
 }
 catch (BbsUnavailableException)

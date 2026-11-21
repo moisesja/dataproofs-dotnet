@@ -187,6 +187,17 @@ internal sealed class Bbs2023Path : ISmokePath
         var securedBase = Embed(BbsCredential(), baseProof);
         report.Det("dataIntegrity.bbs2023.base.secured", Compact(securedBase));
 
+        // The same key held in a key store (issue #44): the store signs, and the proof is the same.
+        using (var store = new CapableInMemoryKeyStore(KeyGen, Crypto, new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256)))
+        {
+            var stored = await store.ImportAsync("bbs-issuer", Bbs());
+            var fromStore = await suite.CreateBaseProofWithKeyStoreAsync(
+                BbsCredential(), Proof(Bbs2023Cryptosuite.CryptosuiteName, key), store, "bbs-issuer",
+                stored.InstanceId!.Value, HmacKey, Mandatory);
+            Gate.Expect(fromStore.ProofValue == baseProof.ProofValue,
+                "bbs-2023 base proof from a key-store key equals the raw-key base proof");
+        }
+
         var reveal = suite.DeriveProof(securedBase, Selective, PresentationHeader);
         var subject = reveal.GetProperty("credentialSubject");
         Gate.Expect(subject.TryGetProperty("gpa", out _) && !subject.TryGetProperty("favoriteColor", out _),
