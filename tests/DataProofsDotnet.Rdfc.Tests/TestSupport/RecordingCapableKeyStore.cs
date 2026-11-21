@@ -29,6 +29,9 @@ internal sealed class RecordingCapableKeyStore : ICapableKeyStore, IDisposable
     /// <summary>The last BBS signing request the store received.</summary>
     public KeyBbsSignRequest? LastBbsRequest { get; private set; }
 
+    /// <summary>Replaces the key info the inner store reported for <c>GetInfoAsync(alias, instanceId)</c>.</summary>
+    public Func<StoredKeyInfo, StoredKeyInfo>? TamperInfo { get; set; }
+
     /// <summary>Replaces the signature the inner store produced (request, genuine signature → returned).</summary>
     public Func<KeyBbsSignRequest, byte[], byte[]>? TamperSignature { get; set; }
 
@@ -76,10 +79,11 @@ internal sealed class RecordingCapableKeyStore : ICapableKeyStore, IDisposable
         return _inner.GetMutationOutcomeAsync(kind, operationId, ct);
     }
 
-    public Task<StoredKeyInfo?> GetInfoAsync(string alias, KeyInstanceId instanceId, CancellationToken ct = default)
+    public async Task<StoredKeyInfo?> GetInfoAsync(string alias, KeyInstanceId instanceId, CancellationToken ct = default)
     {
         Record(nameof(GetInfoAsync) + "(alias, instanceId)", ct);
-        return _inner.GetInfoAsync(alias, instanceId, ct);
+        var info = await _inner.GetInfoAsync(alias, instanceId, ct).ConfigureAwait(false);
+        return info is not null && TamperInfo is { } tamper ? tamper(info) : info;
     }
 
     public Task<byte[]> SignAsync(KeySignRequest request, CancellationToken ct = default)

@@ -102,9 +102,16 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// so reflection-based activation has a single candidate (PR #39).
     /// </summary>
     public Bbs2023Cryptosuite(IRdfCanonicalizer? canonicalizer = null)
+        : this(canonicalizer, new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256))
+    {
+    }
+
+    // Lets tests substitute the BBS provider, an unavailable one for instance (PR #60 review). It is
+    // internal, so reflection-based activation still has a single public candidate (PR #39).
+    internal Bbs2023Cryptosuite(IRdfCanonicalizer? canonicalizer, IBbsCryptoProvider bbs)
     {
         _canonicalizer = canonicalizer ?? new RdfcDocumentCanonicalizer();
-        _bbs = new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256);
+        _bbs = bbs;
     }
 
     /// <inheritdoc />
@@ -193,7 +200,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <para>
     /// The signature the store returns is verified under the key's public key over the signed
     /// messages and header before the proof is assembled, so a store that answers with another key's
-    /// signature, or a malformed one, issues no proof that a holder could not derive from. This costs
+    /// signature, or a malformed one, issues no proof. This costs
     /// one BBS verification per base proof and needs the BBS native library on this host, as the
     /// other lifecycle methods do.
     /// </para>

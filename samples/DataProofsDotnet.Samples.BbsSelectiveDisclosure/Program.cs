@@ -92,18 +92,6 @@ try
 
     PublicKeyMaterial issuerPublicKey = PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, issuerKey.PublicKey);
 
-    // A key held as bytes (a test fixture, say) goes through CreateBaseProofAsync instead. For the
-    // same key and inputs both methods produce the same proofValue: BBS signing is deterministic.
-    KeyPair bytesKey = keyGen.Generate(KeyType.Bls12381G2);
-    byte[] bytesKeyScalar = bytesKey.PrivateKey;
-    StoredKeyInfo importedKey = await keyStore.ImportAsync("bbs-imported", bytesKey); // the store now owns bytesKey
-    DataIntegrityProof fromBytes = await suite.CreateBaseProofAsync(
-        Unsigned(), baseOptions, bytesKeyScalar, hmacKey, mandatoryPointers);
-    DataIntegrityProof fromStore = await suite.CreateBaseProofWithKeyStoreAsync(
-        Unsigned(), baseOptions, keyStore, "bbs-imported", importedKey.InstanceId!.Value, hmacKey, mandatoryPointers);
-    CryptographicOperations.ZeroMemory(bytesKeyScalar);
-    Check(fromBytes.ProofValue == fromStore.ProofValue, "the raw-key and key-store methods give the same proofValue for the same key");
-
     // --- 2. HOLDER: derive a proof revealing gpa but withholding favoriteColor ---
     string[] selectivePointers = ["/credentialSubject/gpa"];
     byte[] presentationHeader = [0x11, 0x33, 0x77, 0xaa];
@@ -188,6 +176,21 @@ try
     }
     Check(genericUnsupported, "the generic ICryptosuite signer path is unsupported for BBS (needs a base-proof method)");
     Console.WriteLine("  the generic ICryptosuite.CreateProofAsync path throws NotSupportedException (BBS needs the base-proof API)");
+
+    // --- Not an issuer flow: a key held as bytes, such as a test fixture ---
+    // An issuer keeps its key in a store, as in step 1. Code that already holds a BLS12-381 G2 key
+    // as bytes, a test fixture for instance, can use CreateBaseProofAsync instead. BBS signing is
+    // deterministic, so for the same key and inputs it gives the same proofValue as the store does.
+    KeyPair fixtureKey = keyGen.Generate(KeyType.Bls12381G2);
+    byte[] fixtureScalar = fixtureKey.PrivateKey;
+    StoredKeyInfo importedFixture = await keyStore.ImportAsync("bbs-fixture", fixtureKey); // the store now owns fixtureKey
+    DataIntegrityProof fromBytes = await suite.CreateBaseProofAsync(
+        Unsigned(), baseOptions, fixtureScalar, hmacKey, mandatoryPointers);
+    DataIntegrityProof fromStore = await suite.CreateBaseProofWithKeyStoreAsync(
+        Unsigned(), baseOptions, keyStore, "bbs-fixture", importedFixture.InstanceId!.Value, hmacKey, mandatoryPointers);
+    CryptographicOperations.ZeroMemory(fixtureScalar);
+    Check(fromBytes.ProofValue == fromStore.ProofValue, "the raw-key and key-store methods give the same proofValue for the same key");
+    Console.WriteLine("  a key held as bytes (a test fixture) gives the same base proof through CreateBaseProofAsync");
 }
 catch (BbsUnavailableException)
 {

@@ -267,6 +267,138 @@ public sealed class Bbs2023KeyStoreTests
         (await act.Should().ThrowAsync<ProofGenerationException>()).WithMessage("*does not verify*");
     }
 
+    // What a misbehaving store could report as the key's public key, and the message each must give.
+    public static TheoryData<string, string> WrongPublicKeys() => new()
+    {
+        { "95 bytes", "*public key of 95 bytes, not 96*" },
+        { "192 bytes", "*public key of 192 bytes, not 96*" },
+        { "the G2 identity point", "*does not verify*" },
+        { "96 zero bytes", "*does not verify*" },
+        { "96 random bytes", "*does not verify*" },
+        { "another key's valid public key", "*does not verify*" },
+    };
+
+    private static byte[] WrongPublicKey(string kind) => kind switch
+    {
+        "95 bytes" => new byte[95],
+        "192 bytes" => new byte[192],
+        "the G2 identity point" => [0xC0, .. new byte[95]],
+        "96 zero bytes" => new byte[96],
+        "96 random bytes" => System.Security.Cryptography.RandomNumberGenerator.GetBytes(96),
+        "another key's valid public key" => Fx.KeyGen.Generate(KeyType.Bls12381G2).PublicKey,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    [BbsTheory]
+    [MemberData(nameof(WrongPublicKeys))]
+    public async Task AStoreThatReportsAWrongPublicKey_IssuesNoProof(string kind, string message)
+    {
+        // A key that fails to decode must surface as the documented exception, not the provider's own.
+        var (_, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        store.TamperInfo = genuine => genuine with { PublicKey = WrongPublicKey(kind) };
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+
+        (await act.Should().ThrowExactlyAsync<ProofGenerationException>()).WithMessage(message);
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public async Task WithoutTheBbsLibrary_TheInputIsCheckedAndThenBbsUnavailable_BeforeAnyStoreCall()
+    {
+        // The store is never asked to sign what this host could not check (AC-6).
+        var (_, hmacKey) = KeyMaterial();
+        var store = new RecordingCapableKeyStore(new CapableInMemoryKeyStore(Fx.KeyGen, Fx.Crypto, bbsProvider: null));
+        var suite = new Bbs2023Cryptosuite(canonicalizer: null, new UnavailableBbs());
+        var instance = new KeyInstanceId("any-instance");
+
+        var invalid = () => suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), BaseOptions() with { ProofPurpose = null! }, store, Alias, instance, hmacKey, WindMandatory());
+        await invalid.Should().ThrowAsync<ProofGenerationException>();
+
+        var valid = () => suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), BaseOptions(), store, Alias, instance, hmacKey, WindMandatory());
+        await valid.Should().ThrowAsync<BbsUnavailableException>();
+
+        store.Calls.Should().BeEmpty();
+    }
+
+    public static TheoryData<string> VerifyFaults() => new() { "argument", "cryptographic", "unavailable" };
+
+    [BbsTheory]
+    [MemberData(nameof(VerifyFaults))]
+    public async Task ASignatureCheckThatFaults_IsTheDocumentedException(string fault)
+    {
+        // NetCrypto's Verify returns false for every 96-byte key and 80-byte signature tried here, so a
+        // provider that throws stands in for a key or signature it refuses to decode. A missing library
+        // stays BbsUnavailableException.
+        var (_, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        Exception toThrow = fault switch
+        {
+            "argument" => new ArgumentException("not a point"),
+            "cryptographic" => new System.Security.Cryptography.CryptographicException("not a point"),
+            _ => new BbsUnavailableException("absent"),
+        };
+        var suite = new Bbs2023Cryptosuite(canonicalizer: null, new FaultingVerifyBbs(toThrow));
+
+        var act = () => suite.CreateBaseProofWithKeyStoreAsync(
+            WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+
+        if (fault == "unavailable")
+        {
+            await act.Should().ThrowExactlyAsync<BbsUnavailableException>();
+        }
+        else
+        {
+            (await act.Should().ThrowExactlyAsync<ProofGenerationException>()).WithMessage("*does not verify*");
+        }
+    }
+
+    private sealed class FaultingVerifyBbs(Exception toThrow) : IBbsCryptoProvider
+    {
+        public BbsCiphersuite Ciphersuite => BbsCiphersuite.Bls12381Sha256;
+
+        public bool IsAvailable => true;
+
+        public byte[] Sign(ReadOnlySpan<byte> privateKey, IReadOnlyList<byte[]> messages, ReadOnlySpan<byte> header = default)
+            => throw new NotSupportedException();
+
+        public bool Verify(ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> signature, IReadOnlyList<byte[]> messages, ReadOnlySpan<byte> header = default)
+            => throw toThrow;
+
+        public byte[] DeriveProof(ReadOnlySpan<byte> publicKey, byte[] signature, IReadOnlyList<byte[]> messages,
+            IReadOnlyList<int> revealedIndices, ReadOnlySpan<byte> presentationHeader = default, ReadOnlySpan<byte> header = default)
+            => throw new NotSupportedException();
+
+        public bool VerifyProof(ReadOnlySpan<byte> publicKey, byte[] proof, IReadOnlyList<byte[]> revealedMessages,
+            IReadOnlyList<int> revealedIndices, ReadOnlySpan<byte> presentationHeader = default, ReadOnlySpan<byte> header = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class UnavailableBbs : IBbsCryptoProvider
+    {
+        public BbsCiphersuite Ciphersuite => BbsCiphersuite.Bls12381Sha256;
+
+        public bool IsAvailable => false;
+
+        public byte[] Sign(ReadOnlySpan<byte> privateKey, IReadOnlyList<byte[]> messages, ReadOnlySpan<byte> header = default)
+            => throw new BbsUnavailableException("absent");
+
+        public bool Verify(ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> signature, IReadOnlyList<byte[]> messages, ReadOnlySpan<byte> header = default)
+            => throw new BbsUnavailableException("absent");
+
+        public byte[] DeriveProof(ReadOnlySpan<byte> publicKey, byte[] signature, IReadOnlyList<byte[]> messages,
+            IReadOnlyList<int> revealedIndices, ReadOnlySpan<byte> presentationHeader = default, ReadOnlySpan<byte> header = default)
+            => throw new BbsUnavailableException("absent");
+
+        public bool VerifyProof(ReadOnlySpan<byte> publicKey, byte[] proof, IReadOnlyList<byte[]> revealedMessages,
+            IReadOnlyList<int> revealedIndices, ReadOnlySpan<byte> presentationHeader = default, ReadOnlySpan<byte> header = default)
+            => throw new BbsUnavailableException("absent");
+    }
+
     [BbsFact]
     public async Task ACallerThatChangesItsBuffersWhileTheStoreSigns_StillGetsTheProofItAskedFor()
     {

@@ -161,6 +161,14 @@ jobs:
           global-json-file: global.json
       - name: ac-8 key-store signing access confined to signing-only members
         run: dotnet test tests/DataProofsDotnet.Core.Tests/DataProofsDotnet.Core.Tests.csproj --configuration Release --filter "FullyQualifiedName~KeyStoreSigning"
+      # bbs-2023 signs through ICapableKeyStore, not an ISigner (issue #44). Its tests are [BbsFact]s,
+      # which skip without the native BBS library, so this step fails on any skip rather than pass on one.
+      - name: ac-8 bbs-2023 key-store issuance confined to GetInfoAsync and SignBbsAsync, no test skipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test tests/DataProofsDotnet.Rdfc.Tests/DataProofsDotnet.Rdfc.Tests.csproj --configuration Release --filter "FullyQualifiedName~Bbs2023KeyStoreTests" | tee "$RUNNER_TEMP/ac8-bbs.log"
+          grep -Eq 'Passed!.*Skipped: +0,' "$RUNNER_TEMP/ac8-bbs.log"
 
   ac-9:
     name: ac-9 samples coverage gate
