@@ -107,11 +107,18 @@ internal abstract class JcsCryptosuite : ICryptosuite
             throw new ProofGenerationException("Proof options 'expires' is not a valid dateTimeStamp.");
         }
 
-        // Per the JCS suites' Create Proof algorithm: when the unsecured document has an
-        // @context, the proof carries the same @context.
-        var context = unsecuredDocument.TryGetProperty("@context", out var documentContext)
-            ? documentContext.Clone()
-            : proofOptions.Context;
+        // Per the JCS suites' Create Proof algorithm (step 2): when the unsecured document has an
+        // @context, the proof carries the same @context. Without one the proof would keep the
+        // options' own, and Verify Proof (step 4.1) refuses a proof whose @context the document's
+        // does not start with, so never issue it (PR #62 follow-up b).
+        var hasContext = unsecuredDocument.TryGetProperty("@context", out var documentContext);
+        if (!hasContext && proofOptions.Context is not null)
+        {
+            throw new ProofGenerationException(
+                "The proof options carry an @context but the document to secure has none, so the proof would not verify.");
+        }
+
+        var context = hasContext ? documentContext.Clone() : (JsonElement?)null;
 
         var proofConfig = proofOptions with
         {

@@ -33,6 +33,9 @@ public sealed class Issue33EddsaJcsCreateTests : Issue33SuiteCreateTestsBase
         VerificationMethod = "did:example:alice#key-1",
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
+
+    protected override string? ContextlessDocumentRefusal =>
+        "The proof options carry an @context but the document to secure has none, so the proof would not verify.";
 }
 
 /// <summary>Issue #33: the shared suite matrix through <c>ecdsa-jcs-2019</c>'s own <c>CreateProofAsync</c>.</summary>
@@ -49,6 +52,9 @@ public sealed class Issue33EcdsaJcsCreateTests : Issue33SuiteCreateTestsBase
         VerificationMethod = "did:example:alice#key-1",
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
+
+    protected override string? ContextlessDocumentRefusal =>
+        "The proof options carry an @context but the document to secure has none, so the proof would not verify.";
 }
 
 /// <summary>Issue #33: the input check itself.</summary>

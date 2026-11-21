@@ -36,6 +36,12 @@ public abstract class Issue61OptionsCopyTestsBase
     /// <summary>Whether the suite secures a proof chain; the legacy JCS variant refuses one.</summary>
     protected virtual bool SecuresAProofChain => true;
 
+    /// <summary>
+    /// Whether the proof takes the options' <c>@context</c> for a document without one. The JCS suites refuse such
+    /// options, since their verifier would refuse the proof (PR #62 follow-up b).
+    /// </summary>
+    protected virtual bool TakesTheOptionsContext => true;
+
     private PublicKeyMaterial PublicKey => PublicKeyMaterial.FromRaw(Signer.KeyType, Signer.PublicKey.Span);
 
     private static JsonElement Document() => HostileJson.Parse(HostileJson.BaseDocument);
@@ -118,12 +124,10 @@ public abstract class Issue61OptionsCopyTestsBase
     public async Task TheProof_OutlivesTheCallersJsonDocuments()
     {
         // An extension value and the options' fallback @context, read from documents the caller disposes after
-        // the call: serializing the proof must not reach back into them. It compares bytes and does not verify:
-        // with options @context and none in the document, the JCS suites issue a proof their own verifier refuses,
-        // a defect older than issue #61 and reported apart from it (PR #62 review).
+        // the call: serializing the proof must not reach back into them. The JCS suites take no fallback @context.
         var expected = await Suite.CreateProofAsync(ContextlessDocument(), Options() with
         {
-            Context = HostileJson.Parse(FallbackContext),
+            Context = TakesTheOptionsContext ? HostileJson.Parse(FallbackContext) : null,
             AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = HostileJson.Parse("\"kept\"") },
         }, Signer);
 
@@ -133,12 +137,13 @@ public abstract class Issue61OptionsCopyTestsBase
         {
             proof = await Suite.CreateProofAsync(ContextlessDocument(), Options() with
             {
-                Context = context.RootElement,
+                Context = TakesTheOptionsContext ? context.RootElement : null,
                 AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = note.RootElement },
             }, Signer);
         }
 
         WithoutSignature(proof).Should().Be(WithoutSignature(expected));
+        Suite.VerifyProof(ContextlessDocument(), proof, PublicKey).Verified.Should().BeTrue();
     }
 
     /// <summary>

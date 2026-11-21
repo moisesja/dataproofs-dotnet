@@ -23,6 +23,9 @@ public sealed class Issue61EddsaJcsOptionsCopyTests : Issue61OptionsCopyTestsBas
         VerificationMethod = "did:example:x#k",
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
+
+    // The JCS suites refuse an options @context for a document without one (PR #62 follow-up b).
+    protected override bool TakesTheOptionsContext => false;
 }
 
 /// <summary>Issue #61: the shared options-copy matrix through <c>ecdsa-jcs-2019</c>.</summary>
@@ -39,6 +42,9 @@ public sealed class Issue61EcdsaJcsOptionsCopyTests : Issue61OptionsCopyTestsBas
         VerificationMethod = "did:example:x#k",
         ProofPurpose = ProofPurposes.AssertionMethod,
     };
+
+    // The JCS suites refuse an options @context for a document without one (PR #62 follow-up b).
+    protected override bool TakesTheOptionsContext => false;
 }
 
 /// <summary>

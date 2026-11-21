@@ -25,6 +25,13 @@ public abstract class Issue33SuiteCreateTestsBase
     /// <summary>Valid proof options for the suite.</summary>
     protected abstract DataIntegrityProof Options();
 
+    /// <summary>
+    /// What the suite reports for options carrying an <c>@context</c> over a document without one, when it refuses that
+    /// shape before the configuration is checked; <c>null</c> when the configuration keeps the options' own. The JCS
+    /// suites refuse it, since their verifier would refuse the proof (PR #62 follow-up b).
+    /// </summary>
+    protected virtual string? ContextlessDocumentRefusal => null;
+
     private static readonly string[] SurrogatePlacements = ["first member name", "last member name", "nested member name", "member value"];
 
     public static TheoryData<string, string> SurrogateCases()
@@ -95,11 +102,11 @@ public abstract class Issue33SuiteCreateTestsBase
 
     [Fact]
     public Task CreateProof_ConfigurationContextWithUnpairedSurrogateEscape_ThrowsProofGenerationException()
-        // With no document @context, the configuration keeps the options' own.
+        // With no document @context, the configuration keeps the options' own, unless the suite refuses that first.
         => AssertCreateFailsAsync(
             HostileJson.Parse("{\"a\":1}"),
             Options() with { Context = HostileJson.Parse("[\"" + HostileJson.Esc(0xDC00) + "\"]") },
-            $"The proof configuration {HostileJson.Surrogate}.");
+            ContextlessDocumentRefusal ?? $"The proof configuration {HostileJson.Surrogate}.");
 
     public static TheoryData<string> ReservedNames() => [.. HostileJson.ReservedProofNames];
 
