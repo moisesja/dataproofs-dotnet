@@ -16,7 +16,10 @@ All cryptography routes through [NetCrypto](https://github.com/moisesja/crypto-d
 multiformats (multibase, multicodec, `Multikey`) and JCS through
 [NetCid](https://github.com/moisesja/net-cid). Keys held in a NetCrypto `IKeyStore` are never
 exported — signing accepts an `ISigner` or key-store alias, and JWE ECDH key agreement accepts an
-opaque `IEcdhKey`, never raw private bytes.
+opaque `IEcdhKey`, never raw private bytes. `bbs-2023`, whose multi-message signature no `ISigner` can
+produce, issues through a NetCrypto `ICapableKeyStore`
+(a `Bbs2023Cryptosuite.CreateBaseProofAsync` overload); its other overload, for a key held as bytes, is
+the one entry point that takes raw private key material.
 
 ## Getting started
 

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Formats.Cbor;
 using System.Security.Cryptography;
 using System.Text;
@@ -40,6 +41,15 @@ namespace DataProofsDotnet.Rdfc.DataIntegrity;
 /// <b>Capability behavior (AC-6):</b> construction always succeeds; the lifecycle methods
 /// throw NetCrypto's <see cref="BbsUnavailableException"/> when the BBS native library is
 /// absent on the host. <see cref="IsAvailable"/> reports the capability without throwing.
+/// </para>
+/// <para>
+/// <b>Key custody (issue #44).</b> A base proof can be created with a key that never leaves a key
+/// store: the <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload reads the public key from an
+/// <see cref="ICapableKeyStore"/> and has the store produce the BBS signature
+/// (<see cref="ICapableKeyStore.SignBbsAsync"/>), and takes no private-key bytes. The
+/// <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload takes the key as bytes; for the same key and inputs both produce
+/// the same <c>proofValue</c>.
+/// Derivation and verification use only public material.
 /// </para>
 /// <para>
 /// <b>Mandatory-disclosure binding.</b> The W3C suite binds the mandatory group into the BBS
@@ -93,9 +103,16 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// so reflection-based activation has a single candidate (PR #39).
     /// </summary>
     public Bbs2023Cryptosuite(IRdfCanonicalizer? canonicalizer = null)
+        : this(canonicalizer, new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256))
+    {
+    }
+
+    // Lets tests substitute the BBS provider, an unavailable one for instance (PR #60 review). It is
+    // internal, so reflection-based activation still has a single public candidate (PR #39).
+    internal Bbs2023Cryptosuite(IRdfCanonicalizer? canonicalizer, IBbsCryptoProvider bbs)
     {
         _canonicalizer = canonicalizer ?? new RdfcDocumentCanonicalizer();
-        _bbs = new DefaultBbsCryptoProvider(BbsCiphersuite.Bls12381Sha256);
+        _bbs = bbs;
     }
 
     /// <inheritdoc />
@@ -110,8 +127,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
     /// <summary>
     /// Not supported: <c>bbs-2023</c> base proofs require an ordered BBS multi-message
-    /// signing key, not a single-message <see cref="ISigner"/>. Use
-    /// <see cref="CreateBaseProofAsync"/>.
+    /// signing key, not a single-message <see cref="ISigner"/>. Use a <c>CreateBaseProofAsync</c>
+    /// overload: <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> signs with a key held in a key store, and
+    /// <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> takes the key as bytes.
     /// </summary>
     /// <exception cref="NotSupportedException">Always.</exception>
     public Task<DataIntegrityProof> CreateProofAsync(
@@ -128,6 +146,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <paramref name="mandatoryPointers"/>; everything else is selectively disclosable by a
     /// holder via <see cref="DeriveProof"/>.
     /// </summary>
+    /// <remarks>
+    /// This overload takes the private key as bytes. An issuer whose key must stay in a key store
+    /// uses the <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload, which produces the same <c>proofValue</c> for the
+    /// same key and inputs (issue #44).
+    /// </remarks>
     /// <param name="unsecuredDocument">The JSON-LD object to secure.</param>
     /// <param name="proofOptions">The proof options (type <c>DataIntegrityProof</c>,
     /// cryptosuite <c>bbs-2023</c>); no <c>proofValue</c>.</param>
@@ -139,6 +162,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <returns>The completed base proof including its <c>u2V0C…</c> <c>proofValue</c>.</returns>
     /// <exception cref="ProofGenerationException">The options, document, pointers or keys are invalid for this suite.</exception>
     /// <exception cref="BbsUnavailableException">The BBS native library is unavailable.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters",
+        Justification = "Owner's choice (issue #44): the two overloads' required parameters differ in number and type, so no call binds to both.")]
     public Task<DataIntegrityProof> CreateBaseProofAsync(
         JsonElement unsecuredDocument,
         DataIntegrityProof proofOptions,
@@ -147,8 +172,178 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         IReadOnlyList<string> mandatoryPointers,
         CancellationToken cancellationToken = default)
     {
+        var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var publicKey = PublicKeyOf(bbsPrivateKey.Span);
+        var input = PrepareBaseProof(request);
+        var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, input.Messages, input.BbsHeader);
+
+        return Task.FromResult(PackBaseProof(request, input, bbsSignature, publicKey));
+    }
+
+    /// <summary>
+    /// Creates a <c>bbs-2023</c> <b>base proof</b> over <paramref name="unsecuredDocument"/>
+    /// (issuer side, spec §3.4.1) with a BLS12-381-G2 key that stays in
+    /// <paramref name="keyStore"/>: the store produces the BBS signature
+    /// (<see cref="ICapableKeyStore.SignBbsAsync"/>) and reports the public key, and no private-key
+    /// bytes pass through this overload (issue #44). Everything else is as in the
+    /// <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload, which takes the key as bytes and produces the same
+    /// <c>proofValue</c> for the same key and inputs.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The store is called twice, after every input has been checked:
+    /// <see cref="ICapableKeyStore.GetInfoAsync(string, KeyInstanceId, CancellationToken)"/> for the
+    /// public key, which the base proof carries, then <see cref="ICapableKeyStore.SignBbsAsync"/> under
+    /// <see cref="KeyStoreAlgorithms.BbsBls12381Sha256"/>. <paramref name="instanceId"/> names the key
+    /// instance the caller means, so an alias rebound to another key since fails instead of signing
+    /// under it.
+    /// </para>
+    /// <para>
+    /// The signature the store returns is verified under the key's public key over the signed
+    /// messages and header before the proof is assembled, so a store that answers with another key's
+    /// signature, or a malformed one, issues no proof. This costs
+    /// one BBS verification per base proof and needs the BBS native library on this host, as the
+    /// other lifecycle methods do.
+    /// </para>
+    /// <para>
+    /// <b>What the store sees.</b> A BBS signature covers the messages themselves, not a hash of them,
+    /// so the store receives the document's non-mandatory statements as canonical N-Quads, in the
+    /// clear: the claims a holder may later withhold. The mandatory statements reach it only through
+    /// the header, as a SHA-256 hash, and the HMAC key does not reach it. A remote key service
+    /// therefore learns the credential's selectively disclosable content, which an
+    /// <see cref="ISigner"/> for the other suites, signing a hash, never sees.
+    /// </para>
+    /// <para>
+    /// The HMAC key is not signing-key material: the holder receives it inside the base proof to
+    /// derive. Draw a fresh one per credential, for example with
+    /// <c>RandomNumberGenerator.GetBytes(32)</c>.
+    /// </para>
+    /// </remarks>
+    /// <param name="unsecuredDocument">The JSON-LD object to secure.</param>
+    /// <param name="proofOptions">The proof options (type <c>DataIntegrityProof</c>,
+    /// cryptosuite <c>bbs-2023</c>); no <c>proofValue</c>.</param>
+    /// <param name="keyStore">The store that holds the issuer's BLS12-381-G2 key.</param>
+    /// <param name="alias">The key's alias in <paramref name="keyStore"/>.</param>
+    /// <param name="instanceId">The key instance <paramref name="alias"/> must hold, as returned when
+    /// the key was generated or imported (<see cref="StoredKeyInfo.InstanceId"/>).</param>
+    /// <param name="hmacKey">The per-credential 32-byte HMAC key used to shuffle blank-node labels.</param>
+    /// <param name="mandatoryPointers">RFC 6901 JSON Pointers selecting the always-revealed group. Each
+    /// must select whole statements of the document, not part of a value.</param>
+    /// <param name="cancellationToken">Cancels the operation; passed to both store calls.</param>
+    /// <returns>The completed base proof including its <c>u2V0C…</c> <c>proofValue</c>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="proofOptions"/>,
+    /// <paramref name="keyStore"/>, <paramref name="alias"/> or <paramref name="mandatoryPointers"/> is
+    /// <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="alias"/> is empty or
+    /// <paramref name="instanceId"/> is the default value; or the store refuses the alias, the instance
+    /// id or the size of the request (its message-count and <see cref="KeyStoreCapability.MaxInputBytes"/>
+    /// bounds).</exception>
+    /// <exception cref="ProofGenerationException">The options, document or pointers are invalid for
+    /// this suite; the stored key is not a BLS12-381-G2 key; or the store's signature does not verify
+    /// under the key's public key.</exception>
+    /// <exception cref="KeyNotFoundException"><paramref name="alias"/> holds no key in the store, or a
+    /// key instance other than <paramref name="instanceId"/>.</exception>
+    /// <exception cref="KeyStoreException">The store does not offer BBS signing for the key
+    /// (<see cref="KeyStoreError.Unsupported"/>), or its backend failed.</exception>
+    /// <exception cref="BbsUnavailableException">The BBS native library is unavailable on this host;
+    /// raised before the store is called.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was
+    /// canceled.</exception>
+    [SuppressMessage("ApiDesign", "RS0026:Do not add multiple public overloads with optional parameters",
+        Justification = "Owner's choice (issue #44): the two overloads' required parameters differ in number and type, so no call binds to both.")]
+    public async Task<DataIntegrityProof> CreateBaseProofAsync(
+        JsonElement unsecuredDocument,
+        DataIntegrityProof proofOptions,
+        ICapableKeyStore keyStore,
+        string alias,
+        KeyInstanceId instanceId,
+        ReadOnlyMemory<byte> hmacKey,
+        IReadOnlyList<string> mandatoryPointers,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(keyStore);
+        ArgumentException.ThrowIfNullOrEmpty(alias);
+        if (string.IsNullOrEmpty(instanceId.Value))
+        {
+            throw new ArgumentException("The key instance id must be the one the store returned for the key.", nameof(instanceId));
+        }
+
+        var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A host without BBS could not check the store's signature; say so before asking the store to sign.
+        if (!_bbs.IsAvailable)
+        {
+            throw new BbsUnavailableException("The BBS native library is not available on this host, so bbs-2023 cannot be used.");
+        }
+
+        // Everything that reads the caller's inputs runs before the first await, so every input fault
+        // is reported before the store is called and nothing the caller holds is read after it.
+        var input = PrepareBaseProof(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var info = await keyStore.GetInfoAsync(alias, instanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"The key store holds no key under alias '{alias}' with the given instance id.");
+        if (info.KeyType != KeyType.Bls12381G2)
+        {
+            throw new ProofGenerationException($"The key-store key has type {info.KeyType}; bbs-2023 needs a BLS12-381-G2 key.");
+        }
+
+        var publicKey = info.PublicKey;
+        if (publicKey.Length != Bbs2023ProofValue.BbsPublicKeyLength)
+        {
+            throw new ProofGenerationException(
+                $"The key store reported a BLS12-381-G2 public key of {publicKey.Length} bytes, not {Bbs2023ProofValue.BbsPublicKeyLength}.");
+        }
+
+        // The store gets copies, so whatever it does with the buffers it is handed, the check below
+        // runs over the messages and header this method computed.
+        var signRequest = new KeyBbsSignRequest(
+            alias,
+            instanceId,
+            KeyStoreAlgorithms.BbsBls12381Sha256,
+            input.Messages.Select(message => (ReadOnlyMemory<byte>)message.AsSpan().ToArray()).ToArray(),
+            input.BbsHeader.AsSpan().ToArray());
+        var returned = await keyStore.SignBbsAsync(signRequest, cancellationToken).ConfigureAwait(false);
+
+        // A copy, so the bytes checked are the bytes packed.
+        var bbsSignature = returned is null ? [] : returned.AsSpan().ToArray();
+        if (!SignatureVerifies(publicKey, bbsSignature, input))
+        {
+            throw new ProofGenerationException(
+                "The key store's BBS signature does not verify under the key's public key, so no base proof was created.");
+        }
+
+        return PackBaseProof(request, input, bbsSignature, publicKey);
+    }
+
+    // What both base-proof overloads take from the caller, checked, with the options, the HMAC key and
+    // the pointers copied: the key-store overload awaits the store, and a caller that changes its objects
+    // meanwhile must not get a proof whose packed parts differ from the ones it was computed with.
+    private readonly record struct BaseProofRequest(
+        JsonElement Document,
+        DataIntegrityProof ProofOptions,
+        byte[] HmacKey,
+        IReadOnlyList<string> MandatoryPointers);
+
+    // The base proof before signing: the proof configuration, the BBS messages and the BBS header.
+    private readonly record struct BaseProofInput(
+        DataIntegrityProof ProofConfig,
+        IReadOnlyList<byte[]> Messages,
+        byte[] BbsHeader);
+
+    private BaseProofRequest ValidateBaseProofRequest(
+        JsonElement unsecuredDocument,
+        DataIntegrityProof proofOptions,
+        ReadOnlyMemory<byte> hmacKey,
+        IReadOnlyList<string> mandatoryPointers)
+    {
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
+
+        proofOptions = CopyOptions(proofOptions);
         ValidateProofOptions(proofOptions);
 
         // The base proof parser requires this length, as the reference does, so a proof issued with
@@ -165,16 +360,47 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Before skolemization and the @context lookup, which read member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
-        RequirePointers(mandatoryPointers, "A mandatory pointer is invalid.");
+        var pointers = mandatoryPointers.ToArray();
+        RequirePointers(pointers, "A mandatory pointer is invalid.");
 
-        cancellationToken.ThrowIfCancellationRequested();
+        return new BaseProofRequest(unsecuredDocument, proofOptions, hmacKey.ToArray(), pointers);
+    }
 
-        var publicKey = PublicKeyOf(bbsPrivateKey.Span);
+    // A copy of the options that shares nothing with the caller's object, so the returned proof carries
+    // the options that were checked and signed and depends on nothing the caller still holds: Type and
+    // AdditionalProperties are settable, PreviousProofReference.Values exposes its array, and JSON values
+    // live in the caller's documents, which it may dispose (adversarial review; PR #60 review). Strings
+    // are immutable; an undefined JsonElement is kept as it is, for the input check to report.
+    private static DataIntegrityProof CopyOptions(DataIntegrityProof options)
+    {
+        try
+        {
+            return options with
+            {
+                PreviousProof = options.PreviousProof is not { } previous ? null
+                    : previous.IsArrayForm ? PreviousProofReference.FromValues(previous.Values)
+                    : PreviousProofReference.FromSingle(previous.Values[0]),
+                Context = options.Context is { } context ? Own(context) : null,
+                AdditionalProperties = options.AdditionalProperties?.ToDictionary(
+                    member => member.Key, member => Own(member.Value), StringComparer.Ordinal),
+            };
+        }
+        catch (ArgumentException ex)
+        {
+            // A previousProof id emptied after construction, or a dictionary that repeats a name.
+            throw new ProofGenerationException("The proof options are invalid: " + ex.Message, ex);
+        }
 
-        var proofConfig = BuildProofConfig(unsecuredDocument, proofOptions);
+        static JsonElement Own(JsonElement element)
+            => element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+    }
+
+    private BaseProofInput PrepareBaseProof(BaseProofRequest request)
+    {
+        var proofConfig = BuildProofConfig(request.Document, request.ProofOptions);
         _ = JsonInputCheck.SerializeChecked(proofConfig, RdfcJson.ProofTypeInfo, "The proof configuration");
-        var transformed = Transform(unsecuredDocument, hmacKey.Span);
-        var mandatory = Group(transformed, mandatoryPointers);
+        var transformed = Transform(request.Document, request.HmacKey);
+        var mandatory = Group(transformed, request.MandatoryPointers);
 
         var proofHash = HashProofConfig(proofConfig);
         var mandatoryHash = HashMandatory(mandatory.Matching);
@@ -195,12 +421,35 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
                 "bbs-2023 needs at least one non-mandatory statement: the BBS provider cannot sign an empty message list.");
         }
 
-        var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, messages, bbsHeader);
+        return new BaseProofInput(proofConfig, messages, bbsHeader);
+    }
 
+    private static DataIntegrityProof PackBaseProof(
+        BaseProofRequest request, BaseProofInput input, byte[] bbsSignature, byte[] publicKey)
+    {
         var proofValue = Bbs2023ProofValue.SerializeBaseProof(
-            bbsSignature, bbsHeader, publicKey, hmacKey.Span, mandatoryPointers);
+            bbsSignature, input.BbsHeader, publicKey, request.HmacKey, request.MandatoryPointers);
 
-        return Task.FromResult(proofConfig with { ProofValue = proofValue });
+        return input.ProofConfig with { ProofValue = proofValue };
+    }
+
+    // The key-store overload's check of the signature it was handed. A signature of the wrong length,
+    // or a public key that is not a valid point, makes the provider throw rather than return false.
+    private bool SignatureVerifies(byte[] publicKey, byte[] bbsSignature, BaseProofInput input)
+    {
+        if (bbsSignature.Length != Bbs2023ProofValue.BbsSignatureLength)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _bbs.Verify(publicKey, bbsSignature, input.Messages, input.BbsHeader);
+        }
+        catch (Exception ex) when (ex is ArgumentException or CryptographicException && ex is not BbsUnavailableException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

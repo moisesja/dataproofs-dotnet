@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.1.0] - 2026-11-20
 
-**This is a minor release.** The public API only adds, in `DataProofsDotnet.Jose`: nothing is removed or
-changed, and one constant, `SdJwtVcConstants.TransitionalMediaType`, is marked `[Obsolete]`. For input that 2.0.0
+**This is a minor release.** The public API only adds, in `DataProofsDotnet.Jose` and `DataProofsDotnet.Rdfc`:
+nothing is removed or changed, and one constant, `SdJwtVcConstants.TransitionalMediaType`, is marked `[Obsolete]`. For input that 2.0.0
 issued, every issuer emits the same bytes. **It refuses some credentials that 2.0.0 verified, including some this
 library issued.** Read these entries before upgrading:
 
@@ -249,6 +249,41 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   this release for other reasons: issues #45, #48 and #49.) No member was removed or changed. Not provided: `x5c` verification for detached-payload compact JWS
   and for the JWS JSON serializations (which never read `x5c`, protected or not), an asynchronous hook, and the
   COSE counterpart, `x5chain` (RFC 9360).
+- **`bbs-2023` base proofs with a key that stays in a key store** (issue
+  [#44](https://github.com/moisesja/dataproofs-dotnet/issues/44); PRD FR-12, AC-8). A new
+  `Bbs2023Cryptosuite.CreateBaseProofAsync` overload takes a NetCrypto `ICapableKeyStore`, the key's alias and the
+  `KeyInstanceId` the alias must hold, and no private-key bytes. Until now the overload that takes the BLS12-381 G2
+  private key as bytes was the only way to issue `bbs-2023`, so an issuer that must not handle raw key material
+  could not issue it at all.
+  - **Before the store.** The new overload checks every input first, including the pointer and skolemization checks
+    that need the document transformed.
+  - **Calling the store.** It reads the public key with `GetInfoAsync(alias, instanceId)`, so an alias rebound to
+    another key fails with `KeyNotFoundException` instead of signing. It then has the store sign with `SignBbsAsync`
+    under `KeyStoreAlgorithms.BbsBls12381Sha256`.
+  - **Checking the answer.** It verifies the signature it gets back before assembling the proof, so a store that
+    answers with another key's signature, or a malformed one, issues no proof (`ProofGenerationException`). Store
+    exceptions propagate unchanged.
+  - **The HMAC key** stays the caller's to supply, 32 bytes as before. The holder receives it inside the base proof,
+    so it is not signing-key material. Draw a fresh one per credential.
+  - **The store sees the credential's selectively disclosable content.** A BBS signature covers the messages, not a
+    hash of them, so `SignBbsAsync` receives the non-mandatory statements as N-Quads in the clear. The mandatory
+    statements reach it only as a hash in the header, and the HMAC key not at all. Weigh this before signing with a
+    remote key service.
+  - **Same bytes.** BBS signing is deterministic, so for the same key and inputs the new overload's `proofValue` is
+    byte-identical to the raw-key overload's. The raw-key overload emits the same bytes as before, and derivation
+    and verification are unchanged.
+  - **Copies at entry.** Both overloads now copy the proof options, the HMAC key and the pointers. The returned proof
+    no longer shares the caller's `AdditionalProperties` dictionary or `previousProof`, and its extension values and
+    `@context` no longer live in the caller's `JsonDocument`s, so changing or disposing the caller's options later
+    leaves it as issued.
+  - **Reflection.** `CreateBaseProofAsync` is now overloaded, so a reflection lookup by name alone
+    (`typeof(Bbs2023Cryptosuite).GetMethod("CreateBaseProofAsync")`) throws `AmbiguousMatchException`; pass the
+    parameter types. No call in source binds to both overloads, whose required parameters differ in number and type.
+    The analyzer rule RS0026, which flags two public overloads with optional parameters, is suppressed on the pair.
+  - **Not provided:** a key store without `ICapableKeyStore`. A plain `IKeyStore` has no multi-message BBS
+    operation.
+
+  The sample `Samples.BbsSelectiveDisclosure` now issues through a key store.
 
 ### Fixed
 
@@ -411,13 +446,15 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
 ### Why this is a minor and not a major
 
 The owner fixed this release at 2.1.0 on 2026-11-19, before the six issues were worked, and every change in it
-was held to that. Under the versioning policy in [`RELEASING.md`](RELEASING.md):
+was held to that. The owner added issue #44 to it on 2026-11-20, under the same rule. Under the versioning policy in [`RELEASING.md`](RELEASING.md):
 
 - *The public API only adds, which by itself makes this a minor* (SemVer §7, "MINOR version ... MUST be
   incremented if new, backward compatible functionality is introduced to the public API").
-  `DataProofsDotnet.Jose`'s `PublicAPI.Unshipped.txt` gains 90 entries and loses none, and no other package's API
-  changed. No existing member changed or gained a parameter, so nothing breaks at binary level either. No new
-  property has a `set` accessor; four have `init`.
+  `DataProofsDotnet.Jose`'s `PublicAPI.Unshipped.txt` gains 90 entries and `DataProofsDotnet.Rdfc`'s gains 1
+  (issue #44). Neither loses any, and no other package's API changed. No existing member changed or gained a
+  parameter, so nothing breaks at binary level either. Rdfc's entry is a second `CreateBaseProofAsync` overload, so
+  only a reflection lookup by that name alone, without parameter types, becomes ambiguous. No new property has a
+  `set` accessor; four have `init`.
 - *`[Obsolete]` on `SdJwtVcConstants.TransitionalMediaType` comes closest to a major.* The constant, its value and
   its `PublicAPI` entry stay, and SemVer §7 makes a deprecation a minor ("It MUST be incremented if any public API
   functionality is marked as deprecated"). But the policy calls a change non-breaking when "no source has to

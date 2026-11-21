@@ -70,9 +70,9 @@ internal static class Bbs2023ProofValue
         return Encode(BaseHeader, writer.Encode());
     }
 
-    private const int BbsSignatureLength = 80;
+    public const int BbsSignatureLength = 80;
 
-    private const int BbsPublicKeyLength = 96;
+    public const int BbsPublicKeyLength = 96;
 
     private const int BbsHeaderLength = 64;
 
