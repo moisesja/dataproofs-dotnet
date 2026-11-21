@@ -61,4 +61,30 @@ public class PreviousProofReferenceTests
         PreviousProofReference.FromSingle("a").GetHashCode()
             .Should().Be(PreviousProofReference.FromSingle("a").GetHashCode());
     }
+
+    public static TheoryData<string> Forms() => ["single", "array"];
+
+    [Theory]
+    [MemberData(nameof(Forms))]
+    public void Values_CannotBeChangedThroughTheList(string form)
+    {
+        // Issue #61: proofs and their options share the reference, so a change would rewrite every one of them.
+        var reference = form == "single" ? PreviousProofReference.FromSingle("urn:uuid:0") : PreviousProofReference.FromValues(["urn:uuid:0"]);
+
+        reference.Values.Should().NotBeAssignableTo<string[]>();
+        FluentActions.Invoking(() => ((IList<string>)reference.Values)[0] = "urn:uuid:changed")
+            .Should().Throw<NotSupportedException>();
+        reference.Values.Should().Equal("urn:uuid:0");
+    }
+
+    [Fact]
+    public void FromValues_KeepsItsOwnCopyOfTheIds()
+    {
+        var ids = new[] { "urn:uuid:0", "urn:uuid:1" };
+        var reference = PreviousProofReference.FromValues(ids);
+
+        ids[0] = "urn:uuid:changed";
+
+        reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
+    }
 }

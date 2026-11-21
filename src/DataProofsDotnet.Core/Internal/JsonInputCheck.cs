@@ -93,6 +93,38 @@ internal static class JsonInputCheck
     }
 
     /// <summary>
+    /// A copy of the caller's proof options that shares nothing with the caller's object, taken before
+    /// anything reads them (issue #61). A suite awaits its signer, and the proof it returns is built from
+    /// these options, so the caller must not be able to reach them: <see cref="DataIntegrityProof.Type"/>
+    /// and <see cref="DataIntegrityProof.AdditionalProperties"/> are settable, and the options' JSON values
+    /// live in the caller's documents, which it may change or dispose. The record copy covers the scalar
+    /// members, the extension dictionary is rebuilt, and <c>@context</c> and every extension value are
+    /// cloned. <see cref="PreviousProofReference"/> and strings are immutable, so they are shared. An
+    /// undefined element is kept as it is, for <see cref="SerializeChecked"/> to report.
+    /// </summary>
+    /// <exception cref="ProofGenerationException">The extension dictionary lists a name twice under ordinal comparison.</exception>
+    public static DataIntegrityProof OwnedCopy(DataIntegrityProof options)
+    {
+        try
+        {
+            return options with
+            {
+                Context = options.Context is { } context ? Own(context) : null,
+                AdditionalProperties = options.AdditionalProperties?.ToDictionary(
+                    member => member.Key, member => Own(member.Value), StringComparer.Ordinal),
+            };
+        }
+        catch (ArgumentException ex)
+        {
+            // A dictionary whose own comparer, or own enumeration, lets a name repeat.
+            throw new ProofGenerationException("The proof options are invalid: " + ex.Message, ex);
+        }
+
+        static JsonElement Own(JsonElement element)
+            => element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+    }
+
+    /// <summary>
     /// Checks the caller's raw JSON in <paramref name="proof"/> (<c>@context</c> and extension
     /// members), serializes it, and checks the result.
     /// </summary>
