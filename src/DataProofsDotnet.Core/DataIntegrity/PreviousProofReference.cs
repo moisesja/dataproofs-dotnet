@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 
 namespace DataProofsDotnet.DataIntegrity;
@@ -5,21 +6,28 @@ namespace DataProofsDotnet.DataIntegrity;
 /// <summary>
 /// The value of a proof's <c>previousProof</c> member (FR-1/FR-6): either a single proof
 /// id (wire form: bare string) or a set of proof ids (wire form: array of strings).
-/// The original wire shape is preserved on round-trip.
+/// The original wire shape is preserved on round-trip. Immutable: proofs and their options share
+/// a reference, so a change to one would change them all (issue #61).
 /// </summary>
 [JsonConverter(typeof(PreviousProofReferenceJsonConverter))]
 public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
 {
     private readonly string[] _values;
+    private readonly ReadOnlyCollection<string> _readOnlyValues;
 
     private PreviousProofReference(string[] values, bool isArrayForm)
     {
         _values = values;
+        _readOnlyValues = Array.AsReadOnly(values);
         IsArrayForm = isArrayForm;
     }
 
-    /// <summary>The referenced proof ids, in wire order.</summary>
-    public IReadOnlyList<string> Values => _values;
+    /// <summary>
+    /// The referenced proof ids, in wire order. A read-only view: it cannot be cast to a mutable array
+    /// (it was the backing array before issue #61), and writing through <see cref="IList{T}"/> throws
+    /// <see cref="NotSupportedException"/>.
+    /// </summary>
+    public IReadOnlyList<string> Values => _readOnlyValues;
 
     /// <summary><c>true</c> when the wire form is an array; <c>false</c> for a bare string.</summary>
     public bool IsArrayForm { get; }

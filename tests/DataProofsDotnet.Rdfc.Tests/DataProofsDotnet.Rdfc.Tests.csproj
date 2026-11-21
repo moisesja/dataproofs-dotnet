@@ -30,6 +30,7 @@
     <Compile Include="../Shared/HostileJson.cs" Link="Shared/HostileJson.cs" />
     <Compile Include="../Shared/Issue33PipelineTestsBase.cs" Link="Shared/Issue33PipelineTestsBase.cs" />
     <Compile Include="../Shared/Issue33SuiteCreateTestsBase.cs" Link="Shared/Issue33SuiteCreateTestsBase.cs" />
+    <Compile Include="../Shared/Issue61OptionsCopyTestsBase.cs" Link="Shared/Issue61OptionsCopyTestsBase.cs" />
   </ItemGroup>
 
   <ItemGroup>

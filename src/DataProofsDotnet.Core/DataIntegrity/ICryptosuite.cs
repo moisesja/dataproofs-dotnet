@@ -42,7 +42,9 @@ public interface ICryptosuite
     /// document that already embeds the matching previous proofs.
     /// </summary>
     /// <param name="unsecuredDocument">The JSON object to secure (without the proof being created).</param>
-    /// <param name="proofOptions">The proof options (no <c>proofValue</c>).</param>
+    /// <param name="proofOptions">The proof options (no <c>proofValue</c>). The suites this library ships copy
+    /// them before reading them, so the returned proof shares nothing with them: changing them while the signer
+    /// runs, or changing or disposing them afterwards, leaves the proof as it was asked for (issue #61).</param>
     /// <param name="signer">The NetCrypto signer; a non-exporting key-store-backed signer suffices.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
     /// <returns>The completed proof including <c>proofValue</c>.</returns>

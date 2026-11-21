@@ -130,6 +130,9 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
+        // The proof is built from these options after the signer is awaited (issue #61).
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The document to secure must be a JSON object.");
@@ -200,12 +203,21 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
                 + "be bound. Use the RDFC variant or a 2022/2019 Data Integrity suite for proof chains.");
         }
 
+        // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
+        // one); for RDFC the proof options carry the document's @context. Either way the
+        // emitted proof must equal the proofConfig that was used to build the signing input,
+        // so it is fixed here: after the signer is awaited, the caller's document is not read
+        // again (issue #61 adversarial review).
+        var wireProof = _canonicalization == LegacyCanonicalization.Rdfc
+            ? WithDocumentContext(proofConfig, unsecuredDocument)
+            : proofConfig;
+
         byte[] signingInput;
         string? mismatch = null;
         try
         {
             signingInput = _canonicalization == LegacyCanonicalization.Rdfc
-                ? BuildRdfcSigningInput(unsecuredDocument, WithDocumentContext(proofConfig, unsecuredDocument), signer.KeyType, out mismatch)
+                ? BuildRdfcSigningInput(unsecuredDocument, wireProof, signer.KeyType, out mismatch)
                 : BuildJcsSigningInput(unsecuredDocument, proofConfig);
         }
         catch (JcsFormatException ex)
@@ -242,13 +254,6 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         var rawSignature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
         var signature = NormalizeSignature(rawSignature, signer.KeyType)
             ?? throw new ProofGenerationException("The signer returned a signature in an unrecognized encoding.");
-
-        // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
-        // one); for RDFC the proof options carry the document's @context. Either way the
-        // emitted proof must equal the proofConfig that was used to build the signing input.
-        var wireProof = _canonicalization == LegacyCanonicalization.Rdfc
-            ? WithDocumentContext(proofConfig, unsecuredDocument)
-            : proofConfig;
 
         return wireProof with
         {

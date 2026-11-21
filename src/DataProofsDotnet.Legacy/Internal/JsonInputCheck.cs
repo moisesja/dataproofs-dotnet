@@ -98,6 +98,61 @@ internal static class JsonInputCheck
     }
 
     /// <summary>
+    /// A copy of the caller's proof options that shares nothing with the caller's object, taken before
+    /// anything reads them (issue #61). A suite awaits its signer, and the proof it returns is built from
+    /// these options, so the caller must not be able to reach them: <see cref="DataIntegrityProof.Type"/>
+    /// and <see cref="DataIntegrityProof.AdditionalProperties"/> are settable, and the options' JSON values
+    /// live in the caller's documents, which it may change or dispose. The record copy covers the scalar
+    /// members, the extension dictionary is rebuilt, and <c>@context</c> and every extension value are
+    /// cloned. <see cref="PreviousProofReference"/> and strings are immutable, so they are shared. An
+    /// undefined element is kept as it is, for <see cref="SerializeChecked"/> to report.
+    /// </summary>
+    /// <remarks>
+    /// The extension members are copied as enumeration yields them, as serialization reads them, never sized
+    /// from the caller's <c>Count</c>. The messages never quote a member name (FR-23).
+    /// </remarks>
+    /// <exception cref="ProofGenerationException">An extension member has a null name, or a name that repeats
+    /// under ordinal comparison, or a JSON value of the options belongs to a document that has been disposed.</exception>
+    public static DataIntegrityProof OwnedCopy(DataIntegrityProof options)
+    {
+        try
+        {
+            return options with
+            {
+                Context = options.Context is { } context ? Own(context) : null,
+                AdditionalProperties = options.AdditionalProperties is { } members ? OwnMembers(members) : null,
+            };
+        }
+        catch (ObjectDisposedException ex)
+        {
+            throw new ProofGenerationException("The proof options hold a JSON value whose document has been disposed.", ex);
+        }
+
+        static Dictionary<string, JsonElement> OwnMembers(IDictionary<string, JsonElement> members)
+        {
+            var copy = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var (name, value) in members)
+            {
+                if (name is null)
+                {
+                    throw new ProofGenerationException("The proof options have an extension member with a null name.");
+                }
+
+                // A dictionary whose own comparer, or own enumeration, lets a name repeat.
+                if (!copy.TryAdd(name, Own(value)))
+                {
+                    throw new ProofGenerationException("The proof options repeat an extension member name.");
+                }
+            }
+
+            return copy;
+        }
+
+        static JsonElement Own(JsonElement element)
+            => element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+    }
+
+    /// <summary>
     /// Checks the caller's raw JSON in <paramref name="proof"/> (<c>@context</c> and extension
     /// members), serializes it, and checks the result.
     /// </summary>
