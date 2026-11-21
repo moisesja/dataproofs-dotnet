@@ -273,9 +273,9 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
     byte-identical to the raw-key overload's. The raw-key overload emits the same bytes as before, and derivation
     and verification are unchanged.
   - **Copies at entry.** Both overloads now copy the proof options, the HMAC key and the pointers. The returned proof
-    no longer shares the caller's `AdditionalProperties` dictionary or `previousProof`, and its extension values and
-    `@context` no longer live in the caller's `JsonDocument`s, so changing or disposing the caller's options later
-    leaves it as issued.
+    no longer shares the caller's `AdditionalProperties` dictionary, and its extension values and `@context` no
+    longer live in the caller's `JsonDocument`s. `previousProof` can no longer be changed at all (issue #61, under
+    *Fixed*). Changing or disposing the caller's options later therefore leaves the proof as issued.
   - **Reflection.** `CreateBaseProofAsync` is now overloaded, so a reflection lookup by name alone
     (`typeof(Bbs2023Cryptosuite).GetMethod("CreateBaseProofAsync")`) throws `AmbiguousMatchException`; pass the
     parameter types. No call in source binds to both overloads, whose required parameters differ in number and type.
@@ -442,6 +442,28 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   than the reconstruction bound of 64 (depth 63 and beyond). The check reads the serialized form, so a
   .NET object inside a `JsonValue` is covered. It adds one parse and one reconstruction per issuance.
   Found by the PR #54 review and the issue #48 adversarial passes; a separate commit in that PR.
+- **Data Integrity: a proof no longer shares the caller's proof options** (issue
+  [#61](https://github.com/moisesja/dataproofs-dotnet/issues/61)). Affected: the JCS suites (`eddsa-jcs-2022`,
+  `ecdsa-jcs-2019`), the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`) and both legacy suites in both variants.
+  Each built the proof from a shallow copy of the options, checked it, then awaited the signer. The returned proof
+  kept the caller's `AdditionalProperties` dictionary, and the `JsonElement`s behind the extension values and the
+  options' `@context`. The window matters for any signer that awaits, such as a NetCrypto `KeyStoreSigner`, a remote
+  KMS or an HSM:
+  - an extension member changed while the signer ran was signed with its old value and returned with its new one, so
+    the proof did not verify;
+  - a reserved name added then, such as `proofValue`, got past the FR-2 check, which had already run;
+  - a change made after the call changed the issued proof;
+  - once the caller disposed its `JsonDocument`, serializing the proof threw `ObjectDisposedException`.
+
+  Each suite's `CreateProofAsync` and `DataIntegrityProofPipeline.AddProofAsync` now copy the options before reading
+  them. The copy rebuilds the extension dictionary and clones `@context` and every extension value. `bbs-2023`
+  already copied its options (issue #44) and now runs the same code. The pipeline's copy also covers a suite this
+  library does not ship. Emitted bytes do not change. The returned proof's `AdditionalProperties` is now a new
+  `Dictionary<string, JsonElement>`, not the caller's object.
+  - **`PreviousProofReference` is immutable.** `Values`, typed `IReadOnlyList<string>`, returned the backing
+    `string[]`, so `((string[])reference.Values)[0] = "…"` changed every proof and options object that shared the
+    reference. It now returns a read-only view. That cast throws `InvalidCastException`, and a write through
+    `IList<string>` throws `NotSupportedException`. The declared type is unchanged.
 
 ### Why this is a minor and not a major
 
@@ -464,6 +486,9 @@ was held to that. The owner added issue #44 to it on 2026-11-20, under the same 
   the 2.0.0 rule makes a major.
 - *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
   appears only when the caller sets `JwsSigner.CertificateChain`.
+- *`PreviousProofReference.Values` no longer hands out its backing array (issue #61).* Its declared type,
+  `IReadOnlyList<string>`, is unchanged and never promised an array. Code that cast it to `string[]` still compiles
+  but now throws `InvalidCastException`. This release counts that as a fix, not a break.
 - *The accept-set narrows, partly for spec-valid input, which is minor or major material and never a patch.* Most of
   what is newly refused was invalid under the governing RFC: expired and not-yet-valid credentials and non-number
   times (RFC 9901 §7.1 step 6, §7.3 step 5.h; RFC 7519 §4.1.4, §4.1.5), a repeated digest (RFC 9901 §7.1 step 4), a
