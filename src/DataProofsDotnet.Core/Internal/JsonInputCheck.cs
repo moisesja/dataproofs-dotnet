@@ -93,35 +93,32 @@ internal static class JsonInputCheck
     }
 
     /// <summary>
-    /// A copy of the caller's proof options that shares nothing with the caller's object, taken before
+    /// A copy of the caller's proof options that shares no mutable state with the caller's object, taken before
     /// anything reads them (issue #61). A suite awaits its signer, and the proof it returns is built from
     /// these options, so the caller must not be able to reach them: <see cref="DataIntegrityProof.Type"/>
     /// and <see cref="DataIntegrityProof.AdditionalProperties"/> are settable, and the options' JSON values
     /// live in the caller's documents, which it may change or dispose. The record copy covers the scalar
-    /// members, the extension dictionary is rebuilt, and <c>@context</c> and every extension value are
-    /// cloned. <see cref="PreviousProofReference"/> and strings are immutable, so they are shared. An
-    /// undefined element is kept as it is, for <see cref="SerializeChecked"/> to report.
+    /// members, the extension dictionary is rebuilt with ordinal names, and <c>@context</c> and every extension
+    /// value are cloned (a clone of an element whose document cannot be disposed is that element, whose bytes
+    /// cannot change). Strings and <see cref="PreviousProofReference"/> are shared: a reference keeps ids that no
+    /// code of the caller's ever held (PR #62 review). An undefined element is kept as it is, for
+    /// <see cref="SerializeChecked"/> to report.
     /// </summary>
     /// <remarks>
     /// The extension members are copied as enumeration yields them, as serialization reads them, never sized
-    /// from the caller's <c>Count</c>. The messages never quote a member name (FR-23).
+    /// from the caller's <c>Count</c>. The dictionary is the caller's code, as the signer is, so what it throws
+    /// while it is enumerated propagates unchanged; only faults in what it yields are reported here. The messages
+    /// never quote a member name (FR-23).
     /// </remarks>
     /// <exception cref="ProofGenerationException">An extension member has a null name, or a name that repeats
     /// under ordinal comparison, or a JSON value of the options belongs to a document that has been disposed.</exception>
     public static DataIntegrityProof OwnedCopy(DataIntegrityProof options)
     {
-        try
+        return options with
         {
-            return options with
-            {
-                Context = options.Context is { } context ? Own(context) : null,
-                AdditionalProperties = options.AdditionalProperties is { } members ? OwnMembers(members) : null,
-            };
-        }
-        catch (ObjectDisposedException ex)
-        {
-            throw new ProofGenerationException("The proof options hold a JSON value whose document has been disposed.", ex);
-        }
+            Context = options.Context is { } context ? Own(context) : null,
+            AdditionalProperties = options.AdditionalProperties is { } members ? OwnMembers(members) : null,
+        };
 
         static Dictionary<string, JsonElement> OwnMembers(IDictionary<string, JsonElement> members)
         {
@@ -143,8 +140,18 @@ internal static class JsonInputCheck
             return copy;
         }
 
+        // Reading a value of a disposed document, its kind included, throws ObjectDisposedException.
         static JsonElement Own(JsonElement element)
-            => element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+        {
+            try
+            {
+                return element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+            }
+            catch (ObjectDisposedException ex)
+            {
+                throw new ProofGenerationException("The proof options hold a JSON value whose document has been disposed.", ex);
+            }
+        }
     }
 
     /// <summary>

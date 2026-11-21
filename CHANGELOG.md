@@ -461,12 +461,17 @@ reasons this is a minor are under *Why this is a minor and not a major*, at the 
   them. The copy rebuilds the extension dictionary and clones `@context` and every extension value. `bbs-2023`
   already copied its options (issue #44) and now runs the same code. The pipeline's copy also covers a suite this
   library does not ship. Emitted bytes do not change. The returned proof's `AdditionalProperties` is now a new
-  `Dictionary<string, JsonElement>`, not the caller's object.
+  `Dictionary<string, JsonElement>`, not the caller's object. It compares names ordinally, as JSON member names
+  compare, whatever comparer the caller's dictionary used. So a proof made from an `OrdinalIgnoreCase` dictionary
+  no longer finds a member by a name that differs only in case.
   - **Faults the copy reports.** The copy is the first step to read the options, so it reports what they hold with
     `ProofGenerationException`, and the message never quotes a member name (FR-23). Three faults:
     - a JSON value whose `JsonDocument` has been disposed, which used to escape as a raw `ObjectDisposedException`;
     - an extension member with a null name;
     - a name that a dictionary with its own comparer lists twice.
+
+    What the caller's dictionary itself throws while it is read is the caller's, as a signer's exceptions are, and
+    propagates unchanged.
 
     **One input that worked is refused.** The JCS and RDFC suites used to replace the options' `@context` with the
     document's without reading it, so a disposed one went unnoticed. It is now refused like any other disposed

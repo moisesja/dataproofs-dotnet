@@ -590,6 +590,136 @@ public sealed class Bbs2023KeyStoreTests
         stored.AdditionalProperties!["note"].GetString().Should().Be("x");
     }
 
+    // Both overloads, one call: the raw key's, or the key store's.
+    private static Func<Task<DataIntegrityProof>> Issue(
+        bool keyStore, DataIntegrityProof options, RecordingCapableKeyStore store, StoredKeyInfo info,
+        IReadOnlyList<string>? mandatory = null)
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        mandatory ??= WindMandatory();
+        return keyStore
+            ? () => suite.CreateBaseProofAsync(WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, mandatory)
+            : () => suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, mandatory);
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MandatoryPointersWhoseCopyChangesTheOptions_StillGetTheProofThatWasAskedFor(bool keyStore)
+    {
+        // The pointers are the caller's code too, and the suite reads them after it checks the options, so the
+        // options must be copied before the checks (PR #62 review: a copy moved below them survived on bbs-2023).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        DataIntegrityProof WithNote() => BaseOptions() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement> { ["note"] = Parse("\"as signed\"") },
+        };
+        var expected = await Issue(false, WithNote(), store, info)();
+        var options = WithNote();
+        var pointers = new CapturingIds(WindMandatory())
+        {
+            OnCopyTo = () =>
+            {
+                options.Type = "Ed25519Signature2020";
+                options.AdditionalProperties!["note"] = Parse("\"changed\"");
+                options.AdditionalProperties["proofValue"] = Parse("\"uFORGED\"");
+            },
+        };
+
+        var proof = await Issue(keyStore, options, store, info, pointers)();
+
+        JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default)
+            .Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
+        var suite = new Bbs2023Cryptosuite();
+        var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    public static TheoryData<string, bool> OptionsCopyFaults() => new()
+    {
+        { "disposed value", false }, { "disposed value", true },
+        { "null name", false }, { "null name", true },
+        { "repeated name", false }, { "repeated name", true },
+    };
+
+    [BbsTheory]
+    [MemberData(nameof(OptionsCopyFaults))]
+    public async Task AFaultTheOptionsCopyFinds_IsAProofGenerationException_BeforeTheStoreIsCalled(string fault, bool keyStore)
+    {
+        // The three faults the shared copy reports (issue #61), on both overloads (PR #62 review: none had a test here).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        JsonElement disposed;
+        using (var source = JsonDocument.Parse("\"x\""))
+        {
+            disposed = source.RootElement;
+        }
+
+        var value = Parse("\"x\"");
+        IDictionary<string, JsonElement> members = fault switch
+        {
+            "disposed value" => new Dictionary<string, JsonElement> { ["note"] = disposed },
+            "null name" => new ScriptedDictionary([new(null!, value)], count: 1),
+            _ => new ScriptedDictionary([new("note", value), new("note", value)], count: 2),
+        };
+
+        var thrown = await Issue(keyStore, BaseOptions() with { AdditionalProperties = members }, store, info)
+            .Should().ThrowAsync<ProofGenerationException>();
+
+        thrown.Which.Message.Should().Be(fault switch
+        {
+            "disposed value" => "The proof options hold a JSON value whose document has been disposed.",
+            "null name" => "The proof options have an extension member with a null name.",
+            _ => "The proof options repeat an extension member name.",
+        });
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExtensionMembersThatChangeBetweenReads_AreReadOnce(bool keyStore)
+    {
+        // The copy is the one read of the caller's dictionary, so the checks and the proof see the same members
+        // (PR #62 review: the copy moved below the checks survived on bbs-2023).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var expected = await Issue(
+            false, BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["note"] = Parse("\"as signed\"") } },
+            store, info)();
+        var options = BaseOptions() with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new("note", Parse("\"as signed\""))],
+                count: 1,
+                later: [new("note", Parse("\"changed\"")), new("proofValue", Parse("\"uFORGED\""))]),
+        };
+
+        var proof = await Issue(keyStore, options, store, info)();
+
+        JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default)
+            .Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
+        var suite = new Bbs2023Cryptosuite();
+        var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WhatTheCallersDictionaryThrows_PropagatesUnchanged_BeforeTheStoreIsCalled(bool keyStore)
+    {
+        // The dictionary is the caller's code, as the store is, so what it throws is not wrapped. The copy bbs-2023
+        // had before issue #61 wrapped an ArgumentException; the shared one does not (PR #62 review).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var fault = new ArgumentException("the caller's own");
+        var options = BaseOptions() with { AdditionalProperties = new ScriptedDictionary([], count: 0, fault: fault) };
+
+        var thrown = await Issue(keyStore, options, store, info).Should().ThrowAsync<ArgumentException>();
+
+        thrown.Which.Should().BeSameAs(fault);
+        store.Calls.Should().BeEmpty();
+    }
+
     [BbsTheory]
     [MemberData(nameof(Issue61OptionsCopyTestsBase.PreviousProofForms), MemberType = typeof(Issue61OptionsCopyTestsBase))]
     public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesBothProofsAsIssuedAndDerivable(string form)

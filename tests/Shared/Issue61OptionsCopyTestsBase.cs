@@ -327,62 +327,135 @@ public abstract class Issue61OptionsCopyTestsBase
         Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
     }
 
+    public static TheoryData<bool> DirectAndThroughThePipeline() => [false, true];
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ASignerWhoseKeyTypeChangesTheOptions_StillGetsTheProofItAskedFor(bool throughThePipeline)
+    {
+        // Every suite reads KeyType before it checks the options, so this shows the copy comes first; a change made
+        // inside SignAsync cannot (PR #62 review: the copy moved below the checks survived every other row).
+        var expected = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var options = WithNote();
+        var signer = new MutatingSigner(Signer, () => { }, onKeyType: () => Tamper(options));
+
+        var proof = await IssueAsync(options, signer, throughThePipeline);
+
+        proof.Type.Should().Be(ProofType);
+        proof.AdditionalProperties![NoteName].GetString().Should().Be("as signed");
+        proof.AdditionalProperties.Should().NotContainKey("proofValue");
+        WithoutSignature(proof).Should().Be(WithoutSignature(expected));
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ExtensionMembersThatChangeBetweenReads_AreReadOnce(bool throughThePipeline)
+    {
+        // A dictionary of the caller's that answers its first read with a note and every later read with another
+        // note and a proofValue: the checks and the proof must both see the first answer, the copy's.
+        var options = Options() with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new(NoteName, HostileJson.Parse("\"as signed\""))],
+                count: 1,
+                later: [new(NoteName, HostileJson.Parse("\"changed\"")), new("proofValue", HostileJson.Parse("\"uFORGED\""))]),
+        };
+
+        var proof = await IssueAsync(options, Signer, throughThePipeline);
+
+        proof.AdditionalProperties![NoteName].GetString().Should().Be("as signed");
+        proof.AdditionalProperties.Should().NotContainKey("proofValue");
+        WithoutSignature(proof).Should().Be(WithoutSignature(await Suite.CreateProofAsync(Document(), WithNote(), Signer)));
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExtensionNamesThatDifferOnlyInCase_AreBothKept()
+    {
+        // JSON member names compare ordinally, so these are two members; a copy that compared names ignoring case
+        // would refuse valid options (PR #62 review: OrdinalIgnoreCase survived every other test).
+        const string upperName = "https://example.org/vocab#Note";
+        var options = Options() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement>
+            {
+                [NoteName] = HostileJson.Parse("\"lower\""),
+                [upperName] = HostileJson.Parse("\"upper\""),
+            },
+        };
+
+        var proof = await Suite.CreateProofAsync(Document(), options, Signer);
+
+        proof.AdditionalProperties![NoteName].GetString().Should().Be("lower");
+        proof.AdditionalProperties[upperName].GetString().Should().Be("upper");
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task WhatTheCallersDictionaryThrows_PropagatesUnchanged(bool throughThePipeline)
+    {
+        // The dictionary is the caller's code, as the signer is: what it throws is not a fault the copy found, so it
+        // is not wrapped, even when it is the ObjectDisposedException the copy maps for a value (PR #62 review).
+        foreach (var fault in new Exception[] { new ArgumentException("the caller's own"), new ObjectDisposedException("the caller's own") })
+        {
+            var options = Options() with { AdditionalProperties = new ScriptedDictionary([], count: 0, fault: fault) };
+
+            var thrown = await CreateAsync(options, throughThePipeline).Should().ThrowAsync<Exception>();
+
+            thrown.Which.Should().BeSameAs(fault);
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a document the signer's <c>KeyType</c> getter disposes, before the suite reads the document, is a
+    /// <see cref="ProofGenerationException"/>. The legacy RDFC variants run it: they read the document's
+    /// <c>@context</c> outside the mapping for a while (PR #62 review). The other suites let the raw exception out,
+    /// on main too, a document-side fault reported apart from issue #61.
+    /// </summary>
+    protected async Task AssertADocumentTheSignersKeyTypeDisposes_IsAProofGenerationException()
+    {
+        var document = JsonDocument.Parse(HostileJson.BaseDocument);
+        var signer = new MutatingSigner(Signer, () => { }, onKeyType: document.Dispose);
+
+        var act = () => Suite.CreateProofAsync(document.RootElement, WithNote(), signer);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>()).WithInnerException<ObjectDisposedException>();
+    }
+
+    private async Task<DataIntegrityProof> IssueAsync(DataIntegrityProof options, ISigner signer, bool throughThePipeline)
+    {
+        if (!throughThePipeline)
+        {
+            return await Suite.CreateProofAsync(Document(), options, signer);
+        }
+
+        var pipeline = Pipeline();
+        var secured = await pipeline.AddProofAsync(Document(), options, signer);
+        pipeline.Verify(secured, PublicKey).Verified.Should().BeTrue();
+        secured.GetProperty("proof").EnumerateObject().Count(member => member.Name == "proofValue").Should().Be(1);
+        return secured.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
+    }
+
     private Func<Task> CreateAsync(DataIntegrityProof options, bool throughThePipeline) => throughThePipeline
         ? () => Pipeline().AddProofAsync(Document(), options, Signer)
         : () => Suite.CreateProofAsync(Document(), options, Signer);
 
     /// <summary>
-    /// A caller-made dictionary that enumerates <paramref name="members"/> as given, whatever they hold, and reports
-    /// <paramref name="count"/> as its <c>Count</c>.
+    /// A signer that runs <paramref name="during"/> before it signs, as a key store's await allows, and
+    /// <paramref name="onKeyType"/>, if given, each time its <see cref="ISigner.KeyType"/> is read.
     /// </summary>
-    private sealed class ScriptedDictionary(KeyValuePair<string, JsonElement>[] members, int count) : IDictionary<string, JsonElement>
+    private sealed class MutatingSigner(ISigner inner, Action during, Action? onKeyType = null) : ISigner
     {
-        public int Count => count;
-
-        public bool IsReadOnly => true;
-
-        public ICollection<string> Keys => members.Select(member => member.Key).ToArray();
-
-        public ICollection<JsonElement> Values => members.Select(member => member.Value).ToArray();
-
-        public JsonElement this[string key]
+        public KeyType KeyType
         {
-            get => members.First(member => member.Key == key).Value;
-            set => throw new NotSupportedException();
+            get
+            {
+                onKeyType?.Invoke();
+                return inner.KeyType;
+            }
         }
-
-        public IEnumerator<KeyValuePair<string, JsonElement>> GetEnumerator() => ((IEnumerable<KeyValuePair<string, JsonElement>>)members).GetEnumerator();
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-        public bool ContainsKey(string key) => members.Any(member => member.Key == key);
-
-        public bool TryGetValue(string key, [MaybeNullWhen(false)] out JsonElement value)
-        {
-            var found = members.Where(member => member.Key == key).ToArray();
-            value = found.Length > 0 ? found[0].Value : default;
-            return found.Length > 0;
-        }
-
-        public bool Contains(KeyValuePair<string, JsonElement> item) => members.Contains(item);
-
-        public void CopyTo(KeyValuePair<string, JsonElement>[] array, int arrayIndex) => members.CopyTo(array, arrayIndex);
-
-        public void Add(string key, JsonElement value) => throw new NotSupportedException();
-
-        public void Add(KeyValuePair<string, JsonElement> item) => throw new NotSupportedException();
-
-        public bool Remove(string key) => throw new NotSupportedException();
-
-        public bool Remove(KeyValuePair<string, JsonElement> item) => throw new NotSupportedException();
-
-        public void Clear() => throw new NotSupportedException();
-    }
-
-    /// <summary>A signer that runs <paramref name="during"/> before it signs, as a key store's await allows.</summary>
-    private sealed class MutatingSigner(ISigner inner, Action during) : ISigner
-    {
-        public KeyType KeyType => inner.KeyType;
 
         public ReadOnlyMemory<byte> PublicKey => inner.PublicKey;
 
@@ -397,6 +470,73 @@ public abstract class Issue61OptionsCopyTestsBase
 }
 
 /// <summary>
+/// A caller-made dictionary that yields <paramref name="members"/> as given, whatever they hold, and reports
+/// <paramref name="count"/> as its <c>Count</c>. Given <paramref name="later"/>, it yields that on every read of its
+/// contents after the first, enumeration and lookups alike. Given <paramref name="fault"/>, it throws that on any read.
+/// </summary>
+public sealed class ScriptedDictionary(
+    KeyValuePair<string, JsonElement>[] members,
+    int count,
+    KeyValuePair<string, JsonElement>[]? later = null,
+    Exception? fault = null) : IDictionary<string, JsonElement>
+{
+    private bool _read;
+
+    public int Count => count;
+
+    public bool IsReadOnly => true;
+
+    public ICollection<string> Keys => Read().Select(member => member.Key).ToArray();
+
+    public ICollection<JsonElement> Values => Read().Select(member => member.Value).ToArray();
+
+    public JsonElement this[string key]
+    {
+        get => Read().First(member => member.Key == key).Value;
+        set => throw new NotSupportedException();
+    }
+
+    private KeyValuePair<string, JsonElement>[] Read()
+    {
+        if (fault is not null)
+        {
+            throw fault;
+        }
+
+        var current = _read && later is not null ? later : members;
+        _read = true;
+        return current;
+    }
+
+    public IEnumerator<KeyValuePair<string, JsonElement>> GetEnumerator() => ((IEnumerable<KeyValuePair<string, JsonElement>>)Read()).GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    public bool ContainsKey(string key) => Read().Any(member => member.Key == key);
+
+    public bool TryGetValue(string key, [MaybeNullWhen(false)] out JsonElement value)
+    {
+        var found = Read().Where(member => member.Key == key).ToArray();
+        value = found.Length > 0 ? found[0].Value : default;
+        return found.Length > 0;
+    }
+
+    public bool Contains(KeyValuePair<string, JsonElement> item) => Read().Contains(item);
+
+    public void CopyTo(KeyValuePair<string, JsonElement>[] array, int arrayIndex) => Read().CopyTo(array, arrayIndex);
+
+    public void Add(string key, JsonElement value) => throw new NotSupportedException();
+
+    public void Add(KeyValuePair<string, JsonElement> item) => throw new NotSupportedException();
+
+    public bool Remove(string key) => throw new NotSupportedException();
+
+    public bool Remove(KeyValuePair<string, JsonElement> item) => throw new NotSupportedException();
+
+    public void Clear() => throw new NotSupportedException();
+}
+
+/// <summary>
 /// A caller's collection of ids that keeps the array its <c>CopyTo</c> is handed. <c>Enumerable.ToArray</c> passes a
 /// source that implements <see cref="ICollection{T}"/> the very array it returns, so a copy made that way alone is
 /// one the caller can still write to (PR #62 review). It is an <see cref="IReadOnlyList{T}"/> too, the type the
@@ -406,6 +546,9 @@ public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, I
 {
     private string[]? _handed;
 
+    /// <summary>Runs each time <c>CopyTo</c> is called, as any code of the caller's could.</summary>
+    public Action? OnCopyTo { get; init; }
+
     public int Count => ids.Length;
 
     public bool IsReadOnly => true;
@@ -414,6 +557,7 @@ public sealed class CapturingIds(params string[] ids) : IReadOnlyList<string>, I
 
     public void CopyTo(string[] array, int arrayIndex)
     {
+        OnCopyTo?.Invoke();
         _handed = array;
         ids.CopyTo(array, arrayIndex);
     }

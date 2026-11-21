@@ -203,19 +203,20 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
                 + "be bound. Use the RDFC variant or a 2022/2019 Data Integrity suite for proof chains.");
         }
 
-        // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
-        // one); for RDFC the proof options carry the document's @context. Either way the
-        // emitted proof must equal the proofConfig that was used to build the signing input,
-        // so it is fixed here: after the signer is awaited, the caller's document is not read
-        // again (issue #61 adversarial review).
-        var wireProof = _canonicalization == LegacyCanonicalization.Rdfc
-            ? WithDocumentContext(proofConfig, unsecuredDocument)
-            : proofConfig;
-
+        DataIntegrityProof wireProof;
         byte[] signingInput;
         string? mismatch = null;
         try
         {
+            // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
+            // one); for RDFC the proof options carry the document's @context. Either way the
+            // emitted proof must equal the proofConfig that was used to build the signing input,
+            // so it is fixed here: after the signer is awaited, the caller's document is not read
+            // again (issue #61 adversarial review). It reads the document, so it is inside the try,
+            // whose filter maps a document disposed by then (PR #62 review).
+            wireProof = _canonicalization == LegacyCanonicalization.Rdfc
+                ? WithDocumentContext(proofConfig, unsecuredDocument)
+                : proofConfig;
             signingInput = _canonicalization == LegacyCanonicalization.Rdfc
                 ? BuildRdfcSigningInput(unsecuredDocument, wireProof, signer.KeyType, out mismatch)
                 : BuildJcsSigningInput(unsecuredDocument, proofConfig);
