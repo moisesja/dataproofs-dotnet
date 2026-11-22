@@ -56,6 +56,12 @@ internal abstract class JcsCryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
+        // The proof is built from this document and these options after the signer is awaited (issue #61), so both
+        // are copied before anything reads them. The document comes first: reading the options' extension dictionary
+        // runs the caller's code, and that code must not change the document before it is copied (PR #62).
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The document to secure must be a JSON object.");
@@ -64,9 +70,12 @@ internal abstract class JcsCryptosuite : ICryptosuite
         // Before the @context lookup below, which compares member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
-        if (!IsSupportedKeyType(signer.KeyType))
+        // The signer's KeyType getter is the caller's code too. Read it once, where it was first read, so every step
+        // below sees one key type and the checks above keep their precedence (PR #62 follow-up d3).
+        var keyType = signer.KeyType;
+        if (!IsSupportedKeyType(keyType))
         {
-            throw new ProofGenerationException($"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
+            throw new ProofGenerationException($"Key type {keyType} is not supported by the {Name} cryptosuite.");
         }
 
         if (!string.Equals(proofOptions.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal))
@@ -100,11 +109,26 @@ internal abstract class JcsCryptosuite : ICryptosuite
             throw new ProofGenerationException("Proof options 'expires' is not a valid dateTimeStamp.");
         }
 
-        // Per the JCS suites' Create Proof algorithm: when the unsecured document has an
-        // @context, the proof carries the same @context.
-        var context = unsecuredDocument.TryGetProperty("@context", out var documentContext)
-            ? documentContext.Clone()
-            : proofOptions.Context;
+        // Per the JCS suites' Create Proof algorithm (step 2): when the unsecured document has an
+        // @context, the proof carries the same @context. Without one the proof would keep the
+        // options' own, and Verify Proof (step 4.1) refuses a proof whose @context the document's
+        // does not start with, so never issue it (PR #62 follow-up b).
+        var hasContext = unsecuredDocument.TryGetProperty("@context", out var documentContext);
+        if (!hasContext && proofOptions.Context is not null)
+        {
+            throw new ProofGenerationException(
+                "The proof options carry an @context but the document to secure has none, so the proof would not verify.");
+        }
+
+        // A JSON null @context would be signed as "@context":null, but a proof read back from JSON has no @context,
+        // so the verifier hashes a configuration without one (PR #62 review).
+        if (hasContext && documentContext.ValueKind == JsonValueKind.Null)
+        {
+            throw new ProofGenerationException(
+                "The document to secure has a null @context, which the proof cannot carry, so the proof would not verify.");
+        }
+
+        var context = hasContext ? documentContext.Clone() : (JsonElement?)null;
 
         var proofConfig = proofOptions with
         {
@@ -130,10 +154,10 @@ internal abstract class JcsCryptosuite : ICryptosuite
             throw new ProofGenerationException("The document or proof configuration could not be JCS-canonicalized.", ex);
         }
 
-        var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, signer.KeyType);
+        var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, keyType);
 
         var rawSignature = await signer.SignAsync(hashData, cancellationToken).ConfigureAwait(false);
-        var signature = NormalizeSignature(rawSignature, signer.KeyType)
+        var signature = NormalizeSignature(rawSignature, keyType)
             ?? throw new ProofGenerationException("The signer returned a signature in an unrecognized encoding.");
 
         return proofConfig with
@@ -153,11 +177,19 @@ internal abstract class JcsCryptosuite : ICryptosuite
 
         try
         {
-            if (unsecuredDocument.ValueKind != JsonValueKind.Object)
+            if (JsonInputCheck.KindOf(unsecuredDocument) != JsonValueKind.Object)
             {
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.", proof);
             }
+
+            // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
+            // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
+            // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
+            // copies find is a failed result, below, as every other fault is; a result reached after them carries the
+            // proof copy.
+            unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
+            proof = JsonInputCheck.OwnedCopy(proof);
 
             if (!string.Equals(proof.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal)
                 || !string.Equals(proof.Cryptosuite, Name, StringComparison.Ordinal))

@@ -9,6 +9,12 @@ namespace DataProofsDotnet.DataIntegrity;
 /// 64-byte Ed25519 signature encoded as base58-btc multibase <c>proofValue</c>.
 /// Ed25519 signing is deterministic, so proof creation is byte-reproducible.
 /// </summary>
+/// <remarks>
+/// The proof carries the document's <c>@context</c> (Create Proof step 2). For a document without one, proof
+/// options that carry an <c>@context</c> are refused with <see cref="ProofGenerationException"/>: the proof would
+/// keep the options' <c>@context</c>, which Verify Proof step 4.1 refuses because the document's does not start with it.
+/// A document whose <c>@context</c> is JSON <c>null</c> is refused too: a proof read back from JSON cannot carry it.
+/// </remarks>
 public sealed class EddsaJcs2022Cryptosuite : ICryptosuite
 {
     /// <summary>The cryptosuite identifier, <c>eddsa-jcs-2022</c>.</summary>

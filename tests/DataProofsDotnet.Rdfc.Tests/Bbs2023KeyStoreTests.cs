@@ -1,9 +1,12 @@
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataProofsDotnet.DataIntegrity;
 using DataProofsDotnet.Rdfc.DataIntegrity;
+using DataProofsDotnet.Rdfc.Internal;
 using DataProofsDotnet.Rdfc.Tests.TestSupport;
+using DataProofsDotnet.Tests.Shared;
 using FluentAssertions;
 using NetCrypto;
 using Xunit;
@@ -468,7 +471,6 @@ public sealed class Bbs2023KeyStoreTests
         "extension member named proofValue",
         "extension member with a duplicate member name",
         "options @context with a duplicate member, no document @context",
-        "previousProof id emptied after construction",
     };
 
     [BbsTheory]
@@ -514,10 +516,6 @@ public sealed class Bbs2023KeyStoreTests
             case "options @context with a duplicate member, no document @context":
                 document = Fx.Mutate(document, d => d.Remove("@context"));
                 options = options with { Context = Parse("""{"@vocab": "https://a.example/", "@vocab": "https://b.example/"}""") };
-                break;
-            case "previousProof id emptied after construction":
-                options = options with { PreviousProof = PreviousProofReference.FromValues(["urn:proof:a"]) };
-                ((string[])options.PreviousProof!.Values)[0] = "";
                 break;
         }
 
@@ -594,63 +592,844 @@ public sealed class Bbs2023KeyStoreTests
         stored.AdditionalProperties!["note"].GetString().Should().Be("x");
     }
 
-    public static TheoryData<bool> PreviousProofForms() => new() { false, true };
+    // Both overloads, one call: the raw key's, or the key store's.
+    private static Func<Task<DataIntegrityProof>> Issue(
+        bool keyStore, DataIntegrityProof options, RecordingCapableKeyStore store, StoredKeyInfo info,
+        IReadOnlyList<string>? mandatory = null, JsonElement? document = null)
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var suite = new Bbs2023Cryptosuite();
+        mandatory ??= WindMandatory();
+        var unsecured = document ?? WindDoc();
+        return keyStore
+            ? () => suite.CreateBaseProofAsync(unsecured, options, store, Alias, info.InstanceId!.Value, hmacKey, mandatory)
+            : () => suite.CreateBaseProofAsync(unsecured, options, sk, hmacKey, mandatory);
+    }
 
     [BbsTheory]
-    [MemberData(nameof(PreviousProofForms))]
-    public async Task ACallerThatChangesItsPreviousProofWhileTheStoreSigns_StillGetsTheProofItAskedFor(bool arrayForm)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADocumentDisposedBeforeTheCall_IsAProofGenerationException_BeforeTheStoreIsCalled(bool keyStore)
     {
-        // PreviousProofReference.Values exposes its array, so a record copy of the options is not enough
-        // (PR #60 review). The returned proof keeps the ids and the wire form that were signed.
-        var (sk, hmacKey) = KeyMaterial();
+        // Both overloads copy the document at entry, as every create entry point does (PR #62). Reading it raised the
+        // raw ObjectDisposedException.
         var (store, info) = await StoreWithVectorKeyAsync();
+        JsonElement disposed;
+        using (var source = JsonDocument.Parse(WindDoc().GetRawText()))
+        {
+            disposed = source.RootElement;
+        }
+
+        var thrown = await Issue(keyStore, BaseOptions(), store, info, document: disposed)
+            .Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure has been disposed.");
+
+        thrown.WithInnerException<ObjectDisposedException>();
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MandatoryPointersWhoseCopyChangesTheOptions_StillGetTheProofThatWasAskedFor(bool keyStore)
+    {
+        // The pointers are the caller's code too, and the suite reads them after it checks the options, so the
+        // options must be copied before the checks (PR #62 review: a copy moved below them survived on bbs-2023).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        DataIntegrityProof WithNote() => BaseOptions() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement> { ["note"] = Parse("\"as signed\"") },
+        };
+        var expected = await Issue(false, WithNote(), store, info)();
+        var options = WithNote();
+        var pointers = new CapturingIds(WindMandatory())
+        {
+            OnRead = () =>
+            {
+                options.Type = "Ed25519Signature2020";
+                options.AdditionalProperties!["note"] = Parse("\"changed\"");
+                options.AdditionalProperties["proofValue"] = Parse("\"uFORGED\"");
+            },
+        };
+
+        var proof = await Issue(keyStore, options, store, info, pointers)();
+
+        JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default)
+            .Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
         var suite = new Bbs2023Cryptosuite();
-        DataIntegrityProof Chained() => BaseOptions() with
-        {
-            PreviousProof = arrayForm
-                ? PreviousProofReference.FromValues(["urn:proof:original", "urn:proof:second"])
-                : PreviousProofReference.FromSingle("urn:proof:original"),
-        };
-        var expected = await suite.CreateBaseProofAsync(WindDoc(), Chained(), sk, hmacKey, WindMandatory());
+        var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
 
-        var options = Chained();
-        store.TamperSignature = (_, genuine) =>
-        {
-            ((string[])options.PreviousProof!.Values)[0] = "urn:proof:changed";
-            return genuine;
-        };
-        var stored = await suite.CreateBaseProofAsync(
-            WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
+    public static TheoryData<string, bool> OptionsCopyFaults() => new()
+    {
+        { "disposed value", false }, { "disposed value", true },
+        { "null name", false }, { "null name", true },
+        { "repeated name", false }, { "repeated name", true },
+    };
 
-        var json = JsonSerializer.Serialize(stored, DataProofsJsonOptions.Default);
-        json.Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
-        json.Should().Contain(arrayForm ? "\"previousProof\":[\"urn:proof:original\"" : "\"previousProof\":\"urn:proof:original\"");
-        var reveal = suite.DeriveProof(Embed(WindDoc(), stored), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+    [BbsTheory]
+    [MemberData(nameof(OptionsCopyFaults))]
+    public async Task AFaultTheOptionsCopyFinds_IsAProofGenerationException_BeforeTheStoreIsCalled(string fault, bool keyStore)
+    {
+        // The three faults the shared copy reports (issue #61), on both overloads (PR #62 review: none had a test here).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        JsonElement disposed;
+        using (var source = JsonDocument.Parse("\"x\""))
+        {
+            disposed = source.RootElement;
+        }
+
+        var value = Parse("\"x\"");
+        IDictionary<string, JsonElement> members = fault switch
+        {
+            "disposed value" => new Dictionary<string, JsonElement> { ["note"] = disposed },
+            "null name" => new ScriptedDictionary([new(null!, value)], count: 1),
+            _ => new ScriptedDictionary([new("note", value), new("note", value)], count: 2),
+        };
+
+        var thrown = await Issue(keyStore, BaseOptions() with { AdditionalProperties = members }, store, info)
+            .Should().ThrowAsync<ProofGenerationException>();
+
+        thrown.Which.Message.Should().Be(fault switch
+        {
+            "disposed value" => "The proof options hold a JSON value whose document has been disposed.",
+            "null name" => "The proof options have an extension member with a null name.",
+            _ => "The proof options repeat an extension member name.",
+        });
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExtensionMembersThatChangeBetweenReads_AreReadOnce(bool keyStore)
+    {
+        // The copy is the one read of the caller's dictionary, so the checks and the proof see the same members
+        // (PR #62 review: the copy moved below the checks survived on bbs-2023).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var expected = await Issue(
+            false, BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { ["note"] = Parse("\"as signed\"") } },
+            store, info)();
+        var options = BaseOptions() with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new("note", Parse("\"as signed\""))],
+                count: 1,
+                later: [new("note", Parse("\"changed\"")), new("proofValue", Parse("\"uFORGED\""))]),
+        };
+
+        var proof = await Issue(keyStore, options, store, info)();
+
+        JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default)
+            .Should().Be(JsonSerializer.Serialize(expected, DataProofsJsonOptions.Default));
+        var suite = new Bbs2023Cryptosuite();
+        var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
         VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
     }
 
     [BbsTheory]
-    [MemberData(nameof(PreviousProofForms))]
-    public async Task TheReturnedProof_DoesNotShareTheCallersPreviousProof(bool arrayForm)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WhatTheCallersDictionaryThrows_PropagatesUnchanged_BeforeTheStoreIsCalled(bool keyStore)
     {
-        // Both methods: changing the caller's previousProof after the call leaves the issued proof as it was.
+        // The dictionary is the caller's code, as the store is, so what it throws is not wrapped. The copy bbs-2023
+        // had before issue #61 wrapped an ArgumentException; the shared one does not (PR #62 review).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        foreach (var fault in new Exception[]
+        {
+            new ArgumentException("the caller's own"),
+            new InvalidOperationException("Collection was modified; enumeration operation may not execute."),
+        })
+        {
+            var options = BaseOptions() with { AdditionalProperties = new ScriptedDictionary([], count: 0, fault: fault) };
+
+            var thrown = await Issue(keyStore, options, store, info).Should().ThrowAsync<Exception>();
+
+            thrown.Which.Should().BeSameAs(fault);
+        }
+
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsTheory]
+    [MemberData(nameof(Issue61OptionsCopyTestsBase.PreviousProofForms), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ACallerThatTriesToRewriteItsPreviousProof_LeavesBothProofsAsIssuedAndDerivable(string form)
+    {
+        // The options copy shares previousProof, which nothing can change (issue #61). Every write its caller can
+        // make is tried while the store signs and again after both calls: each public route through Values,
+        // ICollection.SyncRoot included, and the array a collection of the caller's was handed when FromValues copied
+        // it (PR #62 review, twice). Both proofs keep the ids and the wire form that were signed, and both still derive.
         var (sk, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
         var suite = new Bbs2023Cryptosuite();
-        var options = BaseOptions() with
-        {
-            PreviousProof = arrayForm ? PreviousProofReference.FromValues(["urn:proof:original"]) : "urn:proof:original",
-        };
+        var expected = JsonSerializer.Serialize(
+            await suite.CreateBaseProofAsync(
+                WindDoc(), BaseOptions() with { PreviousProof = Issue61OptionsCopyTestsBase.CallersPreviousProof(form).Reference },
+                sk, hmacKey, WindMandatory()),
+            DataProofsJsonOptions.Default);
 
+        var (previousProof, rewrite) = Issue61OptionsCopyTestsBase.CallersPreviousProof(form);
+        var options = BaseOptions() with { PreviousProof = previousProof };
+        store.TamperSignature = (_, genuine) =>
+        {
+            rewrite();
+            return genuine;
+        };
         var raw = await suite.CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory());
         var stored = await suite.CreateBaseProofAsync(
             WindDoc(), options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory());
-        ((string[])options.PreviousProof!.Values)[0] = "urn:proof:changed";
+        rewrite();
 
+        expected.Should().Contain(form == "string" ? "\"previousProof\":\"urn:proof:original\"" : "\"previousProof\":[\"urn:proof:original\"");
         foreach (var proof in new[] { raw, stored })
         {
-            proof.PreviousProof!.Values.Should().Equal("urn:proof:original");
-            proof.PreviousProof.IsArrayForm.Should().Be(arrayForm);
+            JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default).Should().Be(expected);
+            var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+            VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+        }
+    }
+
+    public static TheoryData<string> CallerCodeThatRunsDuringIssuance() => ["the key store", "a canonicalizer of the caller's"];
+
+    [BbsTheory]
+    [MemberData(nameof(CallerCodeThatRunsDuringIssuance))]
+    public async Task MandatoryPointersFromACollectionThatKeepsItsArray_AreThePointersThatWereAskedFor(string callerCode)
+    {
+        // ToArray hands a collection that implements ICollection<T> the array it returns. The suite groups the
+        // pointers, runs the caller's code, then packs them, so it must keep an array the collection was never
+        // handed, whichever overload runs the caller's code (PR #62 review).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var mandatory = WindMandatory();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, mandatory);
+        var pointers = new CapturingIds(mandatory);
+        void Rewrite() => pointers.WriteToHandedArray(0, mandatory[1]);
+
+        DataIntegrityProof proof;
+        if (callerCode == "the key store")
+        {
+            store.TamperSignature = (_, genuine) =>
+            {
+                Rewrite();
+                return genuine;
+            };
+            proof = await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                WindDoc(), BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, pointers);
+        }
+        else
+        {
+            proof = await new Bbs2023Cryptosuite(new HookedCanonicalizer(Rewrite)).CreateBaseProofAsync(
+                WindDoc(), BaseOptions(), sk, hmacKey, pointers);
+        }
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+        var suite = new Bbs2023Cryptosuite();
+        var reveal = suite.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    private static JsonElement WithoutProof(JsonElement document)
+    {
+        var node = JsonObject.Create(document)!;
+        node.Remove("proof");
+        return JsonSerializer.SerializeToElement(node, DataProofsJsonOptions.Default);
+    }
+
+    [BbsFact]
+    public async Task SelectivePointersFromACollectionThatKeepsItsArray_AreThePointersThatWereAskedFor()
+    {
+        // DeriveProof used the caller's pointers several times, and Concat(...).ToList() handed the collection the
+        // list's own array, which the reveal document was selected with after a canonicalizer of the caller's ran
+        // (PR #62 follow-up c).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var header = Convert.FromHexString("113377aa");
+        var expected = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], header);
+        var pointers = new CapturingIds("/credentialSubject/sails/0");
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(
+            () => pointers.ReplaceInHandedArray("/credentialSubject/sails/0", "/credentialSubject/sails/1")));
+
+        var reveal = suite.DeriveProof(secured, pointers, header);
+
+        JsonElement.DeepEquals(WithoutProof(reveal), WithoutProof(expected)).Should().BeTrue();
+        VerifyReveal(new Bbs2023Cryptosuite(), reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task APresentationHeaderChangedWhileTheProofIsDerived_IsTheHeaderThatWasGiven()
+    {
+        // The header was read for the BBS proof and again for the derived proofValue, with a canonicalizer of the
+        // caller's in between, so the two could differ and the derived proof did not verify (PR #62 follow-up d2).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var header = Convert.FromHexString("113377aa");
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(() => header[0]++));
+
+        var reveal = suite.DeriveProof(secured, ["/credentialSubject/sails/0"], header);
+
+        VerifyReveal(new Bbs2023Cryptosuite(), reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task APrivateKeyChangedWhileTheBaseProofIsPrepared_SignsWithTheKeyThatWasGiven()
+    {
+        // The raw-key overload derived the public key before a canonicalizer of the caller's ran and signed after it,
+        // reading the key each time, so the proof could pack one key's public key with another's signature
+        // (PR #62 follow-up d1).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var other = new byte[sk.Length];
+        other[^1] = 7;
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(() => other.CopyTo(sk, 0)));
+
+        var proof = await suite.CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+        var plain = new Bbs2023Cryptosuite();
+        var reveal = plain.DeriveProof(Embed(WindDoc(), proof), ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        VerifyReveal(plain, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [InlineData(-1, false)]
+    [InlineData(-1, true)]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(int.MaxValue, false)]
+    [InlineData(int.MaxValue, true)]
+    public async Task PointersWhoseCollectionLiesAboutItsCount_AreThePointersThatWereAskedFor(int count, bool keyStore)
+    {
+        // ToArray sized its array from the caller's Count. At -1 and int.MaxValue a raw OverflowException or
+        // OutOfMemoryException escaped from issuance, and since this PR from DeriveProof too, and at 0 the pointers
+        // were dropped (PR #62 review). The pointers are now copied by enumeration.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+
+        var proof = await Issue(keyStore, BaseOptions(), store, info, new CapturingIds(WindMandatory()) { ReportedCount = count })();
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+        var suite = new Bbs2023Cryptosuite();
+        var reveal = suite.DeriveProof(
+            Embed(WindDoc(), proof), new CapturingIds("/credentialSubject/sails/0") { ReportedCount = count }, Convert.FromHexString("113377aa"));
+        VerifyReveal(suite, reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CallerCodeInThePointers_CannotChangeAnInputCopiedBeforeThem(bool keyStore)
+    {
+        // Reading the pointers runs the caller's code, so the document, the HMAC key and the private key are copied
+        // before it (PR #62 review: the pointers were read first, and could swap the HMAC key and the private key).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        var flipped = (byte)~hmacKey[0];
+        var other = new byte[sk.Length];
+        other[^1] = 7;
+        var pointers = new CapturingIds(WindMandatory())
+        {
+            OnRead = () =>
+            {
+                buffer[at] = (byte)'2';
+                hmacKey[0] = flipped;
+                other.CopyTo(sk, 0);
+            },
+        };
+
+        var proof = keyStore
+            ? await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                document.RootElement, BaseOptions(), store, Alias, info.InstanceId!.Value, hmacKey, pointers)
+            : await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, BaseOptions(), sk, hmacKey, pointers);
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_CopiesTheHeaderAndTheDocumentBeforeThePointersAreRead()
+    {
+        // Enumerating the pointers runs the caller's code, so the header and the base document are copied before it
+        // (PR #62 review: the header was copied after the pointers were read).
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var expected = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        var buffer = Encoding.UTF8.GetBytes(secured.GetRawText());
+        var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        var header = Convert.FromHexString("113377aa");
+        var pointers = new CapturingIds("/credentialSubject/sails/0")
+        {
+            OnRead = () =>
+            {
+                header[0] = 0;
+                buffer[at] = (byte)'2';
+                document.Dispose();
+            },
+        };
+
+        var reveal = new Bbs2023Cryptosuite().DeriveProof(document.RootElement, pointers, header);
+
+        var derived = Bbs2023ProofValue.ParseDerivedProof(reveal.GetProperty("proof").GetProperty("proofValue").GetString()!);
+        derived.PresentationHeader.Should().Equal(Convert.FromHexString("113377aa"));
+        JsonElement.DeepEquals(WithoutProof(reveal), WithoutProof(expected)).Should().BeTrue();
+        VerifyReveal(new Bbs2023Cryptosuite(), reveal, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey)).Verified.Should().BeTrue();
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_ADisposedBaseDocument_IsAProofGenerationException()
+    {
+        // As at every create entry point (PR #62 review: DeriveProof let the raw ObjectDisposedException out).
+        var (sk, hmacKey) = KeyMaterial();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        JsonElement disposed;
+        using (var source = JsonDocument.Parse(secured.GetRawText()))
+        {
+            disposed = source.RootElement;
+        }
+
+        FluentActions.Invoking(() => new Bbs2023Cryptosuite().DeriveProof(disposed, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
+            .Should().Throw<ProofGenerationException>().WithMessage("The secured base document has been disposed.")
+            .WithInnerException<ObjectDisposedException>();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnOptionsDictionaryThatRewritesTheDocumentAndTheHmacKey_CannotChangeEither(bool keyStore)
+    {
+        // Reading the options' dictionary runs the caller's code, so the document and the HMAC key are copied before
+        // it (PR #62 review: no bbs-2023 row had a dictionary that rewrote them).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var note = new KeyValuePair<string, JsonElement>("https://example.org/vocab#note", Parse("\"x\""));
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+            WindDoc(), BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = note.Value } },
+            sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        var flipped = (byte)~hmacKey[0];
+        var options = BaseOptions() with
+        {
+            AdditionalProperties = new ScriptedDictionary([note], count: 1, onRead: () =>
+            {
+                buffer[at] = (byte)'2';
+                hmacKey[0] = flipped;
+            }),
+        };
+
+        var proof = keyStore
+            ? await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                document.RootElement, options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory())
+            : await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, options, sk, hmacKey, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+    }
+
+    [BbsFact]
+    public async Task APrivateKeyWhoseMemoryRunsCallerCode_CannotChangeTheDocument()
+    {
+        // Reading a key behind a MemoryManager<byte> runs its GetSpan, the caller's code, so the raw-key overload
+        // copies the document first, as every entry point does (PR #62 review: it read the key first).
+        var (sk, hmacKey) = KeyMaterial();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        using var key = new HookedMemory(sk, () => buffer[at] = (byte)'2');
+
+        var proof = await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, BaseOptions(), key.Lent, hmacKey, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnHmacKeyWhoseMemoryRunsCallerCode_CannotChangeTheDocument(bool keyStore)
+    {
+        // Reading the HMAC key can run the caller's GetSpan, so the document is copied before it (PR #62 review: the
+        // order was claimed, not tested). The raw-key overload copies the document even earlier, so its row is a guard.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        using var hmac = new HookedMemory(hmacKey, () => buffer[at] = (byte)'2');
+
+        var proof = keyStore
+            ? await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                document.RootElement, BaseOptions(), store, Alias, info.InstanceId!.Value, hmac.Lent, WindMandatory())
+            : await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, BaseOptions(), sk, hmac.Lent, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_AHeaderWhoseMemoryRunsCallerCode_CannotChangeTheBaseDocument()
+    {
+        // Reading the presentation header can run the caller's GetSpan, so the base document is copied before it
+        // (PR #62 review: the order was claimed, not tested).
+        var (sk, hmacKey) = KeyMaterial();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var expected = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        var buffer = Encoding.UTF8.GetBytes(secured.GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        using var header = new HookedMemory(Convert.FromHexString("113377aa"), () => buffer[at] = (byte)'2');
+
+        var reveal = new Bbs2023Cryptosuite().DeriveProof(document.RootElement, ["/credentialSubject/sails/0"], header.Lent);
+
+        JsonElement.DeepEquals(WithoutProof(reveal), WithoutProof(expected)).Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [InlineData("raw key")]
+    [InlineData("key store")]
+    [InlineData("derive")]
+    public async Task ADocumentCaughtMidDispose_IsAProofGenerationException(string entryPoint)
+    {
+        // A read racing Dispose can find the metadata gone before the document reports itself disposed, and throws
+        // ArgumentOutOfRangeException, which escaped raw (PR #62 review).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var json = entryPoint == "derive"
+            ? Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory())).GetRawText()
+            : WindDoc().GetRawText();
+        var memory = new CallerMemory(json);
+        CallerMemory.MidDispose(memory.Document);
+
+        Func<Task> act = entryPoint == "derive"
+            ? () => Task.FromResult(new Bbs2023Cryptosuite().DeriveProof(
+                memory.Document.RootElement, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
+            : Issue(entryPoint == "key store", BaseOptions(), store, info, document: memory.Document.RootElement);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(entryPoint == "derive"
+                ? "The secured base document has been disposed."
+                : "The document to secure has been disposed."))
+            .WithInnerException<ObjectDisposedException>();
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsTheory]
+    [InlineData("proofOptions")]
+    [InlineData("mandatoryPointers")]
+    public async Task ANullArgument_IsReportedBeforeTheDocumentOrTheKeyIsRead(string missing)
+    {
+        // The raw-key overload checks its arguments, then copies the document, then reads the key (PR #62 review:
+        // nothing pinned the first step). Here the document is disposed and reading the key throws.
+        var (sk, hmacKey) = KeyMaterial();
+        var memory = new CallerMemory(WindDoc().GetRawText());
+        memory.Document.Dispose();
+        using var key = new HookedMemory(sk, () => throw new InvalidOperationException("the key was read"));
+
+        await FluentActions.Awaiting(() => new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                memory.Document.RootElement,
+                missing == "proofOptions" ? null! : BaseOptions(),
+                key.Lent,
+                hmacKey,
+                missing == "mandatoryPointers" ? null! : WindMandatory()))
+            .Should().ThrowAsync<ArgumentNullException>().WithParameterName(missing);
+    }
+
+    [BbsTheory]
+    [InlineData("document is an array", "The document to secure must be a JSON object.")]
+    [InlineData("HMAC key of 31 bytes", "The bbs-2023 HMAC key must be 32 bytes.")]
+    [InlineData("malformed pointer", "A mandatory pointer is invalid.")]
+    public async Task AKeyOfTheWrongLength_IsReportedAfterTheInputChecks(string kind, string message)
+    {
+        // The key is refused where it was before: after the document, options, HMAC key and pointer checks (PR #62
+        // review: refusing it ahead of them left every test green).
+        var (_, hmacKey) = KeyMaterial();
+        var document = WindDoc();
+        var mandatory = WindMandatory();
+        switch (kind)
+        {
+            case "document is an array": document = Parse("[]"); break;
+            case "HMAC key of 31 bytes": hmacKey = hmacKey[..31]; break;
+            default: mandatory = ["issuer"]; break;
+        }
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, BaseOptions(), new byte[31], hmacKey, mandatory);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(message);
+    }
+
+    // A reveal and its derived proof, with an extension member signed into the base proof, and the key to verify them.
+    private static async Task<(JsonElement Reveal, DataIntegrityProof Proof, KeyValuePair<string, JsonElement> Note, PublicKeyMaterial Key)> RevealAsync()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var note = new KeyValuePair<string, JsonElement>("https://example.org/vocab#note", Parse("\"x\""));
+        var options = BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = note.Value } };
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory()));
+        var reveal = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        var proof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
+        proof.AdditionalProperties.Should().ContainKey(note.Key, "the derived proof carries the base proof's extension members");
+        return (WithoutProof(reveal), proof, note, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey));
+    }
+
+    [BbsTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VerifyProof_IsAboutTheRevealAsGiven_WhateverReadingTheProofDoes(bool tampered)
+    {
+        // Reading the proof's extension dictionary runs the caller's code, so the suite copies the reveal first: a proof
+        // that rewrites the caller's buffer as it is read can neither make a tampered reveal verify nor a genuine one
+        // fail (PR #62 review: a suite's own VerifyProof read the caller's document as given).
+        var (reveal, derived, note, key) = await RevealAsync();
+        var buffer = Encoding.UTF8.GetBytes(reveal.GetRawText());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        at.Should().BeGreaterThan(7, "the reveal discloses the sail number");
+        if (tampered)
+        {
+            buffer[at] = (byte)'2';
+        }
+
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var proof = derived with
+        {
+            AdditionalProperties = new ScriptedDictionary([note], count: 1, onRead: () => buffer[at] = (byte)(tampered ? '1' : '2')),
+        };
+
+        new Bbs2023Cryptosuite().VerifyProof(document.RootElement, proof, key).Verified.Should().Be(!tampered);
+    }
+
+    [BbsFact]
+    public async Task VerifyProof_TheResultHoldsTheProofAsVerified()
+    {
+        // The result carries the copy that was verified, so changing the caller's proof afterwards changes nothing in
+        // it (PR #62 review).
+        var (reveal, proof, note, key) = await RevealAsync();
+        var mine = proof with { AdditionalProperties = new Dictionary<string, JsonElement>(proof.AdditionalProperties!) };
+
+        var result = new Bbs2023Cryptosuite().VerifyProof(reveal, mine, key);
+        mine.Type = "ChangedType";
+        mine.AdditionalProperties![note.Key] = Parse("\"changed\"");
+
+        result.Verified.Should().BeTrue();
+        var verified = result.Proof!;
+        verified.Should().NotBeSameAs(mine);
+        verified.Type.Should().Be(DataIntegrityProof.DataIntegrityProofType);
+        verified.AdditionalProperties![note.Key].GetString().Should().Be("x");
+    }
+
+    [BbsFact]
+    public async Task VerifyProof_ATamperedRevealACanonicalizerRepairs_DoesNotVerify()
+    {
+        // A canonicalizer of the caller's runs while the reveal is verified, and is handed the suite's copy, so
+        // rewriting the caller's buffer cannot make a tampered reveal verify (PR #62 review).
+        var (reveal, proof, _, key) = await RevealAsync();
+        var buffer = Encoding.UTF8.GetBytes(reveal.GetRawText());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        buffer[at] = (byte)'2';
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+
+        new Bbs2023Cryptosuite(new HookedCanonicalizer(() => buffer[at] = (byte)'1'))
+            .VerifyProof(document.RootElement, proof, key).Verified.Should().BeFalse();
+
+        // Control: the repaired reveal verifies.
+        new Bbs2023Cryptosuite().VerifyProof(document.RootElement, proof, key).Verified.Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VerifyProof_IsAboutTheProofAsGiven_WhateverTheCallersCanonicalizerDoes(bool tampered)
+    {
+        // bbs-2023 canonicalizes the reveal before it reads the proof configuration, so a canonicalizer of the
+        // caller's could rewrite a proof value the suite had not read yet. The proof is copied before it runs (PR #62
+        // review: a tampered value repaired that way verified).
+        var (reveal, derived, note, key) = await RevealAsync();
+        var buffer = Encoding.UTF8.GetBytes("\"x\"");
+        if (tampered)
+        {
+            buffer[1] = (byte)'y';
+        }
+
+        using var value = JsonDocument.Parse(buffer.AsMemory());
+        var proof = derived with { AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = value.RootElement } };
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(() => buffer[1] = (byte)(tampered ? 'x' : 'y')));
+
+        suite.VerifyProof(reveal, proof, key).Verified.Should().Be(!tampered);
+    }
+
+    [BbsTheory]
+    [InlineData("disposed before the call")]
+    [InlineData("disposed while it is copied")]
+    [InlineData("caught mid-dispose before the call")]
+    [InlineData("caught mid-dispose while it is copied")]
+    [InlineData("proof @context disposed while it is copied")]
+    [InlineData("proof extension value disposed while it is copied")]
+    public async Task VerifyProof_ADisposedInput_IsAFailedResult(string how)
+    {
+        // Verification never throws for its input: a reveal or proof value disposed before or while the suite copies it
+        // is a failed result, never one about whichever document rented its buffers (PR #62 review).
+        var (reveal, proof, note, key) = await RevealAsync();
+        var onTheProof = how.StartsWith("proof", StringComparison.Ordinal);
+        var memory = new CallerMemory(!onTheProof
+            ? reveal.GetRawText()
+            : how.Contains("@context", StringComparison.Ordinal) ? "\"https://www.w3.org/ns/credentials/v2\"" : "\"x\"");
+        var document = onTheProof ? reveal : memory.Document.RootElement;
+        proof = how switch
+        {
+            "proof @context disposed while it is copied" => proof with { Context = memory.Document.RootElement },
+            "proof extension value disposed while it is copied" => proof with
+            {
+                AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = memory.Document.RootElement },
+            },
+            _ => proof,
+        };
+        switch (how)
+        {
+            case "disposed before the call": memory.Document.Dispose(); break;
+            case "caught mid-dispose before the call": CallerMemory.MidDispose(memory.Document); break;
+            case "caught mid-dispose while it is copied": memory.OnNextRead(CallerMemory.MidDispose); break;
+            default: memory.DisposeOnNextRead(); break;
+        }
+
+        var result = new Bbs2023Cryptosuite().VerifyProof(document, proof, key);
+
+        result.Verified.Should().BeFalse();
+        // A disposed proof value is the options copy's fault, which it reports as a ProofGenerationException.
+        result.Problems.Should().ContainSingle().Which.Message.Should().Be(onTheProof
+            ? "Verification failed unexpectedly (ProofGenerationException)."
+            : "Verification failed unexpectedly (ObjectDisposedException).");
+    }
+
+    // Caller memory whose GetSpan runs the caller's code first. Lent does not call GetSpan, as Memory does.
+    private sealed class HookedMemory(byte[] bytes, Action onRead) : System.Buffers.MemoryManager<byte>
+    {
+        public Memory<byte> Lent => CreateMemory(bytes.Length);
+
+        public override Span<byte> GetSpan()
+        {
+            onRead();
+            return bytes;
+        }
+
+        public override System.Buffers.MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+
+        public override void Unpin()
+        {
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+        }
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADocumentDisposedWhileItIsCopied_IsAProofGenerationException_BeforeTheStoreIsCalled(bool keyStore)
+    {
+        // A dispose racing the copy could leave a copy of another document's bytes, which would be signed. The source
+        // is read again after the copy (PR #62 review).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var memory = new CallerMemory(WindDoc().GetRawText());
+        memory.DisposeOnNextRead();
+
+        var thrown = await Issue(keyStore, BaseOptions(), store, info, document: memory.Document.RootElement)
+            .Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure has been disposed.");
+
+        thrown.WithInnerException<ObjectDisposedException>();
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_ABaseDocumentDisposedWhileItIsCopied_IsAProofGenerationException()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var memory = new CallerMemory(secured.GetRawText());
+        memory.DisposeOnNextRead();
+
+        FluentActions.Invoking(() => new Bbs2023Cryptosuite().DeriveProof(
+                memory.Document.RootElement, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
+            .Should().Throw<ProofGenerationException>().WithMessage("The secured base document has been disposed.")
+            .WithInnerException<ObjectDisposedException>();
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public void TheRawKeyCopy_IsPinnedAndClearedAfterUse()
+    {
+        // The raw-key overload signs and derives the public key from one copy of the key (PR #62 follow-up d1). It
+        // is on the pinned object heap, so compaction never leaves a stale copy behind, and it is cleared once used
+        // (PR #62 review: neither was pinned by a test). An array on the pinned object heap reports the oldest
+        // generation; a fresh array on the ordinary heap, the youngest.
+        var key = Enumerable.Range(1, Bbs2023Cryptosuite.PrivateKeyLength).Select(i => (byte)i).ToArray();
+        byte[]? lent = null;
+
+        var generation = Bbs2023Cryptosuite.WithKeyCopy(key, copy =>
+        {
+            lent = copy;
+            copy.Should().Equal(key);
+            return GC.GetGeneration(copy);
+        });
+
+        generation.Should().Be(GC.MaxGeneration);
+        lent.Should().HaveCount(key.Length).And.OnlyContain(b => b == 0);
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public void TheRawKeyCopy_IsClearedWhenItsUseThrows()
+    {
+        byte[]? lent = null;
+
+        FluentActions.Invoking(() => Bbs2023Cryptosuite.WithKeyCopy<int>(new byte[] { 1, 2, 3 }, copy =>
+        {
+            lent = copy;
+            throw new InvalidOperationException("the use's own");
+        })).Should().Throw<InvalidOperationException>().WithMessage("the use's own");
+
+        lent.Should().Equal(0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public void AnOversizedKey_IsCopiedOnlyAsFarAsItsLengthIsRefused()
+    {
+        // A key one byte longer than any is refused where a longer one was, so a caller's whole buffer is never
+        // allocated and pinned (PR #62 review: a 256 MiB "key" pinned 256 MiB before the same refusal).
+        var lengths = new[] { 0, 31, 32, 33, 34, 1 << 20 }
+            .Select(length => Bbs2023Cryptosuite.WithKeyCopy(new byte[length], copy => copy.Length));
+
+        lengths.Should().Equal(0, 31, 32, 33, 33, 33);
+    }
+
+    // A canonicalizer of the caller's: the RDFC one, after running during on every call.
+    private sealed class HookedCanonicalizer(Action during) : IRdfCanonicalizer
+    {
+        private readonly RdfcDocumentCanonicalizer _inner = new();
+
+        public byte[] CanonicalizeJsonLd(JsonElement document, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256)
+        {
+            during();
+            return _inner.CanonicalizeJsonLd(document, hashAlgorithm);
+        }
+
+        public string CanonicalizeNQuads(string nQuads, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256)
+        {
+            during();
+            return _inner.CanonicalizeNQuads(nQuads, hashAlgorithm);
+        }
+
+        public IReadOnlyDictionary<string, string> CanonicalizeNQuadsToMap(string nQuads, RdfCanonicalizationHashAlgorithm hashAlgorithm = RdfCanonicalizationHashAlgorithm.Sha256)
+        {
+            during();
+            return _inner.CanonicalizeNQuadsToMap(nQuads, hashAlgorithm);
         }
     }
 

@@ -41,8 +41,12 @@ public interface ICryptosuite
     /// transform → hash → serialize pipeline. For proof chains the pipeline passes a
     /// document that already embeds the matching previous proofs.
     /// </summary>
-    /// <param name="unsecuredDocument">The JSON object to secure (without the proof being created).</param>
-    /// <param name="proofOptions">The proof options (no <c>proofValue</c>).</param>
+    /// <param name="unsecuredDocument">The JSON object to secure (without the proof being created). The suites this
+    /// library ships copy it before reading it, so the proof is over the document as given, even if the memory behind
+    /// it changes or its document is disposed while the signer runs (PR #62).</param>
+    /// <param name="proofOptions">The proof options (no <c>proofValue</c>). The suites this library ships copy
+    /// them before reading them, so the returned proof shares no mutable state with them: changing them while the
+    /// signer runs, or changing or disposing them afterwards, leaves the proof as it was asked for (issue #61).</param>
     /// <param name="signer">The NetCrypto signer; a non-exporting key-store-backed signer suffices.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
     /// <returns>The completed proof including <c>proofValue</c>.</returns>
@@ -58,8 +62,12 @@ public interface ICryptosuite
     /// the supplied public key. Invalid proofs produce failed results — never exceptions.
     /// </summary>
     /// <param name="unsecuredDocument">The secured document with its <c>proof</c> member removed
-    /// (for chains: with the matching previous proofs re-embedded by the pipeline).</param>
-    /// <param name="proof">The proof under verification.</param>
+    /// (for chains: with the matching previous proofs re-embedded by the pipeline). The suites this library ships check
+    /// its kind, then copy it and <paramref name="proof"/> before reading either further, so the result is about the
+    /// document as given even if its document is disposed or its memory changes during the call; a document disposed
+    /// before or during the copy is a failed result (PR #62).</param>
+    /// <param name="proof">The proof under verification. The suites this library ships verify a copy, which a result
+    /// reached after the copy carries.</param>
     /// <param name="publicKey">The verification key material.</param>
     ProofVerificationResult VerifyProof(
         JsonElement unsecuredDocument,

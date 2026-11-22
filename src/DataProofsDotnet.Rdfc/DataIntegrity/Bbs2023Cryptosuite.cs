@@ -92,6 +92,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private const string PartOfAValue = "A JSON pointer selects part of a value, not a whole statement of the document.";
     private const string PointerMismatch = "A JSON pointer does not match the document.";
 
+    private const string InvalidPrivateKey = "The bbs-2023 private key is not a valid BLS12-381-G2 key.";
+
+    // A BLS12-381 secret scalar.
+    internal const int PrivateKeyLength = 32;
+
     private static readonly DefaultKeyGenerator KeyGenerator = new();
 
     private readonly IRdfCanonicalizer _canonicalizer;
@@ -149,7 +154,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// <remarks>
     /// This overload takes the private key as bytes. An issuer whose key must stay in a key store
     /// uses the <see cref="CreateBaseProofAsync(JsonElement, DataIntegrityProof, ICapableKeyStore, string, KeyInstanceId, ReadOnlyMemory{byte}, IReadOnlyList{string}, CancellationToken)"/> overload, which produces the same <c>proofValue</c> for the
-    /// same key and inputs (issue #44).
+    /// same key and inputs (issue #44). The key is read once, into a pinned copy that is cleared after use, and the
+    /// public key the proof carries and the signature both come from that copy.
     /// </remarks>
     /// <param name="unsecuredDocument">The JSON-LD object to secure.</param>
     /// <param name="proofOptions">The proof options (type <c>DataIntegrityProof</c>,
@@ -172,14 +178,48 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         IReadOnlyList<string> mandatoryPointers,
         CancellationToken cancellationToken = default)
     {
-        var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
-        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(proofOptions);
+        ArgumentNullException.ThrowIfNull(mandatoryPointers);
 
-        var publicKey = PublicKeyOf(bbsPrivateKey.Span);
-        var input = PrepareBaseProof(request);
-        var bbsSignature = _bbs.Sign(bbsPrivateKey.Span, input.Messages, input.BbsHeader);
+        // The document is copied first, as at every entry point: reading the key can run code of the caller's (the
+        // GetSpan of a MemoryManager<byte> behind it), which must not change the document before it is copied (PR #62
+        // review). The key is then read once, before the options' dictionary and the pointer collection run. A
+        // canonicalizer of the caller's runs between deriving the public key and signing, so both use this copy;
+        // otherwise the proof could pack one key's public key with another key's signature (PR #62 follow-up d1).
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        return WithKeyCopy(bbsPrivateKey.Span, privateKey =>
+        {
+            var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
+            cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(PackBaseProof(request, input, bbsSignature, publicKey));
+            var publicKey = PublicKeyOf(privateKey, bbsPrivateKey.Length);
+            var input = PrepareBaseProof(request);
+            var bbsSignature = _bbs.Sign(privateKey, input.Messages, input.BbsHeader);
+
+            return Task.FromResult(PackBaseProof(request, input, bbsSignature, publicKey));
+        });
+    }
+
+    /// <summary>
+    /// Runs <paramref name="use"/> over one copy of the caller's private key, which the collector never moves and
+    /// which is cleared when <paramref name="use"/> returns or throws (PR #62 review). A key of another length than
+    /// <see cref="PrivateKeyLength"/> is refused by the length the caller gave (<see cref="PublicKeyOf"/>), so at most one
+    /// byte more is copied: a caller's oversized buffer is never copied or pinned whole, and a cut-down copy is never a
+    /// key's length. The copy is cleared as soon as <paramref name="use"/> returns, so <paramref name="use"/> must be
+    /// done with the key by then: one that awaits would carry on with a cleared key.
+    /// </summary>
+    internal static T WithKeyCopy<T>(ReadOnlySpan<byte> privateKey, Func<byte[], T> use)
+    {
+        var copy = GC.AllocateUninitializedArray<byte>(Math.Min(privateKey.Length, PrivateKeyLength + 1), pinned: true);
+        try
+        {
+            privateKey[..copy.Length].CopyTo(copy);
+            return use(copy);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(copy);
+        }
     }
 
     /// <summary>
@@ -343,12 +383,18 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
 
-        proofOptions = CopyOptions(proofOptions);
+        // A canonicalizer of the caller's runs while the base proof is prepared, and the key-store overload then awaits
+        // the store, so every input is copied first, once (PR #62). The document comes first: reading any other input
+        // can run code of the caller's (the GetSpan of a MemoryManager<byte> behind the HMAC key, the options'
+        // dictionary, the pointer collection), and that code must not change the document before it is copied.
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        var hmac = hmacKey.ToArray();
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
         ValidateProofOptions(proofOptions);
 
         // The base proof parser requires this length, as the reference does, so a proof issued with
         // another could never be derived from.
-        if (hmacKey.Length != Bbs2023ProofValue.HmacKeyLength)
+        if (hmac.Length != Bbs2023ProofValue.HmacKeyLength)
         {
             throw new ProofGenerationException($"The bbs-2023 HMAC key must be {Bbs2023ProofValue.HmacKeyLength} bytes.");
         }
@@ -360,39 +406,12 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         // Before skolemization and the @context lookup, which read member names (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
-        var pointers = mandatoryPointers.ToArray();
+        // Copied by enumeration, so no array the caller's collection was handed is grouped, checked and packed while
+        // the store or a canonicalizer of the caller's runs, and its Count is not trusted (PR #62 review).
+        var pointers = JsonInputCheck.OwnedArray(mandatoryPointers);
         RequirePointers(pointers, "A mandatory pointer is invalid.");
 
-        return new BaseProofRequest(unsecuredDocument, proofOptions, hmacKey.ToArray(), pointers);
-    }
-
-    // A copy of the options that shares nothing with the caller's object, so the returned proof carries
-    // the options that were checked and signed and depends on nothing the caller still holds: Type and
-    // AdditionalProperties are settable, PreviousProofReference.Values exposes its array, and JSON values
-    // live in the caller's documents, which it may dispose (adversarial review; PR #60 review). Strings
-    // are immutable; an undefined JsonElement is kept as it is, for the input check to report.
-    private static DataIntegrityProof CopyOptions(DataIntegrityProof options)
-    {
-        try
-        {
-            return options with
-            {
-                PreviousProof = options.PreviousProof is not { } previous ? null
-                    : previous.IsArrayForm ? PreviousProofReference.FromValues(previous.Values)
-                    : PreviousProofReference.FromSingle(previous.Values[0]),
-                Context = options.Context is { } context ? Own(context) : null,
-                AdditionalProperties = options.AdditionalProperties?.ToDictionary(
-                    member => member.Key, member => Own(member.Value), StringComparer.Ordinal),
-            };
-        }
-        catch (ArgumentException ex)
-        {
-            // A previousProof id emptied after construction, or a dictionary that repeats a name.
-            throw new ProofGenerationException("The proof options are invalid: " + ex.Message, ex);
-        }
-
-        static JsonElement Own(JsonElement element)
-            => element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+        return new BaseProofRequest(unsecuredDocument, proofOptions, hmac, pointers);
     }
 
     private BaseProofInput PrepareBaseProof(BaseProofRequest request)
@@ -457,6 +476,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// carrying a base proof, discloses the mandatory group plus the values addressed by
     /// <paramref name="selectivePointers"/>, replacing the base proof with a derived proof.
     /// </summary>
+    /// <remarks>
+    /// The base document, the selective pointers and the presentation header are copied before a canonicalizer of the
+    /// caller's runs, and each is read once, so code that changes them meanwhile does not change the derived proof.
+    /// </remarks>
     /// <param name="securedBaseDocument">The document secured with a <c>bbs-2023</c> base proof.</param>
     /// <param name="selectivePointers">RFC 6901 JSON Pointers selecting additional values to reveal.</param>
     /// <param name="presentationHeader">The holder's presentation header (binds the derived proof).</param>
@@ -469,6 +492,17 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ReadOnlyMemory<byte> presentationHeader)
     {
         ArgumentNullException.ThrowIfNull(selectivePointers);
+
+        // A canonicalizer of the caller's runs while the proof is derived, and the selective pointers and the header
+        // are each used more than once. So every input is copied once, before it is read. The document comes first:
+        // reading the header can run code of the caller's (the GetSpan of a MemoryManager<byte> behind it), and so
+        // does enumerating the pointers, and that code must not change the document before it is copied. The pointers
+        // are copied by enumeration, so their Count is not trusted and their CopyTo is not handed an array (PR #62
+        // follow-ups c and d2).
+        securedBaseDocument = JsonInputCheck.Owned(securedBaseDocument, "The secured base document");
+        var header = presentationHeader.ToArray();
+        var pointers = JsonInputCheck.OwnedArray(selectivePointers);
+
         if (securedBaseDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The secured base document must be a JSON object.");
@@ -495,12 +529,12 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         // The mandatory pointers come from the issuer's document, the selective ones from the
         // caller; both are parsed here so a malformed one fails as the documented exception.
         RequirePointers(components.MandatoryPointers, "The base proof carries an invalid mandatory pointer.");
-        RequirePointers(selectivePointers, "A selective pointer is invalid.");
+        RequirePointers(pointers, "A selective pointer is invalid.");
 
         DisclosureData disclosure;
         try
         {
-            disclosure = CreateDisclosureData(unsecured, baseProof, components, selectivePointers, presentationHeader.Span);
+            disclosure = CreateDisclosureData(unsecured, baseProof, components, pointers, header);
         }
         catch (CryptographicException ex) when (ex is not BbsUnavailableException)
         {
@@ -514,7 +548,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         var revealDocument = (JsonObject)disclosure.RevealDocument;
         var derivedProofValue = Bbs2023ProofValue.SerializeDerivedProof(
             disclosure.BbsProof, disclosure.LabelMap, disclosure.MandatoryIndexes,
-            disclosure.SelectiveIndexes, presentationHeader.Span);
+            disclosure.SelectiveIndexes, header);
 
         // Add Derived Proof copies the proof and replaces only proofValue. A document can be
         // re-compacted without changing its RDF; its current context need not interpret the
@@ -529,7 +563,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// Verifies a <c>bbs-2023</c> <b>derived</b> proof (verifier side, spec §3.4.8). The
     /// pipeline calls this for any <c>bbs-2023</c> proof; a base proof presented for
     /// verification is rejected (only derived proofs are verifiable). Invalid proofs produce
-    /// failed results, never exceptions.
+    /// failed results, never exceptions. The reveal document, then the proof, are copied before either is read, so a
+    /// canonicalizer of the caller's, or a document disposed during the call, cannot change what is verified; a result
+    /// reached after the copy carries the proof copy (PR #62).
     /// </summary>
     public ProofVerificationResult VerifyProof(
         JsonElement unsecuredDocument,
@@ -541,11 +577,19 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
         try
         {
-            if (unsecuredDocument.ValueKind != JsonValueKind.Object)
+            if (JsonInputCheck.KindOf(unsecuredDocument) != JsonValueKind.Object)
             {
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofVerificationError, "The reveal document must be a JSON object.", proof);
             }
+
+            // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
+            // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
+            // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
+            // copies find is a failed result, below, as every other fault is; a result reached after them carries the
+            // proof copy.
+            unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
+            proof = JsonInputCheck.OwnedCopy(proof);
 
             if (!string.Equals(proof.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal)
                 || !string.Equals(proof.Cryptosuite, Name, StringComparison.Ordinal))
@@ -1088,16 +1132,26 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         return Hash.Sha256(Encoding.UTF8.GetBytes(joined));
     }
 
-    // KeyGenerator reports a wrong length or an invalid scalar as ArgumentException.
-    private static byte[] PublicKeyOf(ReadOnlySpan<byte> privateKey)
+    // A key of the wrong length is refused by the length the caller gave, since the copy holds at most
+    // PrivateKeyLength + 1 bytes of it. KeyGenerator reports an invalid scalar as ArgumentException.
+    private static byte[] PublicKeyOf(ReadOnlySpan<byte> privateKey, int givenLength)
     {
+        if (givenLength != PrivateKeyLength)
+        {
+            throw new ProofGenerationException(InvalidPrivateKey, new ArgumentException(
+                $"A BLS12-381-G2 private key must be {PrivateKeyLength} bytes, but was {givenLength}.", "bbsPrivateKey"));
+        }
+
         try
         {
-            return KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, privateKey).PublicKey;
+            // The key pair keeps its own pinned copy of the private key, which only Dispose clears, and PublicKey
+            // returns a copy, read before the dispose (PR #62 review).
+            using var keyPair = KeyGenerator.FromPrivateKey(KeyType.Bls12381G2, privateKey);
+            return keyPair.PublicKey;
         }
         catch (ArgumentException ex)
         {
-            throw new ProofGenerationException("The bbs-2023 private key is not a valid BLS12-381-G2 key.", ex);
+            throw new ProofGenerationException(InvalidPrivateKey, ex);
         }
     }
 

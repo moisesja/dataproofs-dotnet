@@ -65,8 +65,10 @@ public sealed class DataIntegrityProofPipeline
     /// per the proof-chain rules, and every reference must match the <c>id</c> of an
     /// existing proof.
     /// </summary>
-    /// <param name="document">The JSON object to secure.</param>
-    /// <param name="proofOptions">The proof options naming the cryptosuite; no <c>proofValue</c>.</param>
+    /// <param name="document">The JSON object to secure. Copied before anything reads it, so the secured document is
+    /// built from the document as given (PR #62).</param>
+    /// <param name="proofOptions">The proof options naming the cryptosuite; no <c>proofValue</c>. Copied before
+    /// anything reads them, and the suite receives the copy (issue #61).</param>
     /// <param name="signer">The NetCrypto signer.</param>
     /// <param name="cancellationToken">Cancels the signing operation.</param>
     /// <returns>The secured document carrying the new proof.</returns>
@@ -80,6 +82,14 @@ public sealed class DataIntegrityProofPipeline
     {
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
+
+        // The checks below and the suite read one copy the caller cannot reach, whatever the suite awaits
+        // (issue #61). The suites this library ships copy again, since their own entry points are public.
+        // The secured document is assembled from the document after the suite is awaited, so it is copied
+        // too: a buffer rewritten meanwhile once escaped as a raw InvalidCastException (PR #62 review). It is
+        // copied first, since reading the options' extension dictionary runs code of the caller's.
+        document = JsonInputCheck.Owned(document, "The document to secure");
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
 
         if (document.ValueKind != JsonValueKind.Object)
         {
@@ -181,7 +191,8 @@ public sealed class DataIntegrityProofPipeline
     /// public key — the signature-only raw-key form (FR-7); no controller authorization is
     /// performed because no controller document is available.
     /// </summary>
-    /// <param name="securedDocument">The secured JSON document.</param>
+    /// <param name="securedDocument">The secured JSON document. Copied once its kind is checked, before anything else
+    /// reads it, so every result is about the document as given (PR #62).</param>
     /// <param name="publicKey">The verification key for every proof.</param>
     /// <param name="options">Verifier expectations (purpose, domain, challenge, clock).</param>
     public DocumentVerificationResult Verify(
@@ -208,7 +219,8 @@ public sealed class DataIntegrityProofPipeline
     /// (<see cref="ProofProblemCodes.InvalidVerificationMethod"/> otherwise), and the
     /// controller must control the method.
     /// </summary>
-    /// <param name="securedDocument">The secured JSON document.</param>
+    /// <param name="securedDocument">The secured JSON document. Copied once its kind is checked, before anything else
+    /// reads it, so every result is about the document as given (PR #62).</param>
     /// <param name="resolver">The verification-method resolver.</param>
     /// <param name="options">Verifier expectations (purpose, domain, challenge, clock).</param>
     /// <param name="cancellationToken">Cancels resolution.</param>
@@ -291,10 +303,16 @@ public sealed class DataIntegrityProofPipeline
     {
         options ??= new ProofVerificationOptions();
 
-        if (securedDocument.ValueKind != JsonValueKind.Object)
+        if (JsonInputCheck.KindOf(securedDocument) != JsonValueKind.Object)
         {
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.");
         }
+
+        // Each proof is verified after its resolver is awaited, and the resolver is the caller's code: verify a copy
+        // it cannot rewrite or dispose, so every result is about the document as given (PR #62). A document disposed
+        // while it is copied throws ObjectDisposedException, as one disposed before the call does, rather than
+        // verifying whatever document rented its buffers meanwhile (PR #62 review).
+        securedDocument = JsonInputCheck.CloneUndisposed(securedDocument);
 
         // FR-3: a document whose member names or strings cannot be read, or whose members repeat,
         // fails here as a result — before any proof is parsed or any resolver is called — rather

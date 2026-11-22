@@ -130,6 +130,12 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
+        // The proof is built from this document and these options after the signer is awaited (issue #61), so both
+        // are copied before anything reads them. The document comes first: reading the options' extension dictionary
+        // runs the caller's code, and that code must not change the document before it is copied (PR #62).
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The document to secure must be a JSON object.");
@@ -139,10 +145,13 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         // member names and materialize the document (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
-        if (!IsSupportedKeyType(signer.KeyType))
+        // The signer's KeyType getter is the caller's code too. Read it once, where it was first read, so every step
+        // below sees one key type and the checks above keep their precedence (PR #62 follow-up d3).
+        var keyType = signer.KeyType;
+        if (!IsSupportedKeyType(keyType))
         {
             throw new ProofGenerationException(
-                $"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
+                $"Key type {keyType} is not supported by the {Name} cryptosuite.");
         }
 
         // The legacy family is dispatched by type and names its algorithm by type. Accept
@@ -200,12 +209,20 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
                 + "be bound. Use the RDFC variant or a 2022/2019 Data Integrity suite for proof chains.");
         }
 
+        DataIntegrityProof wireProof;
         byte[] signingInput;
         string? mismatch = null;
         try
         {
+            // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
+            // one); for RDFC the proof options carry the document's @context. Either way the
+            // emitted proof must equal the proofConfig that was used to build the signing input,
+            // so it is fixed here, before the signer is awaited (issue #61 adversarial review).
+            wireProof = _canonicalization == LegacyCanonicalization.Rdfc
+                ? WithDocumentContext(proofConfig, unsecuredDocument)
+                : proofConfig;
             signingInput = _canonicalization == LegacyCanonicalization.Rdfc
-                ? BuildRdfcSigningInput(unsecuredDocument, WithDocumentContext(proofConfig, unsecuredDocument), signer.KeyType, out mismatch)
+                ? BuildRdfcSigningInput(unsecuredDocument, wireProof, keyType, out mismatch)
                 : BuildJcsSigningInput(unsecuredDocument, proofConfig);
         }
         catch (JcsFormatException ex)
@@ -240,15 +257,8 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
         }
 
         var rawSignature = await signer.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
-        var signature = NormalizeSignature(rawSignature, signer.KeyType)
+        var signature = NormalizeSignature(rawSignature, keyType)
             ?? throw new ProofGenerationException("The signer returned a signature in an unrecognized encoding.");
-
-        // For JCS the wire proof carries no @context (zcap nests the proof verbatim, without
-        // one); for RDFC the proof options carry the document's @context. Either way the
-        // emitted proof must equal the proofConfig that was used to build the signing input.
-        var wireProof = _canonicalization == LegacyCanonicalization.Rdfc
-            ? WithDocumentContext(proofConfig, unsecuredDocument)
-            : proofConfig;
 
         return wireProof with
         {
@@ -267,11 +277,19 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
 
         try
         {
-            if (unsecuredDocument.ValueKind != JsonValueKind.Object)
+            if (JsonInputCheck.KindOf(unsecuredDocument) != JsonValueKind.Object)
             {
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.", proof);
             }
+
+            // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
+            // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
+            // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
+            // copies find is a failed result, below, as every other fault is; a result reached after them carries the
+            // proof copy.
+            unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
+            proof = JsonInputCheck.OwnedCopy(proof);
 
             // Legacy family: dispatch is by type; cryptosuite MUST be absent on the wire.
             if (!string.Equals(proof.Type, LegacyProofType, StringComparison.Ordinal))

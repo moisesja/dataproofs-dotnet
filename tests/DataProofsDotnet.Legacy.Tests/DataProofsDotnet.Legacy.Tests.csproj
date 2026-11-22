@@ -31,6 +31,7 @@
     <!-- Issue #33 regression matrix, shared with Core.Tests and Rdfc.Tests -->
     <Compile Include="../Shared/HostileJson.cs" Link="Shared/HostileJson.cs" />
     <Compile Include="../Shared/Issue33SuiteCreateTestsBase.cs" Link="Shared/Issue33SuiteCreateTestsBase.cs" />
+    <Compile Include="../Shared/Issue61OptionsCopyTestsBase.cs" Link="Shared/Issue61OptionsCopyTestsBase.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -66,6 +66,12 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(proofOptions);
         ArgumentNullException.ThrowIfNull(signer);
 
+        // The proof is built from this document and these options after the signer is awaited (issue #61), so both
+        // are copied before anything reads them. The document comes first: reading the options' extension dictionary
+        // runs the caller's code, and that code must not change the document before it is copied (PR #62).
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
+
         if (unsecuredDocument.ValueKind != JsonValueKind.Object)
         {
             throw new ProofGenerationException("The document to secure must be a JSON object.");
@@ -75,9 +81,12 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         // would otherwise resolve duplicates and invalid text silently (issue #33).
         unsecuredDocument = JsonInputCheck.RequireValid(unsecuredDocument, "The document to secure");
 
-        if (!IsSupportedKeyType(signer.KeyType))
+        // The signer's KeyType getter is the caller's code too. Read it once, where it was first read, so every step
+        // below sees one key type and the checks above keep their precedence (PR #62 follow-up d3).
+        var keyType = signer.KeyType;
+        if (!IsSupportedKeyType(keyType))
         {
-            throw new ProofGenerationException($"Key type {signer.KeyType} is not supported by the {Name} cryptosuite.");
+            throw new ProofGenerationException($"Key type {keyType} is not supported by the {Name} cryptosuite.");
         }
 
         if (!string.Equals(proofOptions.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal))
@@ -124,7 +133,7 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         byte[] canonicalDocument;
         try
         {
-            var hash = CanonicalizationHash(signer.KeyType);
+            var hash = CanonicalizationHash(keyType);
             canonicalProofConfig = _canonicalizer.CanonicalizeJsonLd(proofConfigElement, hash);
             canonicalDocument = _canonicalizer.CanonicalizeJsonLd(unsecuredDocument, hash);
         }
@@ -145,10 +154,10 @@ internal abstract class RdfcCryptosuite : ICryptosuite
             throw new ProofGenerationException(mismatch);
         }
 
-        var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, signer.KeyType);
+        var hashData = ConcatenateHashes(canonicalProofConfig, canonicalDocument, keyType);
 
         var rawSignature = await signer.SignAsync(hashData, cancellationToken).ConfigureAwait(false);
-        var signature = NormalizeSignature(rawSignature, signer.KeyType)
+        var signature = NormalizeSignature(rawSignature, keyType)
             ?? throw new ProofGenerationException("The signer returned a signature in an unrecognized encoding.");
 
         return proofConfig with
@@ -168,11 +177,19 @@ internal abstract class RdfcCryptosuite : ICryptosuite
 
         try
         {
-            if (unsecuredDocument.ValueKind != JsonValueKind.Object)
+            if (JsonInputCheck.KindOf(unsecuredDocument) != JsonValueKind.Object)
             {
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.", proof);
             }
+
+            // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
+            // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
+            // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
+            // copies find is a failed result, below, as every other fault is; a result reached after them carries the
+            // proof copy.
+            unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
+            proof = JsonInputCheck.OwnedCopy(proof);
 
             if (!string.Equals(proof.Type, DataIntegrityProof.DataIntegrityProofType, StringComparison.Ordinal)
                 || !string.Equals(proof.Cryptosuite, Name, StringComparison.Ordinal))

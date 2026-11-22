@@ -61,6 +61,9 @@ internal static class JsonInputCheck
 
     private static readonly JavaScriptEncoder Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 
+    private const string OptionsValueDisposed = "The proof options hold a JSON value whose document has been disposed.";
+    private const string DisposedWhileRead = "The JSON document was disposed while it was read.";
+
     /// <summary>
     /// Returns why <paramref name="element"/> cannot be processed, as a predicate phrase for a
     /// message ("has a duplicate member name"), or <c>null</c> when it can. The phrase never
@@ -95,6 +98,163 @@ internal static class JsonInputCheck
         }
 
         return lenient ? StrictCopy(element) : element;
+    }
+
+    /// <summary>
+    /// A copy of the caller's proof options that shares no mutable state with the caller's object, taken before
+    /// anything reads them (issue #61). A suite awaits its signer, and the proof it returns is built from
+    /// these options, so the caller must not be able to reach them: <see cref="DataIntegrityProof.Type"/>
+    /// and <see cref="DataIntegrityProof.AdditionalProperties"/> are settable, and the options' JSON values
+    /// live in the caller's documents, which it may change or dispose. The record copy covers the scalar
+    /// members, the extension dictionary is rebuilt with ordinal names, and <c>@context</c> and every extension
+    /// value are cloned (a clone of an element whose document cannot be disposed is that element, whose bytes safe
+    /// code cannot change). Strings and <see cref="PreviousProofReference"/> are shared: a reference keeps ids that no
+    /// code of the caller's ever held (PR #62 review). An undefined element is kept as it is, for
+    /// <see cref="SerializeChecked"/> to report.
+    /// </summary>
+    /// <remarks>
+    /// The extension members are copied as enumeration yields them, as serialization reads them, never sized
+    /// from the caller's <c>Count</c>. The dictionary is the caller's code, as the signer is, so what it throws
+    /// while it is enumerated propagates unchanged; only faults in what it yields are reported here. The messages
+    /// never quote a member name (FR-23).
+    /// </remarks>
+    /// <exception cref="ProofGenerationException">An extension member has a null name, or a name that repeats
+    /// under ordinal comparison, or a JSON value of the options belongs to a document that has been disposed.</exception>
+    public static DataIntegrityProof OwnedCopy(DataIntegrityProof options)
+    {
+        return options with
+        {
+            Context = options.Context is { } context ? Own(context, OptionsValueDisposed) : null,
+            AdditionalProperties = options.AdditionalProperties is { } members ? OwnMembers(members) : null,
+        };
+
+        static Dictionary<string, JsonElement> OwnMembers(IDictionary<string, JsonElement> members)
+        {
+            var copy = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var (name, value) in members)
+            {
+                if (name is null)
+                {
+                    throw new ProofGenerationException("The proof options have an extension member with a null name.");
+                }
+
+                // A dictionary whose own comparer, or own enumeration, lets a name repeat.
+                if (!copy.TryAdd(name, Own(value, OptionsValueDisposed)))
+                {
+                    throw new ProofGenerationException("The proof options repeat an extension member name.");
+                }
+            }
+
+            return copy;
+        }
+    }
+
+    /// <summary>
+    /// A copy of JSON the caller passed in, taken before anything but a kind check reads it, that no code of the
+    /// caller's can change or dispose (PR #62). Caller code runs while an entry point works: a signer or key store it
+    /// awaits, a canonicalizer, the options' extension dictionary, and in the pipeline the suite, after which the
+    /// pipeline reads the document again. <c>JsonDocument.Parse</c> over the caller's memory keeps reading that
+    /// memory, and the caller may dispose the document. A clone of an element whose document cannot be disposed is that element, whose bytes
+    /// safe code cannot change. An undefined element is returned as it is, for the entry point's kind check to report.
+    /// The copy is taken from the memory as it is when this runs: a document whose memory changed after it was parsed
+    /// breaks <c>JsonDocument</c>'s own contract, and its copy is no better than the original.
+    /// </summary>
+    /// <param name="element">The caller's JSON.</param>
+    /// <param name="what">What the JSON is, as a sentence subject ("The document to secure").</param>
+    /// <returns>The copy to carry on with.</returns>
+    /// <exception cref="ProofGenerationException">The element belongs to a document that has been disposed.</exception>
+    public static JsonElement Owned(JsonElement element, string what) => Own(element, $"{what} has been disposed.");
+
+    /// <summary>
+    /// A copy of the caller's strings, taken by enumeration, one read (PR #62 review). It is never sized from the
+    /// caller's <c>Count</c>, which can lie, and it never hands the caller's <c>CopyTo</c> an array, which the caller
+    /// could keep and change later. <c>ToArray</c> and the <c>List</c> constructor do both for a collection that
+    /// implements <c>ICollection&lt;T&gt;</c>. What the caller's enumerator throws propagates unchanged.
+    /// </summary>
+    public static string[] OwnedArray(IEnumerable<string> values)
+    {
+        var copy = new List<string>();
+        foreach (var value in values)
+        {
+            copy.Add(value);
+        }
+
+        return copy.ToArray();
+    }
+
+    /// <summary>
+    /// The kind of <paramref name="element"/>, with a document disposed on another thread meanwhile reported as such
+    /// (PR #62 review). A read that races <c>Dispose</c> can find the document's metadata gone before the document
+    /// reports itself disposed, and throws <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The element's document has been disposed.</exception>
+    public static JsonValueKind KindOf(JsonElement element)
+    {
+        try
+        {
+            return element.ValueKind;
+        }
+        catch (ArgumentOutOfRangeException ex) when (IsDisposed(element))
+        {
+            throw new ObjectDisposedException(DisposedWhileRead, ex);
+        }
+    }
+
+    /// <summary>
+    /// A clone of <paramref name="element"/> taken while its document was intact (PR #62 review). A document disposed
+    /// on another thread while it is copied returns its pooled buffers, and the next parse in the process rents them,
+    /// so the clone can hold another document's bytes and still be well formed. The source is read again after the
+    /// copy: <c>JsonDocument.Dispose</c> drops its reference to each buffer before it returns that buffer to the pool,
+    /// and reading the kind reads both references, so a source still readable after the copy was intact while it was
+    /// copied. That order is the runtime's source (release/10.0), not a documented contract: measured, not proven.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The document was disposed before or while the element was copied.</exception>
+    public static JsonElement CloneUndisposed(JsonElement element)
+    {
+        JsonElement clone;
+        try
+        {
+            clone = element.Clone();
+        }
+        catch (ArgumentOutOfRangeException ex) when (IsDisposed(element))
+        {
+            throw new ObjectDisposedException(DisposedWhileRead, ex);
+        }
+
+        // Without the barrier the read below may be satisfied before the copy's own reads: the PR #62 review saw that
+        // let 2 in 5.4 million raced calls through on arm64. It has not been reproduced since.
+        Interlocked.MemoryBarrier();
+        _ = KindOf(element);
+        return clone;
+    }
+
+    // Disposal is one way, so a document whose read failed for that reason fails every later read too. An
+    // ArgumentOutOfRangeException from an intact document came from the caller's memory and propagates unchanged.
+    private static bool IsDisposed(JsonElement element)
+    {
+        try
+        {
+            _ = element.ValueKind;
+            return false;
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or ArgumentOutOfRangeException)
+        {
+            return true;
+        }
+    }
+
+    // Reading a value of a disposed document, its kind included, throws ObjectDisposedException.
+    private static JsonElement Own(JsonElement element, string disposedMessage)
+    {
+        try
+        {
+            return KindOf(element) == JsonValueKind.Undefined ? element : CloneUndisposed(element);
+        }
+        catch (ObjectDisposedException ex) when (IsDisposed(element))
+        {
+            // One thrown by the caller's memory behind an intact document is the caller's, and propagates unchanged.
+            throw new ProofGenerationException(disposedMessage, ex);
+        }
     }
 
     /// <summary>

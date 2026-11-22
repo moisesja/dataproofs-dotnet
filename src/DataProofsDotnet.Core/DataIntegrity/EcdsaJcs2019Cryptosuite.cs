@@ -12,6 +12,12 @@ namespace DataProofsDotnet.DataIntegrity;
 /// DER signatures returned by NetCrypto signers are transcoded to P1363 byte-level,
 /// so a non-exporting key-store signer suffices (AC-8).
 /// </summary>
+/// <remarks>
+/// The proof carries the document's <c>@context</c> (Create Proof step 2). For a document without one, proof
+/// options that carry an <c>@context</c> are refused with <see cref="ProofGenerationException"/>: the proof would
+/// keep the options' <c>@context</c>, which Verify Proof step 4.1 refuses because the document's does not start with it.
+/// A document whose <c>@context</c> is JSON <c>null</c> is refused too: a proof read back from JSON cannot carry it.
+/// </remarks>
 public sealed class EcdsaJcs2019Cryptosuite : ICryptosuite
 {
     /// <summary>The cryptosuite identifier, <c>ecdsa-jcs-2019</c>.</summary>

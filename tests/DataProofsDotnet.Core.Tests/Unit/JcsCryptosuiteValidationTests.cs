@@ -56,6 +56,105 @@ public class JcsCryptosuiteValidationTests
         proof.ProofValue.Should().NotBeNullOrEmpty();
     }
 
+    public static TheoryData<string, bool> ContextlessCases() => new()
+    {
+        { EddsaJcs2022Cryptosuite.CryptosuiteName, false },
+        { EddsaJcs2022Cryptosuite.CryptosuiteName, true },
+        { EcdsaJcs2019Cryptosuite.CryptosuiteName, false },
+        { EcdsaJcs2019Cryptosuite.CryptosuiteName, true },
+    };
+
+    [Theory]
+    [MemberData(nameof(ContextlessCases))]
+    public async Task AnOptionsContext_ForADocumentWithoutOne_IsRefused(string cryptosuite, bool throughThePipeline)
+    {
+        // Create Proof step 2 copies only a document's @context, so the proof kept the options' own, and Verify Proof
+        // step 4.1 refused it: the suite issued a proof it could never verify (PR #62 follow-up b).
+        ICryptosuite suite = cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
+            ? new EddsaJcs2022Cryptosuite()
+            : new EcdsaJcs2019Cryptosuite();
+        var signer = Fx.Signer(cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
+            ? Fx.SeedKey(0x01)
+            : Fx.SeedKey(0x01, KeyType.P256));
+        var document = JsonDocument.Parse("""{"k":"v"}""").RootElement.Clone();
+        var options = Options(cryptosuite) with { Context = Doc().GetProperty("@context").Clone() };
+        var registry = new CryptosuiteRegistry();
+        registry.Register(suite);
+
+        Func<Task> act = throughThePipeline
+            ? () => new DataIntegrityProofPipeline(registry).AddProofAsync(document, options, signer)
+            : () => suite.CreateProofAsync(document, options, signer);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(
+            "The proof options carry an @context but the document to secure has none, so the proof would not verify.");
+    }
+
+    [Theory]
+    [MemberData(nameof(ContextlessCases))]
+    public async Task ADocumentWithANullContext_IsRefused(string cryptosuite, bool throughThePipeline)
+    {
+        // The proof was signed with "@context":null, but a proof read back from JSON has no @context, so it verified
+        // only until it was serialized (PR #62 review).
+        ICryptosuite suite = cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
+            ? new EddsaJcs2022Cryptosuite()
+            : new EcdsaJcs2019Cryptosuite();
+        var signer = Fx.Signer(cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
+            ? Fx.SeedKey(0x01)
+            : Fx.SeedKey(0x01, KeyType.P256));
+        var document = JsonDocument.Parse("""{"@context":null,"k":"v"}""").RootElement.Clone();
+        var registry = new CryptosuiteRegistry();
+        registry.Register(suite);
+
+        Func<Task> act = throughThePipeline
+            ? () => new DataIntegrityProofPipeline(registry).AddProofAsync(document, Options(cryptosuite), signer)
+            : () => suite.CreateProofAsync(document, Options(cryptosuite), signer);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(
+            "The document to secure has a null @context, which the proof cannot carry, so the proof would not verify.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADocumentWithAnEmptyContext_IsSignedAndVerifies_AfterARoundTrip(bool throughThePipeline)
+    {
+        // Only a null @context is refused: an empty array is a value the proof carries and reads back (PR #62 review).
+        var suite = new EddsaJcs2022Cryptosuite();
+        var signer = Fx.Signer(Fx.SeedKey(0x01));
+        var key = PublicKeyMaterial.FromRaw(signer.KeyType, signer.PublicKey.Span);
+        var document = JsonDocument.Parse("""{"@context":[],"k":"v"}""").RootElement.Clone();
+        var registry = new CryptosuiteRegistry();
+        registry.Register(suite);
+        var pipeline = new DataIntegrityProofPipeline(registry);
+
+        if (throughThePipeline)
+        {
+            var secured = await pipeline.AddProofAsync(document, Options("eddsa-jcs-2022"), signer);
+            pipeline.Verify(JsonDocument.Parse(secured.GetRawText()).RootElement.Clone(), key).Verified.Should().BeTrue();
+            return;
+        }
+
+        var proof = await suite.CreateProofAsync(document, Options("eddsa-jcs-2022"), signer);
+        var readBack = JsonSerializer.Deserialize<DataIntegrityProof>(
+            JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default), DataProofsJsonOptions.Default)!;
+        readBack.Context!.Value.GetRawText().Should().Be("[]");
+        suite.VerifyProof(document, readBack, key).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ADocumentWithoutContext_StillVerifies_WhenTheOptionsCarryNone()
+    {
+        // The refusal above is the one case the verifier refuses; neither side with an @context is signed as before.
+        var suite = new EddsaJcs2022Cryptosuite();
+        var signer = Fx.Signer(Fx.SeedKey(0x01));
+        var document = JsonDocument.Parse("""{"k":"v"}""").RootElement.Clone();
+
+        var proof = await suite.CreateProofAsync(document, Options("eddsa-jcs-2022"), signer);
+
+        proof.Context.Should().BeNull();
+        suite.VerifyProof(document, proof, PublicKeyMaterial.FromRaw(signer.KeyType, signer.PublicKey.Span)).Verified.Should().BeTrue();
+    }
+
     [Fact]
     public async Task EddsaSigning_IsDeterministic_ByteIdenticalAcrossRuns()
     {
