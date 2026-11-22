@@ -404,7 +404,12 @@ public abstract class Issue61OptionsCopyTestsBase
     {
         // The dictionary is the caller's code, as the signer is: what it throws is not a fault the copy found, so it
         // is not wrapped, even when it is the ObjectDisposedException the copy maps for a value (PR #62 review).
-        foreach (var fault in new Exception[] { new ArgumentException("the caller's own"), new ObjectDisposedException("the caller's own") })
+        foreach (var fault in new Exception[]
+        {
+            new ArgumentException("the caller's own"),
+            new ObjectDisposedException("the caller's own"),
+            new InvalidOperationException("Collection was modified; enumeration operation may not execute."),
+        })
         {
             var options = Options() with { AdditionalProperties = new ScriptedDictionary([], count: 0, fault: fault) };
 
@@ -569,6 +574,25 @@ public abstract class Issue61OptionsCopyTestsBase
                 ? "The document to secure has been disposed."
                 : "The proof options hold a JSON value whose document has been disposed."))
             .WithInnerException<ObjectDisposedException>();
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task AnEmptyExtensionDictionaryFilledWhileTheSignerRuns_LeavesTheProofAsAskedFor(bool throughThePipeline)
+    {
+        // The copy rebuilds even an empty dictionary: one kept by reference carries what the signer adds into the
+        // proof, a reserved name included (PR #62 review: no row started from an empty dictionary).
+        var members = new Dictionary<string, JsonElement>();
+        var signer = new MutatingSigner(Signer, () =>
+        {
+            members[NoteName] = HostileJson.Parse("\"added\"");
+            members["proofValue"] = HostileJson.Parse("\"uFORGED\"");
+        });
+
+        var proof = await IssueAsync(Options() with { AdditionalProperties = members }, signer, throughThePipeline);
+
+        (proof.AdditionalProperties ?? new Dictionary<string, JsonElement>()).Should().BeEmpty();
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
     }
 
     private Task<DataIntegrityProof> IssueAsync(DataIntegrityProof options, ISigner signer, bool throughThePipeline)

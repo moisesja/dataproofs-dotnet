@@ -735,12 +735,19 @@ public sealed class Bbs2023KeyStoreTests
         // The dictionary is the caller's code, as the store is, so what it throws is not wrapped. The copy bbs-2023
         // had before issue #61 wrapped an ArgumentException; the shared one does not (PR #62 review).
         var (store, info) = await StoreWithVectorKeyAsync();
-        var fault = new ArgumentException("the caller's own");
-        var options = BaseOptions() with { AdditionalProperties = new ScriptedDictionary([], count: 0, fault: fault) };
+        foreach (var fault in new Exception[]
+        {
+            new ArgumentException("the caller's own"),
+            new InvalidOperationException("Collection was modified; enumeration operation may not execute."),
+        })
+        {
+            var options = BaseOptions() with { AdditionalProperties = new ScriptedDictionary([], count: 0, fault: fault) };
 
-        var thrown = await Issue(keyStore, options, store, info).Should().ThrowAsync<ArgumentException>();
+            var thrown = await Issue(keyStore, options, store, info).Should().ThrowAsync<Exception>();
 
-        thrown.Which.Should().BeSameAs(fault);
+            thrown.Which.Should().BeSameAs(fault);
+        }
+
         store.Calls.Should().BeEmpty();
     }
 
@@ -991,6 +998,40 @@ public sealed class Bbs2023KeyStoreTests
         FluentActions.Invoking(() => new Bbs2023Cryptosuite().DeriveProof(disposed, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
             .Should().Throw<ProofGenerationException>().WithMessage("The secured base document has been disposed.")
             .WithInnerException<ObjectDisposedException>();
+    }
+
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnOptionsDictionaryThatRewritesTheDocumentAndTheHmacKey_CannotChangeEither(bool keyStore)
+    {
+        // Reading the options' dictionary runs the caller's code, so the document and the HMAC key are copied before
+        // it (PR #62 review: no bbs-2023 row had a dictionary that rewrote them).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var note = new KeyValuePair<string, JsonElement>("https://example.org/vocab#note", Parse("\"x\""));
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+            WindDoc(), BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = note.Value } },
+            sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        var flipped = (byte)~hmacKey[0];
+        var options = BaseOptions() with
+        {
+            AdditionalProperties = new ScriptedDictionary([note], count: 1, onRead: () =>
+            {
+                buffer[at] = (byte)'2';
+                hmacKey[0] = flipped;
+            }),
+        };
+
+        var proof = keyStore
+            ? await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                document.RootElement, options, store, Alias, info.InstanceId!.Value, hmacKey, WindMandatory())
+            : await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, options, sk, hmacKey, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
     }
 
     [BbsFact]

@@ -141,4 +141,16 @@ public class PreviousProofReferenceTests
 
         reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
     }
+
+    [Fact]
+    public void FromValues_EnumeratesTheCallersIdsOnce()
+    {
+        // Each read of a caller's collection runs the caller's code and may yield other ids: one read is the copy
+        // (PR #62 review).
+        var reads = 0;
+        var reference = PreviousProofReference.FromValues(new CapturingIds("urn:uuid:0", "urn:uuid:1") { OnRead = () => reads++ });
+
+        reads.Should().Be(1);
+        reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
+    }
 }

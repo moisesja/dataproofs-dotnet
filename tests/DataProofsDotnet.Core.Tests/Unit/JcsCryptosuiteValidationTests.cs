@@ -93,8 +93,8 @@ public class JcsCryptosuiteValidationTests
     [MemberData(nameof(ContextlessCases))]
     public async Task ADocumentWithANullContext_IsRefused(string cryptosuite, bool throughThePipeline)
     {
-        // The proof was signed with "@context":null, but a proof read back from JSON has no @context, so neither the
-        // suite nor the pipeline verified it (PR #62 review).
+        // The proof was signed with "@context":null, but a proof read back from JSON has no @context, so it verified
+        // only until it was serialized (PR #62 review).
         ICryptosuite suite = cryptosuite == EddsaJcs2022Cryptosuite.CryptosuiteName
             ? new EddsaJcs2022Cryptosuite()
             : new EcdsaJcs2019Cryptosuite();
@@ -111,6 +111,34 @@ public class JcsCryptosuiteValidationTests
 
         await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(
             "The document to secure has a null @context, which the proof cannot carry, so the proof would not verify.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADocumentWithAnEmptyContext_IsSignedAndVerifies_AfterARoundTrip(bool throughThePipeline)
+    {
+        // Only a null @context is refused: an empty array is a value the proof carries and reads back (PR #62 review).
+        var suite = new EddsaJcs2022Cryptosuite();
+        var signer = Fx.Signer(Fx.SeedKey(0x01));
+        var key = PublicKeyMaterial.FromRaw(signer.KeyType, signer.PublicKey.Span);
+        var document = JsonDocument.Parse("""{"@context":[],"k":"v"}""").RootElement.Clone();
+        var registry = new CryptosuiteRegistry();
+        registry.Register(suite);
+        var pipeline = new DataIntegrityProofPipeline(registry);
+
+        if (throughThePipeline)
+        {
+            var secured = await pipeline.AddProofAsync(document, Options("eddsa-jcs-2022"), signer);
+            pipeline.Verify(JsonDocument.Parse(secured.GetRawText()).RootElement.Clone(), key).Verified.Should().BeTrue();
+            return;
+        }
+
+        var proof = await suite.CreateProofAsync(document, Options("eddsa-jcs-2022"), signer);
+        var readBack = JsonSerializer.Deserialize<DataIntegrityProof>(
+            JsonSerializer.Serialize(proof, DataProofsJsonOptions.Default), DataProofsJsonOptions.Default)!;
+        readBack.Context!.Value.GetRawText().Should().Be("[]");
+        suite.VerifyProof(document, readBack, key).Verified.Should().BeTrue();
     }
 
     [Fact]
