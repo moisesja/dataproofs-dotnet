@@ -142,6 +142,18 @@ public class PreviousProofReferenceTests
         reference.Values.Should().Equal("urn:uuid:0", "urn:uuid:1");
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(2)]
+    public void Values_OutOfRange_IsAnArgumentOutOfRangeException(int index)
+    {
+        // As an array or a List<string> reports it through IReadOnlyList<string>, and as main did (PR #62 review: the
+        // private list let an IndexOutOfRangeException out).
+        var reference = PreviousProofReference.FromValues(["urn:uuid:0", "urn:uuid:1"]);
+
+        FluentActions.Invoking(() => reference.Values[index]).Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     [Fact]
     public void FromValues_EnumeratesTheCallersIdsOnce()
     {

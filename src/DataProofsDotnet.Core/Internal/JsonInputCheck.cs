@@ -145,10 +145,11 @@ internal static class JsonInputCheck
     }
 
     /// <summary>
-    /// A copy of JSON the caller passed in, taken before anything reads it, that no code of the caller's can change
-    /// or dispose (PR #62). Creation awaits the signer, the pipeline also awaits the suite, and both read the document
-    /// again afterwards. <c>JsonDocument.Parse</c> over the caller's memory keeps reading that memory, and the caller
-    /// may dispose the document. A clone of an element whose document cannot be disposed is that element, whose bytes
+    /// A copy of JSON the caller passed in, taken before anything but a kind check reads it, that no code of the
+    /// caller's can change or dispose (PR #62). Caller code runs while an entry point works: a signer or key store it
+    /// awaits, a canonicalizer, the options' extension dictionary, and in the pipeline the suite, after which the
+    /// pipeline reads the document again. <c>JsonDocument.Parse</c> over the caller's memory keeps reading that
+    /// memory, and the caller may dispose the document. A clone of an element whose document cannot be disposed is that element, whose bytes
     /// safe code cannot change. An undefined element is returned as it is, for the entry point's kind check to report.
     /// The copy is taken from the memory as it is when this runs: a document whose memory changed after it was parsed
     /// breaks <c>JsonDocument</c>'s own contract, and its copy is no better than the original.

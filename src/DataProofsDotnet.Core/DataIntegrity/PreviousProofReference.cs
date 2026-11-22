@@ -98,7 +98,8 @@ public sealed class PreviousProofReference : IEquatable<PreviousProofReference>
     {
         public int Count => ids.Length;
 
-        public string this[int index] => ids[index];
+        // Through the list interface, so an index out of range is an ArgumentOutOfRangeException, as on main.
+        public string this[int index] => ((IReadOnlyList<string>)ids)[index];
 
         public IEnumerator<string> GetEnumerator()
         {

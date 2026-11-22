@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **This is a minor release.** The public API only adds, in `DataProofsDotnet.Jose` and `DataProofsDotnet.Rdfc`:
 nothing is removed or changed, and one constant, `SdJwtVcConstants.TransitionalMediaType`, is marked `[Obsolete]`. For input that 2.0.0
-issued, every issuer emits the same bytes. **It refuses some credentials that 2.0.0 verified, including some this
+issued, every issuer emits the same bytes, given collections that report their `Count` truthfully. **It refuses some credentials that 2.0.0 verified, including some this
 library issued.** Read these entries before upgrading:
 
 - an SD-JWT or SD-JWT VC whose `exp` has passed or whose `nbf` is still ahead, or whose `nbf` or `exp` is not a
@@ -21,9 +21,11 @@ library issued.** Read these entries before upgrading:
 - an SD-JWT with a digest repeated anywhere in the payload, an `_sd_alg` below the top level, or a Disclosure
   named `_sd_alg` (*Fixed*, issue #48).
 
-The SD-JWT issuers also refuse to sign several of these shapes, and each entry says which. The JCS suites refuse
-to issue two proofs that 2.0.0 issued and could never verify: one for options carrying `@context` over a document
-without one, and one for a document whose `@context` is `null` (*Fixed*, PR #62). A consumer that references `System.Formats.Cbor` directly below 10.0.15 must raise that
+The SD-JWT issuers also refuse to sign several of these shapes, and each entry says which. The Data Integrity
+suites refuse three inputs that 2.0.0 issued (*Fixed*, issue #61 and PR #62):
+- in the JCS suites, options carrying `@context` over a document without one, whose proof 2.0.0's verifier refused;
+- in the JCS suites, a document whose `@context` is `null`, whose proof verified only until it was serialized;
+- in the JCS and RDFC suites, options whose `@context` belongs to a disposed `JsonDocument`. A consumer that references `System.Formats.Cbor` directly below 10.0.15 must raise that
 reference (*Security*, issue #50). The reasons this is a minor are under *Why this is a minor and not a major*, at
 the end of this section.
 
@@ -448,138 +450,77 @@ the end of this section.
   than the reconstruction bound of 64 (depth 63 and beyond). The check reads the serialized form, so a
   .NET object inside a `JsonValue` is covered. It adds one parse and one reconstruction per issuance.
   Found by the PR #54 review and the issue #48 adversarial passes; a separate commit in that PR.
-- **Data Integrity: a proof no longer shares the caller's proof options** (issue
-  [#61](https://github.com/moisesja/dataproofs-dotnet/issues/61)). Affected: the JCS suites (`eddsa-jcs-2022`,
-  `ecdsa-jcs-2019`), the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`) and both legacy suites in both variants.
-  Each built the proof from a shallow copy of the options, checked it, then awaited the signer. The returned proof
-  kept the caller's `AdditionalProperties` dictionary, and the `JsonElement`s behind the extension values and the
-  options' `@context`. The window matters for any signer that awaits, such as a NetCrypto `KeyStoreSigner`, a remote
-  KMS or an HSM:
-  - an extension member changed while the signer ran was signed with its old value and returned with its new one, so
-    the proof did not verify;
-  - a reserved name added then, such as `proofValue`, got past the FR-2 check, which had already run;
-  - a change made after the call changed the issued proof;
-  - once the caller disposed its `JsonDocument`, serializing the proof threw `ObjectDisposedException`.
+- **Data Integrity: proofs and verification results no longer depend on objects the caller can still change**
+  (issue [#61](https://github.com/moisesja/dataproofs-dotnet/issues/61), PR #62). Affected: every Data Integrity
+  suite (`eddsa-jcs-2022`, `ecdsa-jcs-2019`, `eddsa-rdfc-2022`, `ecdsa-rdfc-2019`, `bbs-2023`, and both legacy suites
+  in both variants) and `DataIntegrityProofPipeline`.
+  - *What could go wrong in 2.0.0.* The suites built a proof from a shallow copy of the caller's options, and creation
+    and verification read the caller's document, options, pointers and keys more than once. The caller's own code
+    could run in between and change them: a signer that awaits (a key store, KMS or HSM), a resolver, an
+    `IRdfCanonicalizer`, the options' extension dictionary, or a pointer collection. So could a caller bug, such as a
+    `JsonDocument` disposed on another thread, whose pooled buffers the next parse then rents. The results:
+    - a proof whose extension member was signed with one value and returned with another;
+    - a proof that carried a reserved name (`proofValue`) added after the check;
+    - a proof that changed when the caller changed its options afterwards;
+    - a proof over a document other than the one passed, and, from `Verify` or a suite's own `VerifyProof`,
+      `Verified == true` for a document the proof was not made over;
+    - in `bbs-2023`, a base proof that packed one key's public key with another key's signature;
+    - raw `ObjectDisposedException`, `InvalidCastException` or `NullReferenceException` from creation.
+  - *What 2.1.0 does.* Each entry point copies its inputs once, the document first, and then works only on the copies.
+    Only a check of the document's JSON kind reads it before its copy. The entry points are every suite's
+    `CreateProofAsync` and `VerifyProof`, `AddProofAsync`, `Verify`, `VerifyAsync`, both `bbs-2023`
+    `CreateBaseProofAsync` overloads, and `DeriveProof`.
+    - The options get a new extension dictionary and cloned JSON values. Pointer and id collections are copied by
+      enumeration, without trusting `Count`. Keys and the presentation header are copied once.
+    - Each copy reads its source again afterwards, so a document disposed before or during the copy is refused rather
+      than read as another document. That check relies on the order of .NET 10's `JsonDocument.Dispose`, which is the
+      runtime's implementation and not a documented contract: it was measured, not proven.
+    - The JCS, RDFC and legacy suites read `ISigner.KeyType` once.
+    - `PreviousProofReference.Values` no longer hands out its backing array.
+  - *What changes for a caller.*
+    - **Disposed inputs.**
+      - On creation, a disposed document or options value is a `ProofGenerationException`; it was a raw
+        `ObjectDisposedException`. This includes an options `@context` that the JCS and RDFC suites replace with the
+        document's: 2.0.0 issued that proof without reading it.
+      - `Verify` and `VerifyAsync` still throw `ObjectDisposedException`, and a suite's own `VerifyProof` still returns
+        a failed result.
+    - **Exceptions from the caller's own code.** The copy reports a null or repeated extension name as
+      `ProofGenerationException`, with no name in the message. Otherwise, on creation, what the caller's own
+      dictionaries, collections, signers, stores and memory throw propagates unchanged.
+      - `DeriveProof` used to report an `ArgumentException` from the selective-pointer enumerator as "A selective
+        pointer is invalid."
+      - In `bbs-2023`, an exception from the memory behind the private key, the HMAC key or the presentation header
+        now comes right after the document copy, before the options, document and pointer checks.
+    - **Error precedence on creation.** A disposed document comes first, then the options copy's faults, then the
+      document checks and the key type.
+    - **Equality and lookup.** The returned proof's `AdditionalProperties` is a new ordinal dictionary, so a member is
+      no longer found by a name that differs only in case. A verification result reached after the copy carries the
+      copy. That copy is generally not `==` the caller's proof, because record equality compares the dictionary and
+      the JSON values by reference.
+    - **`PreviousProofReference.Values`.** A cast to `string[]` or to another collection interface throws
+      `InvalidCastException`.
+    - **A suite's own `VerifyProof`.** None of these can come from a proof read from JSON:
+      - a caller dictionary that repeats a name now fails with `PROOF_VERIFICATION_ERROR`. The legacy suites' JCS
+        variant verified it, and the JCS, RDFC and legacy RDFC-only suites reported a transformation error;
+      - an exception from the dictionary, even a canonicalization one, is a verification error;
+      - the legacy RDFC variant now fails a proof whose `@context` was disposed, which it used to replace unread.
 
-  Each suite's `CreateProofAsync` and `DataIntegrityProofPipeline.AddProofAsync` now copy the options before reading
-  them. The copy rebuilds the extension dictionary and clones `@context` and every extension value. `bbs-2023`
-  already copied its options (issue #44) and now runs the same code. The pipeline's copy also covers a suite this
-  library does not ship. Emitted bytes do not change. The returned proof's `AdditionalProperties` is now a new
-  `Dictionary<string, JsonElement>`, not the caller's object. It compares names ordinally, as JSON member names
-  compare, whatever comparer the caller's dictionary used. So a proof made from an `OrdinalIgnoreCase` dictionary
-  no longer finds a member by a name that differs only in case.
-  - **Faults the copy reports.** The copy is the first step to read the options, so it reports what they hold with
-    `ProofGenerationException`, and the message never quotes a member name (FR-23). Three faults:
-    - a JSON value whose `JsonDocument` has been disposed, which used to escape as a raw `ObjectDisposedException`;
-    - an extension member with a null name;
-    - a name that a dictionary with its own comparer lists twice.
+      As before, it returns a failed result for anything it cannot verify. The exceptions it lets out are an
+      `ArgumentNullException` for a null argument, an `OperationCanceledException` thrown by caller code (JCS, RDFC
+      and legacy), and `BbsUnavailableException`.
+    - **Emitted bytes do not change**, except for a pointer list or extension dictionary that misreports its `Count`:
+      2.0.0 dropped those entries, and 2.1.0 signs them.
+    - **The raw-key `CreateBaseProofAsync` key.** It copies at most 33 bytes of the key. A key of the wrong length is
+      refused with the same message. Its inner `ArgumentException` is now this library's (`ParamName`
+      `bbsPrivateKey`) and gives the length passed; it used to be NetCrypto's (`privateKey`).
+- **JCS: proofs their own verifier refuses are no longer issued** (PR #62). `eddsa-jcs-2022` and `ecdsa-jcs-2019` now
+  refuse two inputs with `ProofGenerationException`:
+  - Options carrying `@context` over a document without one. Create Proof step 2 copies only a present document
+    `@context`, and Verify Proof step 4.1 then refuses the proof.
+  - A document whose `@context` is JSON `null`. This library's proof model drops `"@context": null` when it reads a
+    proof, so such a proof verified only until it was serialized.
 
-    What the caller's dictionary itself throws while it is read is the caller's, as a signer's exceptions are, and
-    propagates unchanged.
-
-    **One input that worked is refused.** The JCS and RDFC suites used to replace the options' `@context` with the
-    document's without reading it, so a disposed one went unnoticed. It is now refused like any other disposed
-    value. Because the copy runs first, these faults are also reported before the document's, except that the
-    document's own copy comes first and reports a disposed document (PR #62).
-  - **Legacy RDFC no longer reads the document after signing.** Both legacy suites' RDFC variant took the proof's
-    `@context` from the caller's document a second time once the signer returned. A document disposed while the
-    signer ran then threw `ObjectDisposedException` after the signature was made. A document whose buffer changed in
-    that time gave a proof whose `@context` differed from the one signed. The proof is now fixed before signing.
-  - **`PreviousProofReference` is immutable.** `Values`, typed `IReadOnlyList<string>`, returned the backing
-    `string[]`, so `((string[])reference.Values)[0] = "…"` changed every proof and options object that shared the
-    reference. It now returns a list that implements `IReadOnlyList<string>` and nothing else, so no public interface
-    reaches the ids. A cast to `string[]`, to a writable interface such as `IList<string>`, or to the non-generic
-    `ICollection` (whose `SyncRoot` is how `ReadOnlyCollection<T>` hands out the array it wraps) throws
-    `InvalidCastException`. The declared type is unchanged. `FromValues` also kept the array that `ToArray` had
-    passed to the `CopyTo` of the caller's collection, so a collection that kept it could rewrite the reference
-    later. It now copies the ids by enumeration, without calling `CopyTo` or trusting `Count`, and checks that copy
-    (PR #62 review).
-- **Data Integrity: creation and verification no longer read the caller's document after the caller's code runs**
-  (PR #62, follow-ups of issue #61). `JsonDocument.Parse(ReadOnlyMemory<byte>)` keeps reading the caller's memory,
-  and a signer, a resolver or a canonicalizer is the caller's code. Two faults followed:
-  - `DataIntegrityProofPipeline.AddProofAsync` assembled the secured document from the caller's document after
-    awaiting the suite. A member renamed to `proof` meanwhile escaped as a raw `InvalidCastException` or
-    `NullReferenceException`, or gave a document that did not verify.
-  - A signer's `KeyType` getter that disposed the document let a raw `ObjectDisposedException` out of the JCS, RDFC
-    and legacy JCS suites.
-
-  Every create entry point now copies the document before reading it, as it copies the options: the JCS, RDFC and
-  legacy suites, both `bbs-2023` base-proof overloads, and `AddProofAsync`. It is copied before the options, because
-  reading the options' extension dictionary runs the caller's code. `DeriveProof` copies the base document too.
-  `VerifyAsync` copies the secured document too, because it verifies each proof after its resolver is awaited, and
-  `Verify` runs the same steps. A document disposed before a create call, or before `DeriveProof`, is now a
-  `ProofGenerationException` ("The document to secure has been disposed.", "The secured base document has been
-  disposed."), as a disposed options value is. Verification is unchanged for such a document: it still throws
-  `ObjectDisposedException`. The JCS, RDFC and legacy suites also read `ISigner.KeyType` once, where they first read
-  it before. They used to read it for the support check, the hash and the signature encoding, and the RDFC suites read
-  it between the proof-options binding check and the hash. Emitted bytes do not change.
-
-  **A document disposed while a call uses it** (PR #62 review). Disposing a `JsonDocument` on one thread while another
-  passes it in is a caller bug: for example, a `using` document handed to a task that is not awaited, or a cached
-  document evicted while a request uses it. `Dispose` returns the document's pooled buffers, and the next parse in the
-  process rents them. A read in flight at that moment can therefore see another document's bytes and find them well
-  formed.
-  - *2.0.0.* A suite's own `CreateProofAsync` could sign, and `DataIntegrityProofPipeline.Verify` could verify, a
-    document other than the one passed. `AddProofAsync` read the document again after signing, so it failed instead.
-  - *2.1.0.* Every entry point reads the caller's document once, in its copy, then reads the source again. A document
-    disposed before or during the copy is refused: `ProofGenerationException` on creation, `ObjectDisposedException`
-    on verification. Options values are copied the same way.
-  - *`ArgumentOutOfRangeException`.* A read that races `Dispose` can find the document's metadata gone before the
-    document reports itself disposed, and throw this exception. It is reported as the disposal it is only when the
-    document is in fact disposed. An `ArgumentOutOfRangeException` or `ObjectDisposedException` thrown by a caller's
-    `MemoryManager<byte>` behind an intact document propagates unchanged.
-  - *Caveat.* The check relies on .NET 10's `JsonDocument.Dispose` dropping each buffer reference before it returns
-    the buffer to the pool. That order is the runtime's implementation, not a documented contract: it was measured,
-    not proven.
-  - *Measured.* In the reviewer's probe, raced `AddProofAsync` calls returned a verifying document with other content
-    in 0 of 1,050,000, and so did raced calls to a suite's `CreateProofAsync` and to `Verify`.
-  - *A suite's own `VerifyProof`* (the JCS, RDFC and legacy suites and `bbs-2023`), which callers can use directly
-    through `ICryptosuite`, now copies the document, then the proof, before reading either.
-    - In 2.0.0, under the same caller bug, it could return `Verified == true` for a document the proof was not made
-      over. The reviewer measured 83 of 400,000 raced calls of `EddsaJcs2022Cryptosuite.VerifyProof` doing so before
-      this change.
-    - It never throws for its input: a document or proof value disposed before or during the copy is a failed result,
-      as a document disposed before the call always was.
-    - A result reached after the copy carries the copy that was verified as its `Proof`. It is equal in content to the
-      caller's proof and shares no mutable state with it. Record equality compares `AdditionalProperties` by
-      reference, so it is not `==` the caller's proof when the proof has extension members.
-    - Because the copy reads every extension member once, before any check, a few results change. None of them can
-      come from a proof read from JSON:
-      - a caller dictionary that yields a name twice now fails with `PROOF_VERIFICATION_ERROR`. The JCS, RDFC and
-        legacy RDFC-only suites reported a transformation error, and the legacy suites' JCS variant verified it;
-      - an exception the caller's dictionary throws is a verification error, even a canonicalization or data-loss
-        exception, which some suites reported under those codes;
-      - a disposed proof value is reported, as "Verification failed unexpectedly (ProofGenerationException).", before
-        a type or cryptosuite mismatch;
-      - a disposed proof `@context` fails in the legacy RDFC variant, which replaces the proof's `@context` with the
-        document's and so used to verify such a proof.
-- **JCS: proofs their own verifier refuses are no longer issued** (PR #62). Create Proof step 2 of
-  `eddsa-jcs-2022` and `ecdsa-jcs-2019` copies the document's `@context` into the proof only when the document has
-  one. Otherwise the proof kept the options' `@context`, and Verify Proof step 4.1 refuses a proof whose `@context`
-  the document's does not start with. So the suites issued a proof they could never verify. They now throw
-  `ProofGenerationException` instead, as the RDFC suites do for a proof their verifier would refuse. A document
-  whose `@context` is JSON `null` is refused too. Its proof was signed with `"@context":null`, but a proof read
-  back from JSON has no `@context`, so it verified only until it was serialized. Every other input gets the
-  same bytes, an empty `@context` array included. The legacy JCS variant is unaffected: it verifies its proofs for both shapes.
-- **`bbs-2023`: caller values are read once around a caller's canonicalizer** (PR #62). In each case below, a
-  canonicalizer passed to the constructor ran between two reads of a value the caller still held. Each fault
-  failed closed:
-  - `DeriveProof` used the selective pointers several times. `Concat(...).ToList()` handed the caller's collection
-    the list's own array, which the reveal document was then selected with. The pointers are now copied once, by
-    enumeration, as the mandatory pointers are. What the caller's collection throws while it is copied now
-    propagates unchanged, as for the options' dictionary: an `ArgumentException` from its enumerator used to be
-    reported as `ProofGenerationException` "A selective pointer is invalid."
-  - `DeriveProof` read the presentation header for the BBS proof and again for the derived `proofValue`. It is now
-    copied once, with the base document, before the pointers are read.
-  - The raw-key `CreateBaseProofAsync` derived the public key before the canonicalizer ran and signed after it. So a
-    base proof could pack one key's public key with another key's signature. The key is now read once, right after
-    the document is copied, into a pinned copy that is cleared after use. The NetCrypto key pair that derives the
-    public key is disposed, which clears its own copy of the key. The copy takes at most 33 bytes, so a caller's oversized
-    buffer is never copied whole. A key of the wrong length is still refused with the same message. Its inner
-    `ArgumentException` is now this library's (`ParamName` `bbsPrivateKey`), and it reports the length the caller
-    gave; it used to be NetCrypto's (`privateKey`). A null `proofOptions` or `mandatoryPointers` is now reported
-    before the key is read. The key-store overload needed no change: NetCrypto's `StoredKeyInfo.PublicKey` returns a
-    copy.
+  An empty `@context` array is signed as before. The legacy JCS variant is unchanged.
 
 ### Why this is a minor and not a major
 
@@ -600,12 +541,12 @@ was held to that. The owner added issue #44 to it on 2026-11-20, under the same 
   writes the literal or suppresses CS0618. Every other consumer compiles unchanged, and compiled code is unaffected,
   since the constant's value is copied into it. This release counts that as a deprecation, not as the source break
   the 2.0.0 rule makes a major.
-- *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
-  appears only when the caller sets `JwsSigner.CertificateChain`.
-  Two JCS inputs that 2.0.0 issued are now refused: options carrying `@context` over a document without one, and a
-  document whose `@context` is `null`. 2.0.0's own verifier refused the first proof outright. It accepted the second
-  only until the proof was serialized and read back. So no consumer could rely on either. This release counts that as
-  a fix.
+- *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, given collections
+  that report their `Count` truthfully, and `x5c` appears only when the caller sets `JwsSigner.CertificateChain`.
+  Three Data Integrity inputs that 2.0.0 issued are now refused (see the lead). No consumer could rely on the first
+  two: 2.0.0's verifier refused the first proof outright, and accepted the second only until it was serialized and
+  read back. The third needs a caller that disposed its options' JSON before the call, which every other options
+  value already failed on. This release counts all three as fixes.
 - *`PreviousProofReference.Values` no longer hands out its backing array (issue #61).* Its declared type,
   `IReadOnlyList<string>`, is unchanged and never promised an array. Code that cast it to `string[]` or to another
   collection interface the array implements, such as `IList<string>`, still compiles but now throws

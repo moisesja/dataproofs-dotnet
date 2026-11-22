@@ -724,6 +724,23 @@ public abstract class Issue61OptionsCopyTestsBase
         : WithNote() with { Context = TakesTheOptionsContext ? HostileJson.Parse(FallbackContext) : null };
 
     [Fact]
+    public async Task VerifyProof_HashesTheCopyItTook()
+    {
+        // The checks and the hash read the one copy taken of the proof. The caller's extension dictionary answers its
+        // second read with another value, so a suite that took the copy and then hashed the caller's proof would sign
+        // over that value and fail (PR #62 review: removed in 8786435, it was the one row that caught this).
+        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var proof = signed with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new(NoteName, signed.AdditionalProperties![NoteName])], count: 1,
+                later: [new(NoteName, HostileJson.Parse("\"changed\""))]),
+        };
+
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task VerifyProof_TheResultHoldsTheProofAsVerified()
     {
         // The result carries the copy that was verified, so changing the caller's proof afterwards changes nothing in
