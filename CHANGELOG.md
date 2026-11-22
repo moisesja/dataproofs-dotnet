@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] - 2026-11-20
+## [2.1.0] - 2026-11-22
 
 **This is a minor release.** The public API only adds, in `DataProofsDotnet.Jose` and `DataProofsDotnet.Rdfc`:
 nothing is removed or changed, and one constant, `SdJwtVcConstants.TransitionalMediaType`, is marked `[Obsolete]`. For input that 2.0.0
@@ -525,7 +525,7 @@ the end of this section.
 ### Why this is a minor and not a major
 
 The owner fixed this release at 2.1.0 on 2026-11-19, before the six issues were worked, and every change in it
-was held to that. The owner added issue #44 to it on 2026-11-20, under the same rule. Under the versioning policy in [`RELEASING.md`](RELEASING.md):
+was held to that. The owner added issue #44 to it on 2026-11-20, under the same rule. Issue #61 and its follow-ups (PR #62) joined it on 2026-11-21 and 2026-11-22, under the same rule. Under the versioning policy in [`RELEASING.md`](RELEASING.md):
 
 - *The public API only adds, which by itself makes this a minor* (SemVer §7, "MINOR version ... MUST be
   incremented if new, backward compatible functionality is introduced to the public API").
