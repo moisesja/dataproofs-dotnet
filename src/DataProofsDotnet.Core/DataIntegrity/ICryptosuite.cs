@@ -62,8 +62,12 @@ public interface ICryptosuite
     /// the supplied public key. Invalid proofs produce failed results — never exceptions.
     /// </summary>
     /// <param name="unsecuredDocument">The secured document with its <c>proof</c> member removed
-    /// (for chains: with the matching previous proofs re-embedded by the pipeline).</param>
-    /// <param name="proof">The proof under verification.</param>
+    /// (for chains: with the matching previous proofs re-embedded by the pipeline). The suites this library ships copy
+    /// it, then <paramref name="proof"/>, before reading either, so the result is about the document as given even if
+    /// its document is disposed or its memory changes during the call; a document disposed before or during the copy
+    /// is a failed result (PR #62).</param>
+    /// <param name="proof">The proof under verification. The suites this library ships verify a copy, which a result
+    /// reached after the copy carries.</param>
     /// <param name="publicKey">The verification key material.</param>
     ProofVerificationResult VerifyProof(
         JsonElement unsecuredDocument,

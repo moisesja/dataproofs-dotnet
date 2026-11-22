@@ -286,7 +286,8 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
             // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
             // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
             // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
-            // copies find is a failed result, below, as every other fault is; the result carries the copy verified.
+            // copies find is a failed result, below, as every other fault is; a result reached after them carries the
+            // proof copy.
             unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
             proof = JsonInputCheck.OwnedCopy(proof);
 

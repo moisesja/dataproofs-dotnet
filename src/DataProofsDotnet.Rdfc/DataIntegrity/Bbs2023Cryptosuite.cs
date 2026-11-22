@@ -563,7 +563,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// Verifies a <c>bbs-2023</c> <b>derived</b> proof (verifier side, spec §3.4.8). The
     /// pipeline calls this for any <c>bbs-2023</c> proof; a base proof presented for
     /// verification is rejected (only derived proofs are verifiable). Invalid proofs produce
-    /// failed results, never exceptions.
+    /// failed results, never exceptions. The reveal document, then the proof, are copied before either is read, so a
+    /// canonicalizer of the caller's, or a document disposed during the call, cannot change what is verified; a result
+    /// reached after the copy carries the proof copy (PR #62).
     /// </summary>
     public ProofVerificationResult VerifyProof(
         JsonElement unsecuredDocument,
@@ -584,7 +586,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
             // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
             // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
-            // copies find is a failed result, below, as every other fault is; the result carries the copy verified.
+            // copies find is a failed result, below, as every other fault is; a result reached after them carries the
+            // proof copy.
             unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
             proof = JsonInputCheck.OwnedCopy(proof);
 

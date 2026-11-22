@@ -526,13 +526,33 @@ the end of this section.
     on verification. Options values are copied the same way.
   - *`ArgumentOutOfRangeException`.* A read that races `Dispose` can find the document's metadata gone before the
     document reports itself disposed, and throw this exception. It is reported as the disposal it is only when the
-    document is in fact disposed. One thrown by a caller's `MemoryManager<byte>` behind an intact document propagates
-    unchanged.
+    document is in fact disposed. An `ArgumentOutOfRangeException` or `ObjectDisposedException` thrown by a caller's
+    `MemoryManager<byte>` behind an intact document propagates unchanged.
   - *Caveat.* The check relies on .NET 10's `JsonDocument.Dispose` dropping each buffer reference before it returns
     the buffer to the pool. That order is the runtime's implementation, not a documented contract: it was measured,
     not proven.
   - *Measured.* In the reviewer's probe, raced `AddProofAsync` calls returned a verifying document with other content
     in 0 of 1,050,000, and so did raced calls to a suite's `CreateProofAsync` and to `Verify`.
+  - *A suite's own `VerifyProof`* (the JCS, RDFC and legacy suites and `bbs-2023`), which callers can use directly
+    through `ICryptosuite`, now copies the document, then the proof, before reading either.
+    - In 2.0.0, under the same caller bug, it could return `Verified == true` for a document the proof was not made
+      over. The reviewer measured 83 of 400,000 raced calls of `EddsaJcs2022Cryptosuite.VerifyProof` doing so before
+      this change.
+    - It never throws for its input: a document or proof value disposed before or during the copy is a failed result,
+      as a document disposed before the call always was.
+    - A result reached after the copy carries the copy that was verified as its `Proof`. It is equal in content to the
+      caller's proof and shares no mutable state with it. Record equality compares `AdditionalProperties` by
+      reference, so it is not `==` the caller's proof when the proof has extension members.
+    - Because the copy reads every extension member once, before any check, a few results change. None of them can
+      come from a proof read from JSON:
+      - a caller dictionary that yields a name twice now fails with `PROOF_VERIFICATION_ERROR`. The JCS, RDFC and
+        legacy RDFC-only suites reported a transformation error, and the legacy suites' JCS variant verified it;
+      - an exception the caller's dictionary throws is a verification error, even a canonicalization or data-loss
+        exception, which some suites reported under those codes;
+      - a disposed proof value is reported, as "Verification failed unexpectedly (ProofGenerationException).", before
+        a type or cryptosuite mismatch;
+      - a disposed proof `@context` fails in the legacy RDFC variant, which replaces the proof's `@context` with the
+        document's and so used to verify such a proof.
 - **JCS: proofs their own verifier refuses are no longer issued** (PR #62). Create Proof step 2 of
   `eddsa-jcs-2022` and `ecdsa-jcs-2019` copies the document's `@context` into the proof only when the document has
   one. Otherwise the proof kept the options' `@context`, and Verify Proof step 4.1 refuses a proof whose `@context`
