@@ -309,8 +309,10 @@ public sealed class DataIntegrityProofPipeline
         }
 
         // Each proof is verified after its resolver is awaited, and the resolver is the caller's code: verify a copy
-        // it cannot rewrite or dispose, so every result is about the document as given (PR #62).
-        securedDocument = securedDocument.Clone();
+        // it cannot rewrite or dispose, so every result is about the document as given (PR #62). A document disposed
+        // while it is copied throws ObjectDisposedException, as one disposed before the call does, rather than
+        // verifying whatever document rented its buffers meanwhile (PR #62 review).
+        securedDocument = JsonInputCheck.CloneUndisposed(securedDocument);
 
         // FR-3: a document whose member names or strings cannot be read, or whose members repeat,
         // fails here as a result — before any proof is parsed or any resolver is called — rather

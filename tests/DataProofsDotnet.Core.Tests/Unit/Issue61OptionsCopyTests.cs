@@ -148,6 +148,55 @@ public sealed class Issue61PipelineVerifyCopyTests
         result.Verified.Should().BeTrue();
     }
 
+    public static TheoryData<bool, bool> DisposedCases() => new()
+    {
+        { false, false }, { false, true }, { true, false }, { true, true },
+    };
+
+    [Theory]
+    [MemberData(nameof(DisposedCases))]
+    public async Task ADisposedSecuredDocument_ThrowsObjectDisposedException(bool whileItIsCopied, bool withAResolver)
+    {
+        // Verification reports a document disposed before the call as JsonDocument does, and one disposed while it is
+        // copied the same way, rather than verifying whatever document rented its buffers (PR #62 review). It is not a
+        // ProofGenerationException: verification creates nothing.
+        var signer = Fx.Signer(Fx.SeedKey(0x21));
+        var key = PublicKeyMaterial.FromRaw(signer.KeyType, signer.PublicKey.Span);
+        var pipeline = new DataIntegrityProofPipeline(CryptosuiteRegistry.CreateDefault());
+        var secured = await pipeline.AddProofAsync(HostileJson.Parse(HostileJson.BaseDocument), new DataIntegrityProof
+        {
+            Cryptosuite = EddsaJcs2022Cryptosuite.CryptosuiteName,
+            Created = "2026-01-02T00:00:00Z",
+            VerificationMethod = "did:example:x#k",
+            ProofPurpose = ProofPurposes.AssertionMethod,
+        }, signer);
+        var memory = new DisposingMemory(secured.GetRawText());
+        var document = memory.Document.RootElement;
+        if (whileItIsCopied)
+        {
+            memory.DisposeOnNextRead();
+        }
+        else
+        {
+            memory.Document.Dispose();
+        }
+
+        var resolver = new RewritingResolver(
+            new ResolvedVerificationMethod
+            {
+                Id = "did:example:x#k",
+                Controller = "did:example:x",
+                PublicKey = key,
+                Relationships = new HashSet<string>(StringComparer.Ordinal) { ProofPurposes.AssertionMethod },
+            },
+            () => { });
+        Func<Task> act = withAResolver
+            ? () => pipeline.VerifyAsync(document, resolver)
+            : () => Task.FromResult(pipeline.Verify(document, key));
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
     private sealed class RewritingResolver(ResolvedVerificationMethod method, Action rewrite) : IVerificationMethodResolver
     {
         public Task<ResolvedVerificationMethod?> ResolveAsync(string verificationMethodUrl, CancellationToken cancellationToken = default)

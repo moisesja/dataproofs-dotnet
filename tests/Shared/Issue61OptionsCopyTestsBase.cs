@@ -542,6 +542,35 @@ public abstract class Issue61OptionsCopyTestsBase
             .WithInnerException<ObjectDisposedException>();
     }
 
+    public static TheoryData<string, bool> DisposedWhileCopiedCases() => new()
+    {
+        { "document", false }, { "document", true }, { "extension value", false }, { "extension value", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(DisposedWhileCopiedCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task AJsonDocumentDisposedWhileItIsCopied_IsAProofGenerationException(string input, bool throughThePipeline)
+    {
+        // A document disposed on another thread while it is copied returns its buffers to the pool, and the next parse
+        // rents them, so the copy could hold another document's bytes and be signed. The source is read again after
+        // the copy, and a document disposed meanwhile is refused (PR #62 review). Here the dispose runs inside the
+        // copy, from the memory behind the document, which the copy reads after the document's own metadata.
+        var memory = new DisposingMemory(input == "document" ? HostileJson.BaseDocument : "\"as signed\"");
+        var options = input == "document" ? WithNote() : Options() with
+        {
+            AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = memory.Document.RootElement },
+        };
+        var document = input == "document" ? memory.Document.RootElement : Document();
+        memory.DisposeOnNextRead();
+
+        var act = () => IssueAsync(document, options, Signer, throughThePipeline);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(input == "document"
+                ? "The document to secure has been disposed."
+                : "The proof options hold a JSON value whose document has been disposed."))
+            .WithInnerException<ObjectDisposedException>();
+    }
+
     private Task<DataIntegrityProof> IssueAsync(DataIntegrityProof options, ISigner signer, bool throughThePipeline)
         => IssueAsync(Document(), options, signer, throughThePipeline);
 
@@ -610,6 +639,51 @@ public abstract class Issue61OptionsCopyTestsBase
         public string MultibasePublicKey => inner.MultibasePublicKey;
 
         public Task<byte[]> SignAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default) => inner.SignAsync(data, ct);
+    }
+}
+
+/// <summary>
+/// The caller's memory behind a <see cref="JsonDocument"/>, which disposes that document the next time it is read once
+/// <see cref="DisposeOnNextRead"/> is called. A copy of an element reads the document's metadata first and its bytes
+/// last, so the document is disposed while it is copied, as a racing <c>Dispose</c> on another thread would
+/// (PR #62 review). The bytes themselves stay intact, so only a check made after the copy can see the dispose.
+/// </summary>
+public sealed class DisposingMemory : System.Buffers.MemoryManager<byte>
+{
+    private readonly byte[] _bytes;
+    private bool _armed;
+
+    public DisposingMemory(string json)
+    {
+        _bytes = Encoding.UTF8.GetBytes(json);
+        Document = JsonDocument.Parse(Memory);
+    }
+
+    /// <summary>The document parsed over this memory.</summary>
+    public JsonDocument Document { get; }
+
+    /// <summary>Disposes <see cref="Document"/> on the next read of this memory.</summary>
+    public void DisposeOnNextRead() => _armed = true;
+
+    public override Span<byte> GetSpan()
+    {
+        if (_armed)
+        {
+            _armed = false;
+            Document.Dispose();
+        }
+
+        return _bytes;
+    }
+
+    public override System.Buffers.MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+
+    public override void Unpin()
+    {
+    }
+
+    protected override void Dispose(bool disposing)
+    {
     }
 }
 

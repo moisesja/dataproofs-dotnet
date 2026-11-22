@@ -175,12 +175,39 @@ internal static class JsonInputCheck
         return copy.ToArray();
     }
 
+    /// <summary>
+    /// A clone of <paramref name="element"/> taken while its document was intact (PR #62 review). A document disposed
+    /// on another thread while it is copied returns its pooled buffers, and the next parse in the process rents them,
+    /// so the clone can hold another document's bytes and still be well formed. The source is read again after the
+    /// copy: <c>JsonDocument.Dispose</c> drops its reference to each buffer before it returns that buffer to the pool,
+    /// and reading the kind reads both references, so a source still readable after the copy was intact while it was
+    /// copied. That order is the runtime's source (release/10.0), not a documented contract: measured, not proven.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The document was disposed before or while the element was copied.</exception>
+    public static JsonElement CloneUndisposed(JsonElement element)
+    {
+        try
+        {
+            var clone = element.Clone();
+
+            // Without the barrier the read below may be satisfied before the copy's own reads (seen on arm64).
+            Interlocked.MemoryBarrier();
+            _ = element.ValueKind;
+            return clone;
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            // A read that races Dispose finds the metadata gone before the document reports itself disposed.
+            throw new ObjectDisposedException("The JSON document was disposed while it was copied.", ex);
+        }
+    }
+
     // Reading a value of a disposed document, its kind included, throws ObjectDisposedException.
     private static JsonElement Own(JsonElement element, string disposedMessage)
     {
         try
         {
-            return element.ValueKind == JsonValueKind.Undefined ? element : element.Clone();
+            return element.ValueKind == JsonValueKind.Undefined ? element : CloneUndisposed(element);
         }
         catch (ObjectDisposedException ex)
         {

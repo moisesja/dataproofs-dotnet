@@ -994,6 +994,38 @@ public sealed class Bbs2023KeyStoreTests
             .WithInnerException<ObjectDisposedException>();
     }
 
+    [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ADocumentDisposedWhileItIsCopied_IsAProofGenerationException_BeforeTheStoreIsCalled(bool keyStore)
+    {
+        // A dispose racing the copy could leave a copy of another document's bytes, which would be signed. The source
+        // is read again after the copy (PR #62 review).
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var memory = new DisposingMemory(WindDoc().GetRawText());
+        memory.DisposeOnNextRead();
+
+        var thrown = await Issue(keyStore, BaseOptions(), store, info, document: memory.Document.RootElement)
+            .Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure has been disposed.");
+
+        thrown.WithInnerException<ObjectDisposedException>();
+        store.Calls.Should().BeEmpty();
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_ABaseDocumentDisposedWhileItIsCopied_IsAProofGenerationException()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var memory = new DisposingMemory(secured.GetRawText());
+        memory.DisposeOnNextRead();
+
+        FluentActions.Invoking(() => new Bbs2023Cryptosuite().DeriveProof(
+                memory.Document.RootElement, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
+            .Should().Throw<ProofGenerationException>().WithMessage("The secured base document has been disposed.")
+            .WithInnerException<ObjectDisposedException>();
+    }
+
     // A canonicalizer of the caller's: the RDFC one, after running during on every call.
     private sealed class HookedCanonicalizer(Action during) : IRdfCanonicalizer
     {
