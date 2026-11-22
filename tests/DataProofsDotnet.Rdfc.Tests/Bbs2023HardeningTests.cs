@@ -228,6 +228,7 @@ public sealed class Bbs2023HardeningTests
     [InlineData(31, 1)]
     [InlineData(33, 1)]
     [InlineData(64, 1)]
+    [InlineData(1 << 20, 1)]
     [InlineData(32, 0)]
     [InlineData(32, 0xFF)]
     public async Task PrivateKey_NotAValidKey_IsTheDocumentedException(int length, int fill)

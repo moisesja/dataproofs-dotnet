@@ -916,9 +916,8 @@ public sealed class Bbs2023KeyStoreTests
     [InlineData(true)]
     public async Task CallerCodeInThePointers_CannotChangeAnInputCopiedBeforeThem(bool keyStore)
     {
-        // Reading the pointers runs the caller's code. The document, the HMAC key and the private key are copied before
-        // that, because copying them runs none (PR #62 review: the pointers were read first, and could swap the HMAC
-        // key and the private key).
+        // Reading the pointers runs the caller's code, so the document, the HMAC key and the private key are copied
+        // before it (PR #62 review: the pointers were read first, and could swap the HMAC key and the private key).
         var (sk, hmacKey) = KeyMaterial();
         var (store, info) = await StoreWithVectorKeyAsync();
         var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
@@ -994,6 +993,45 @@ public sealed class Bbs2023KeyStoreTests
             .WithInnerException<ObjectDisposedException>();
     }
 
+    [BbsFact]
+    public async Task APrivateKeyWhoseMemoryRunsCallerCode_CannotChangeTheDocument()
+    {
+        // Reading a key behind a MemoryManager<byte> runs its GetSpan, the caller's code, so the raw-key overload
+        // copies the document first, as every entry point does (PR #62 review: it read the key first).
+        var (sk, hmacKey) = KeyMaterial();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        using var key = new HookedMemory(sk, () => buffer[at] = (byte)'2');
+
+        var proof = await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, BaseOptions(), key.Lent, hmacKey, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+    }
+
+    // Caller memory whose GetSpan runs the caller's code first. Lent does not call GetSpan, as Memory does.
+    private sealed class HookedMemory(byte[] bytes, Action onRead) : System.Buffers.MemoryManager<byte>
+    {
+        public Memory<byte> Lent => CreateMemory(bytes.Length);
+
+        public override Span<byte> GetSpan()
+        {
+            onRead();
+            return bytes;
+        }
+
+        public override System.Buffers.MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+
+        public override void Unpin()
+        {
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+        }
+    }
+
     [BbsTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1024,6 +1062,55 @@ public sealed class Bbs2023KeyStoreTests
                 memory.Document.RootElement, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
             .Should().Throw<ProofGenerationException>().WithMessage("The secured base document has been disposed.")
             .WithInnerException<ObjectDisposedException>();
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public void TheRawKeyCopy_IsPinnedAndClearedAfterUse()
+    {
+        // The raw-key overload signs and derives the public key from one copy of the key (PR #62 follow-up d1). It
+        // is on the pinned object heap, so compaction never leaves a stale copy behind, and it is cleared once used
+        // (PR #62 review: neither was pinned by a test). An array on the pinned object heap reports the oldest
+        // generation; a fresh array on the ordinary heap, the youngest.
+        var key = Enumerable.Range(1, Bbs2023Cryptosuite.PrivateKeyLength).Select(i => (byte)i).ToArray();
+        byte[]? lent = null;
+
+        var generation = Bbs2023Cryptosuite.WithKeyCopy(key, copy =>
+        {
+            lent = copy;
+            copy.Should().Equal(key);
+            return GC.GetGeneration(copy);
+        });
+
+        generation.Should().Be(GC.MaxGeneration);
+        lent.Should().HaveCount(key.Length).And.OnlyContain(b => b == 0);
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public void TheRawKeyCopy_IsClearedWhenItsUseThrows()
+    {
+        byte[]? lent = null;
+
+        FluentActions.Invoking(() => Bbs2023Cryptosuite.WithKeyCopy<int>(new byte[] { 1, 2, 3 }, copy =>
+        {
+            lent = copy;
+            throw new InvalidOperationException("the use's own");
+        })).Should().Throw<InvalidOperationException>().WithMessage("the use's own");
+
+        lent.Should().Equal(0, 0, 0);
+    }
+
+    [Fact]
+    [Trait("Category", "BbsAbsent")]
+    public void AnOversizedKey_IsCopiedOnlyAsFarAsItsLengthIsRefused()
+    {
+        // A key one byte longer than any is refused where a longer one was, so a caller's whole buffer is never
+        // allocated and pinned (PR #62 review: a 256 MiB "key" pinned 256 MiB before the same refusal).
+        var lengths = new[] { 0, 31, 32, 33, 34, 1 << 20 }
+            .Select(length => Bbs2023Cryptosuite.WithKeyCopy(new byte[length], copy => copy.Length));
+
+        lengths.Should().Equal(0, 31, 32, 33, 33, 33);
     }
 
     // A canonicalizer of the caller's: the RDFC one, after running during on every call.

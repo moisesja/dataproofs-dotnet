@@ -92,6 +92,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private const string PartOfAValue = "A JSON pointer selects part of a value, not a whole statement of the document.";
     private const string PointerMismatch = "A JSON pointer does not match the document.";
 
+    // A BLS12-381 secret scalar.
+    internal const int PrivateKeyLength = 32;
+
     private static readonly DefaultKeyGenerator KeyGenerator = new();
 
     private readonly IRdfCanonicalizer _canonicalizer;
@@ -173,15 +176,17 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         IReadOnlyList<string> mandatoryPointers,
         CancellationToken cancellationToken = default)
     {
-        // One read of the caller's key, taken first: copying it runs no code of the caller's, so neither the options'
-        // dictionary nor the pointer collection can change it before it is read. A canonicalizer of the caller's runs
-        // between deriving the public key and signing, so both use this copy; otherwise the proof could pack one key's
-        // public key with another key's signature (PR #62 follow-up d1). The copy is pinned, so the collector never
-        // moves it, and it is cleared after use.
-        var privateKey = GC.AllocateUninitializedArray<byte>(bbsPrivateKey.Length, pinned: true);
-        try
+        ArgumentNullException.ThrowIfNull(proofOptions);
+        ArgumentNullException.ThrowIfNull(mandatoryPointers);
+
+        // The document is copied first, as at every entry point: reading the key can run code of the caller's (the
+        // GetSpan of a MemoryManager<byte> behind it), which must not change the document before it is copied (PR #62
+        // review). The key is then read once, before the options' dictionary and the pointer collection run. A
+        // canonicalizer of the caller's runs between deriving the public key and signing, so both use this copy;
+        // otherwise the proof could pack one key's public key with another key's signature (PR #62 follow-up d1).
+        unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
+        return WithKeyCopy(bbsPrivateKey.Span, privateKey =>
         {
-            bbsPrivateKey.Span.CopyTo(privateKey);
             var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -190,10 +195,26 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             var bbsSignature = _bbs.Sign(privateKey, input.Messages, input.BbsHeader);
 
             return Task.FromResult(PackBaseProof(request, input, bbsSignature, publicKey));
+        });
+    }
+
+    /// <summary>
+    /// Runs <paramref name="use"/> over one copy of the caller's private key, which the collector never moves and
+    /// which is cleared when <paramref name="use"/> returns or throws (PR #62 review). A key longer than
+    /// <see cref="PrivateKeyLength"/> is refused by its length where it was before, so at most one byte more is copied,
+    /// and a caller's oversized buffer is never pinned whole.
+    /// </summary>
+    internal static T WithKeyCopy<T>(ReadOnlySpan<byte> privateKey, Func<byte[], T> use)
+    {
+        var copy = GC.AllocateUninitializedArray<byte>(Math.Min(privateKey.Length, PrivateKeyLength + 1), pinned: true);
+        try
+        {
+            privateKey[..copy.Length].CopyTo(copy);
+            return use(copy);
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(privateKey);
+            CryptographicOperations.ZeroMemory(copy);
         }
     }
 
@@ -359,9 +380,9 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(mandatoryPointers);
 
         // A canonicalizer of the caller's runs while the base proof is prepared, and the key-store overload then awaits
-        // the store, so every input is copied first (PR #62). The document and the HMAC key come before the options
-        // and the pointers: copying them runs no code of the caller's, while reading the options' dictionary and the
-        // pointer collection does, and that code must not change an input not yet copied.
+        // the store, so every input is copied first, once (PR #62). The document comes first: reading any other input
+        // can run code of the caller's (the GetSpan of a MemoryManager<byte> behind the HMAC key, the options'
+        // dictionary, the pointer collection), and that code must not change the document before it is copied.
         unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
         var hmac = hmacKey.ToArray();
         proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
@@ -469,10 +490,11 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(selectivePointers);
 
         // A canonicalizer of the caller's runs while the proof is derived, and the selective pointers and the header
-        // are each used more than once. So every input is copied once, before it is read. The document and the
-        // header come first, because copying them runs no code of the caller's. The pointers come last, because
-        // enumerating them does. The pointers are copied by enumeration, so their Count is not trusted and their
-        // CopyTo is not handed an array (PR #62 follow-ups c and d2).
+        // are each used more than once. So every input is copied once, before it is read. The document comes first:
+        // reading the header can run code of the caller's (the GetSpan of a MemoryManager<byte> behind it), and so
+        // does enumerating the pointers, and that code must not change the document before it is copied. The pointers
+        // are copied by enumeration, so their Count is not trusted and their CopyTo is not handed an array (PR #62
+        // follow-ups c and d2).
         securedBaseDocument = JsonInputCheck.Owned(securedBaseDocument, "The secured base document");
         var header = presentationHeader.ToArray();
         var pointers = JsonInputCheck.OwnedArray(selectivePointers);
