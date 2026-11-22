@@ -1052,6 +1052,47 @@ public sealed class Bbs2023KeyStoreTests
     }
 
     [BbsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnHmacKeyWhoseMemoryRunsCallerCode_CannotChangeTheDocument(bool keyStore)
+    {
+        // Reading the HMAC key can run the caller's GetSpan, so the document is copied before it (PR #62 review: the
+        // order was claimed, not tested). The raw-key overload copies the document even earlier, so its row is a guard.
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var expected = await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory());
+        var buffer = Encoding.UTF8.GetBytes(WindDoc().GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        using var hmac = new HookedMemory(hmacKey, () => buffer[at] = (byte)'2');
+
+        var proof = keyStore
+            ? await new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                document.RootElement, BaseOptions(), store, Alias, info.InstanceId!.Value, hmac.Lent, WindMandatory())
+            : await new Bbs2023Cryptosuite().CreateBaseProofAsync(document.RootElement, BaseOptions(), sk, hmac.Lent, WindMandatory());
+
+        proof.ProofValue.Should().Be(expected.ProofValue);
+    }
+
+    [BbsFact]
+    public async Task DeriveProof_AHeaderWhoseMemoryRunsCallerCode_CannotChangeTheBaseDocument()
+    {
+        // Reading the presentation header can run the caller's GetSpan, so the base document is copied before it
+        // (PR #62 review: the order was claimed, not tested).
+        var (sk, hmacKey) = KeyMaterial();
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
+        var expected = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        var buffer = Encoding.UTF8.GetBytes(secured.GetRawText());
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        using var header = new HookedMemory(Convert.FromHexString("113377aa"), () => buffer[at] = (byte)'2');
+
+        var reveal = new Bbs2023Cryptosuite().DeriveProof(document.RootElement, ["/credentialSubject/sails/0"], header.Lent);
+
+        JsonElement.DeepEquals(WithoutProof(reveal), WithoutProof(expected)).Should().BeTrue();
+    }
+
+    [BbsTheory]
     [InlineData("raw key")]
     [InlineData("key store")]
     [InlineData("derive")]

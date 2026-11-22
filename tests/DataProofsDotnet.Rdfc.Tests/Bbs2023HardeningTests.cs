@@ -241,6 +241,24 @@ public sealed class Bbs2023HardeningTests
         await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(InvalidPrivateKey);
     }
 
+    [BbsTheory]
+    [InlineData(0)]
+    [InlineData(31)]
+    [InlineData(33)]
+    [InlineData(1 << 20)]
+    public async Task PrivateKey_OfTheWrongLength_IsRefusedByTheLengthGiven(int length)
+    {
+        // At most 33 bytes of the key are copied, so the length is checked against what the caller gave: the inner
+        // exception said "was 33" for any longer key (PR #62 review).
+        var (_, hmacKey) = KeyMaterial();
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(
+            Credential("\"name\":\"Alice\""), Options(), new byte[length], hmacKey, ["/issuer"]);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(InvalidPrivateKey))
+            .WithInnerException<ArgumentException>().WithMessage($"*must be 32 bytes, but was {length}.*");
+    }
+
     // ------------------------------------------------------------------ long proof values
 
     [BbsFact]

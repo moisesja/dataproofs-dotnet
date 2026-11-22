@@ -92,6 +92,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     private const string PartOfAValue = "A JSON pointer selects part of a value, not a whole statement of the document.";
     private const string PointerMismatch = "A JSON pointer does not match the document.";
 
+    private const string InvalidPrivateKey = "The bbs-2023 private key is not a valid BLS12-381-G2 key.";
+
     // A BLS12-381 secret scalar.
     internal const int PrivateKeyLength = 32;
 
@@ -190,7 +192,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
             var request = ValidateBaseProofRequest(unsecuredDocument, proofOptions, hmacKey, mandatoryPointers);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var publicKey = PublicKeyOf(privateKey);
+            var publicKey = PublicKeyOf(privateKey, bbsPrivateKey.Length);
             var input = PrepareBaseProof(request);
             var bbsSignature = _bbs.Sign(privateKey, input.Messages, input.BbsHeader);
 
@@ -200,9 +202,10 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
 
     /// <summary>
     /// Runs <paramref name="use"/> over one copy of the caller's private key, which the collector never moves and
-    /// which is cleared when <paramref name="use"/> returns or throws (PR #62 review). A key longer than
-    /// <see cref="PrivateKeyLength"/> is refused by its length where it was before, so at most one byte more is copied,
-    /// and a caller's oversized buffer is never pinned whole.
+    /// which is cleared when <paramref name="use"/> returns or throws (PR #62 review). A key of another length than
+    /// <see cref="PrivateKeyLength"/> is refused by the length the caller gave (<see cref="PublicKeyOf"/>), so at most one
+    /// byte more is copied: a caller's oversized buffer is never copied or pinned whole, and a cut-down copy is never a
+    /// key's length.
     /// </summary>
     internal static T WithKeyCopy<T>(ReadOnlySpan<byte> privateKey, Func<byte[], T> use)
     {
@@ -1118,9 +1121,16 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         return Hash.Sha256(Encoding.UTF8.GetBytes(joined));
     }
 
-    // KeyGenerator reports a wrong length or an invalid scalar as ArgumentException.
-    private static byte[] PublicKeyOf(ReadOnlySpan<byte> privateKey)
+    // A key of the wrong length is refused by the length the caller gave, since the copy holds at most
+    // PrivateKeyLength bytes of it. KeyGenerator reports an invalid scalar as ArgumentException.
+    private static byte[] PublicKeyOf(ReadOnlySpan<byte> privateKey, int givenLength)
     {
+        if (givenLength != PrivateKeyLength)
+        {
+            throw new ProofGenerationException(InvalidPrivateKey, new ArgumentException(
+                $"A BLS12-381-G2 private key must be {PrivateKeyLength} bytes, but was {givenLength}.", "bbsPrivateKey"));
+        }
+
         try
         {
             // The key pair keeps its own pinned copy of the private key, which only Dispose clears, and PublicKey
@@ -1130,7 +1140,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
         }
         catch (ArgumentException ex)
         {
-            throw new ProofGenerationException("The bbs-2023 private key is not a valid BLS12-381-G2 key.", ex);
+            throw new ProofGenerationException(InvalidPrivateKey, ex);
         }
     }
 
