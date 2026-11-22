@@ -1120,6 +1120,50 @@ public sealed class Bbs2023KeyStoreTests
         store.Calls.Should().BeEmpty();
     }
 
+    [BbsTheory]
+    [InlineData("proofOptions")]
+    [InlineData("mandatoryPointers")]
+    public async Task ANullArgument_IsReportedBeforeTheDocumentOrTheKeyIsRead(string missing)
+    {
+        // The raw-key overload checks its arguments, then copies the document, then reads the key (PR #62 review:
+        // nothing pinned the first step). Here the document is disposed and reading the key throws.
+        var (sk, hmacKey) = KeyMaterial();
+        var memory = new CallerMemory(WindDoc().GetRawText());
+        memory.Document.Dispose();
+        using var key = new HookedMemory(sk, () => throw new InvalidOperationException("the key was read"));
+
+        await FluentActions.Awaiting(() => new Bbs2023Cryptosuite().CreateBaseProofAsync(
+                memory.Document.RootElement,
+                missing == "proofOptions" ? null! : BaseOptions(),
+                key.Lent,
+                hmacKey,
+                missing == "mandatoryPointers" ? null! : WindMandatory()))
+            .Should().ThrowAsync<ArgumentNullException>().WithParameterName(missing);
+    }
+
+    [BbsTheory]
+    [InlineData("document is an array", "The document to secure must be a JSON object.")]
+    [InlineData("HMAC key of 31 bytes", "The bbs-2023 HMAC key must be 32 bytes.")]
+    [InlineData("malformed pointer", "A mandatory pointer is invalid.")]
+    public async Task AKeyOfTheWrongLength_IsReportedAfterTheInputChecks(string kind, string message)
+    {
+        // The key is refused where it was before: after the document, options, HMAC key and pointer checks (PR #62
+        // review: refusing it ahead of them left every test green).
+        var (_, hmacKey) = KeyMaterial();
+        var document = WindDoc();
+        var mandatory = WindMandatory();
+        switch (kind)
+        {
+            case "document is an array": document = Parse("[]"); break;
+            case "HMAC key of 31 bytes": hmacKey = hmacKey[..31]; break;
+            default: mandatory = ["issuer"]; break;
+        }
+
+        var act = () => new Bbs2023Cryptosuite().CreateBaseProofAsync(document, BaseOptions(), new byte[31], hmacKey, mandatory);
+
+        await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(message);
+    }
+
     // Caller memory whose GetSpan runs the caller's code first. Lent does not call GetSpan, as Memory does.
     private sealed class HookedMemory(byte[] bytes, Action onRead) : System.Buffers.MemoryManager<byte>
     {

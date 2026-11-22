@@ -550,6 +550,7 @@ public abstract class Issue61OptionsCopyTestsBase
     public static TheoryData<string, bool> DisposedWhileCopiedCases() => new()
     {
         { "document", false }, { "document", true }, { "extension value", false }, { "extension value", true },
+        { "options @context", false }, { "options @context", true },
     };
 
     [Theory]
@@ -560,10 +561,22 @@ public abstract class Issue61OptionsCopyTestsBase
         // rents them, so the copy could hold another document's bytes and be signed. The source is read again after
         // the copy, and a document disposed meanwhile is refused (PR #62 review). Here the dispose runs inside the
         // copy, from the memory behind the document, which the copy reads after the document's own metadata.
-        var memory = new CallerMemory(input == "document" ? HostileJson.BaseDocument : "\"as signed\"");
-        var options = input == "document" ? WithNote() : Options() with
+        var memory = new CallerMemory(input switch
         {
-            AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = memory.Document.RootElement },
+            "document" => HostileJson.BaseDocument,
+            "extension value" => "\"as signed\"",
+            _ => "\"https://www.w3.org/ns/credentials/v2\"",
+        });
+        var options = input switch
+        {
+            "document" => WithNote(),
+            "extension value" => Options() with
+            {
+                AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = memory.Document.RootElement },
+            },
+            // Copied, and so checked, even where the suite takes the document's @context instead (PR #62 review: no
+            // row covered it).
+            _ => WithNote() with { Context = memory.Document.RootElement },
         };
         var document = input == "document" ? memory.Document.RootElement : Document();
         memory.DisposeOnNextRead();

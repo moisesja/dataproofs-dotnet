@@ -205,7 +205,8 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     /// which is cleared when <paramref name="use"/> returns or throws (PR #62 review). A key of another length than
     /// <see cref="PrivateKeyLength"/> is refused by the length the caller gave (<see cref="PublicKeyOf"/>), so at most one
     /// byte more is copied: a caller's oversized buffer is never copied or pinned whole, and a cut-down copy is never a
-    /// key's length.
+    /// key's length. The copy is cleared as soon as <paramref name="use"/> returns, so <paramref name="use"/> must be
+    /// done with the key by then: one that awaits would carry on with a cleared key.
     /// </summary>
     internal static T WithKeyCopy<T>(ReadOnlySpan<byte> privateKey, Func<byte[], T> use)
     {
@@ -1122,7 +1123,7 @@ public sealed class Bbs2023Cryptosuite : ICryptosuite
     }
 
     // A key of the wrong length is refused by the length the caller gave, since the copy holds at most
-    // PrivateKeyLength bytes of it. KeyGenerator reports an invalid scalar as ArgumentException.
+    // PrivateKeyLength + 1 bytes of it. KeyGenerator reports an invalid scalar as ArgumentException.
     private static byte[] PublicKeyOf(ReadOnlySpan<byte> privateKey, int givenLength)
     {
         if (givenLength != PrivateKeyLength)

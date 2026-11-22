@@ -514,23 +514,25 @@ the end of this section.
   it before. They used to read it for the support check, the hash and the signature encoding, and the RDFC suites read
   it between the proof-options binding check and the hash. Emitted bytes do not change.
 
-  **A document disposed while it is copied** (PR #62 review). Disposing a `JsonDocument` on one thread while another
-  passes it in is a caller bug, for example a `using` document handed to a task that is not awaited, or a cached
-  document evicted while a request uses it. `Dispose` returns the document's pooled buffers, and the next parse in
-  the process rents them. A copy in flight at that moment could therefore hold another document's bytes and still be
-  well formed. Because the copy is now the only read, everything after it would succeed, so `AddProofAsync` could
-  sign that other document. Before the copy existed, a later read of the disposed document failed the call instead.
-  Every copy, on creation and on verification, and of options values too, now reads the source again after the copy.
-  A document disposed meanwhile is refused: `ProofGenerationException` on creation, `ObjectDisposedException` on
-  verification. A read that races `Dispose` can find the document's metadata gone before the document reports itself
-  disposed, and throws `ArgumentOutOfRangeException`. That exception is reported as the disposal it is only when the
-  document is in fact disposed. One thrown by a caller's `MemoryManager<byte>` behind an intact document propagates
-  unchanged. The check relies on .NET 10's `JsonDocument.Dispose` dropping each buffer reference before it returns
-  the buffer to the pool. That order is the runtime's implementation, not a documented contract: it was measured, not
-  proven. In the reviewer's probe of this check, raced `AddProofAsync` calls that signed another document's content
-  fell from 134 per 150,000 to none in 450,000. 2.0.0 had the same exposure in a suite's own `CreateProofAsync` and in
-  `DataIntegrityProofPipeline.Verify`, and this closes it there too. A suite's own `VerifyProof`, which awaits
-  nothing, still reads the caller's document as given.
+  **A document disposed while a call uses it** (PR #62 review). Disposing a `JsonDocument` on one thread while another
+  passes it in is a caller bug: for example, a `using` document handed to a task that is not awaited, or a cached
+  document evicted while a request uses it. `Dispose` returns the document's pooled buffers, and the next parse in the
+  process rents them. A read in flight at that moment can therefore see another document's bytes and find them well
+  formed.
+  - *2.0.0.* A suite's own `CreateProofAsync` could sign, and `DataIntegrityProofPipeline.Verify` could verify, a
+    document other than the one passed. `AddProofAsync` read the document again after signing, so it failed instead.
+  - *2.1.0.* Every entry point reads the caller's document once, in its copy, then reads the source again. A document
+    disposed before or during the copy is refused: `ProofGenerationException` on creation, `ObjectDisposedException`
+    on verification. Options values are copied the same way.
+  - *`ArgumentOutOfRangeException`.* A read that races `Dispose` can find the document's metadata gone before the
+    document reports itself disposed, and throw this exception. It is reported as the disposal it is only when the
+    document is in fact disposed. One thrown by a caller's `MemoryManager<byte>` behind an intact document propagates
+    unchanged.
+  - *Caveat.* The check relies on .NET 10's `JsonDocument.Dispose` dropping each buffer reference before it returns
+    the buffer to the pool. That order is the runtime's implementation, not a documented contract: it was measured,
+    not proven.
+  - *Measured.* In the reviewer's probe, raced `AddProofAsync` calls returned a verifying document with other content
+    in 0 of 1,050,000, and so did raced calls to a suite's `CreateProofAsync` and to `Verify`.
 - **JCS: proofs their own verifier refuses are no longer issued** (PR #62). Create Proof step 2 of
   `eddsa-jcs-2022` and `ecdsa-jcs-2019` copies the document's `@context` into the proof only when the document has
   one. Otherwise the proof kept the options' `@context`, and Verify Proof step 4.1 refuses a proof whose `@context`
@@ -553,9 +555,11 @@ the end of this section.
     base proof could pack one key's public key with another key's signature. The key is now read once, right after
     the document is copied, into a pinned copy that is cleared after use. The NetCrypto key pair that derives the
     public key is disposed, which clears its own copy of the key. The copy takes at most 33 bytes, so a caller's oversized
-    buffer is no longer pinned whole. A key of the wrong length is still refused with the same message, and the inner
-    exception reports the length the caller gave. The key-store overload needed no change: NetCrypto's
-    `StoredKeyInfo.PublicKey` returns a copy.
+    buffer is never copied whole. A key of the wrong length is still refused with the same message. Its inner
+    `ArgumentException` is now this library's (`ParamName` `bbsPrivateKey`), and it reports the length the caller
+    gave; it used to be NetCrypto's (`privateKey`). A null `proofOptions` or `mandatoryPointers` is now reported
+    before the key is read. The key-store overload needed no change: NetCrypto's `StoredKeyInfo.PublicKey` returns a
+    copy.
 
 ### Why this is a minor and not a major
 
