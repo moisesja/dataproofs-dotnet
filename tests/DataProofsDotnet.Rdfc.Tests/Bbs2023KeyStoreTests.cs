@@ -1051,6 +1051,34 @@ public sealed class Bbs2023KeyStoreTests
         proof.ProofValue.Should().Be(expected.ProofValue);
     }
 
+    [BbsTheory]
+    [InlineData("raw key")]
+    [InlineData("key store")]
+    [InlineData("derive")]
+    public async Task ADocumentCaughtMidDispose_IsAProofGenerationException(string entryPoint)
+    {
+        // A read racing Dispose can find the metadata gone before the document reports itself disposed, and throws
+        // ArgumentOutOfRangeException, which escaped raw (PR #62 review).
+        var (sk, hmacKey) = KeyMaterial();
+        var (store, info) = await StoreWithVectorKeyAsync();
+        var json = entryPoint == "derive"
+            ? Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory())).GetRawText()
+            : WindDoc().GetRawText();
+        var memory = new CallerMemory(json);
+        CallerMemory.MidDispose(memory.Document);
+
+        Func<Task> act = entryPoint == "derive"
+            ? () => Task.FromResult(new Bbs2023Cryptosuite().DeriveProof(
+                memory.Document.RootElement, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa")))
+            : Issue(entryPoint == "key store", BaseOptions(), store, info, document: memory.Document.RootElement);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(entryPoint == "derive"
+                ? "The secured base document has been disposed."
+                : "The document to secure has been disposed."))
+            .WithInnerException<ObjectDisposedException>();
+        store.Calls.Should().BeEmpty();
+    }
+
     // Caller memory whose GetSpan runs the caller's code first. Lent does not call GetSpan, as Memory does.
     private sealed class HookedMemory(byte[] bytes, Action onRead) : System.Buffers.MemoryManager<byte>
     {
@@ -1081,7 +1109,7 @@ public sealed class Bbs2023KeyStoreTests
         // A dispose racing the copy could leave a copy of another document's bytes, which would be signed. The source
         // is read again after the copy (PR #62 review).
         var (store, info) = await StoreWithVectorKeyAsync();
-        var memory = new DisposingMemory(WindDoc().GetRawText());
+        var memory = new CallerMemory(WindDoc().GetRawText());
         memory.DisposeOnNextRead();
 
         var thrown = await Issue(keyStore, BaseOptions(), store, info, document: memory.Document.RootElement)
@@ -1096,7 +1124,7 @@ public sealed class Bbs2023KeyStoreTests
     {
         var (sk, hmacKey) = KeyMaterial();
         var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), BaseOptions(), sk, hmacKey, WindMandatory()));
-        var memory = new DisposingMemory(secured.GetRawText());
+        var memory = new CallerMemory(secured.GetRawText());
         memory.DisposeOnNextRead();
 
         FluentActions.Invoking(() => new Bbs2023Cryptosuite().DeriveProof(

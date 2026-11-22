@@ -560,7 +560,7 @@ public abstract class Issue61OptionsCopyTestsBase
         // rents them, so the copy could hold another document's bytes and be signed. The source is read again after
         // the copy, and a document disposed meanwhile is refused (PR #62 review). Here the dispose runs inside the
         // copy, from the memory behind the document, which the copy reads after the document's own metadata.
-        var memory = new DisposingMemory(input == "document" ? HostileJson.BaseDocument : "\"as signed\"");
+        var memory = new CallerMemory(input == "document" ? HostileJson.BaseDocument : "\"as signed\"");
         var options = input == "document" ? WithNote() : Options() with
         {
             AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = memory.Document.RootElement },
@@ -574,6 +574,59 @@ public abstract class Issue61OptionsCopyTestsBase
                 ? "The document to secure has been disposed."
                 : "The proof options hold a JSON value whose document has been disposed."))
             .WithInnerException<ObjectDisposedException>();
+    }
+
+    public static TheoryData<string, bool> MidDisposeCases() => new()
+    {
+        { "before the call", false }, { "before the call", true },
+        { "while it is copied", false }, { "while it is copied", true },
+        { "while it is copied, and the copy throws", false }, { "while it is copied, and the copy throws", true },
+    };
+
+    [Theory]
+    [MemberData(nameof(MidDisposeCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task ADocumentCaughtMidDispose_IsAProofGenerationException(string when, bool throughThePipeline)
+    {
+        // A read that races Dispose on another thread can find the metadata gone before the document reports itself
+        // disposed, and throws ArgumentOutOfRangeException. That escaped raw from the first read and was untested
+        // (PR #62 review). The state is set here as the race leaves it.
+        var memory = new CallerMemory(HostileJson.BaseDocument);
+        switch (when)
+        {
+            case "before the call":
+                CallerMemory.MidDispose(memory.Document);
+                break;
+            case "while it is copied":
+                memory.OnNextRead(CallerMemory.MidDispose);
+                break;
+            default:
+                memory.OnNextRead(document =>
+                {
+                    CallerMemory.MidDispose(document);
+                    throw new ArgumentOutOfRangeException("start");
+                });
+                break;
+        }
+
+        var act = () => IssueAsync(memory.Document.RootElement, WithNote(), Signer, throughThePipeline);
+
+        (await act.Should().ThrowAsync<ProofGenerationException>().WithMessage("The document to secure has been disposed."))
+            .WithInnerException<ObjectDisposedException>();
+    }
+
+    [Theory]
+    [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task WhatTheCallersMemoryThrows_PropagatesUnchanged(bool throughThePipeline)
+    {
+        // An ArgumentOutOfRangeException from the memory behind a document that was never disposed is the caller's,
+        // and not a dispose (PR #62 review: it was reported as "disposed").
+        var memory = new CallerMemory(HostileJson.BaseDocument);
+        var fault = new ArgumentOutOfRangeException("the caller's own");
+        memory.OnNextRead(_ => throw fault);
+
+        var act = () => IssueAsync(memory.Document.RootElement, WithNote(), Signer, throughThePipeline);
+
+        (await act.Should().ThrowAsync<ArgumentOutOfRangeException>()).Which.Should().BeSameAs(fault);
     }
 
     [Theory]
@@ -667,17 +720,17 @@ public abstract class Issue61OptionsCopyTestsBase
 }
 
 /// <summary>
-/// The caller's memory behind a <see cref="JsonDocument"/>, which disposes that document the next time it is read once
-/// <see cref="DisposeOnNextRead"/> is called. A copy of an element reads the document's metadata first and its bytes
-/// last, so the document is disposed while it is copied, as a racing <c>Dispose</c> on another thread would
-/// (PR #62 review). The bytes themselves stay intact, so only a check made after the copy can see the dispose.
+/// The caller's memory behind a <see cref="JsonDocument"/>, which runs the caller's code the next time it is read once
+/// <see cref="OnNextRead"/> is called. A copy of an element reads the document's metadata first and its bytes last, so
+/// code run then runs inside the copy, as a racing <c>Dispose</c> on another thread would (PR #62 review). The bytes
+/// themselves stay intact, so only a check made after the copy can see what that code did.
 /// </summary>
-public sealed class DisposingMemory : System.Buffers.MemoryManager<byte>
+public sealed class CallerMemory : System.Buffers.MemoryManager<byte>
 {
     private readonly byte[] _bytes;
-    private bool _armed;
+    private Action<JsonDocument>? _next;
 
-    public DisposingMemory(string json)
+    public CallerMemory(string json)
     {
         _bytes = Encoding.UTF8.GetBytes(json);
         Document = JsonDocument.Parse(Memory);
@@ -686,17 +739,35 @@ public sealed class DisposingMemory : System.Buffers.MemoryManager<byte>
     /// <summary>The document parsed over this memory.</summary>
     public JsonDocument Document { get; }
 
+    /// <summary>Runs <paramref name="code"/> with <see cref="Document"/> on the next read of this memory.</summary>
+    public void OnNextRead(Action<JsonDocument> code) => _next = code;
+
     /// <summary>Disposes <see cref="Document"/> on the next read of this memory.</summary>
-    public void DisposeOnNextRead() => _armed = true;
+    public void DisposeOnNextRead() => OnNextRead(document => document.Dispose());
+
+    /// <summary>
+    /// Leaves <paramref name="document"/> as a <c>Dispose</c> racing on another thread can be seen to: its metadata
+    /// gone, its bytes not yet. A read then throws <see cref="ArgumentOutOfRangeException"/>, not
+    /// <see cref="ObjectDisposedException"/>. <c>JsonDocument.Dispose</c> in release/10.0 drops the metadata first;
+    /// if these private fields are gone, the order the copy check relies on must be checked again.
+    /// </summary>
+    public static void MidDispose(JsonDocument document)
+    {
+        const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var metadataField = typeof(JsonDocument).GetField("_parsedData", Private)
+            ?? throw new InvalidOperationException("JsonDocument._parsedData is gone: check the order of JsonDocument.Dispose again.");
+        var metadata = metadataField.GetValue(document)!;
+        var dataField = metadata.GetType().GetField("_data", Private)
+            ?? throw new InvalidOperationException("MetadataDb._data is gone: check the order of JsonDocument.Dispose again.");
+        dataField.SetValue(metadata, null);
+        metadataField.SetValue(document, metadata);
+    }
 
     public override Span<byte> GetSpan()
     {
-        if (_armed)
-        {
-            _armed = false;
-            Document.Dispose();
-        }
-
+        var next = _next;
+        _next = null;
+        next?.Invoke(Document);
         return _bytes;
     }
 

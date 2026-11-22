@@ -57,6 +57,7 @@ internal static class JsonInputCheck
     private static readonly JavaScriptEncoder Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 
     private const string OptionsValueDisposed = "The proof options hold a JSON value whose document has been disposed.";
+    private const string DisposedWhileRead = "The JSON document was disposed while it was read.";
 
     /// <summary>
     /// Returns why <paramref name="element"/> cannot be processed, as a predicate phrase for a
@@ -176,6 +177,24 @@ internal static class JsonInputCheck
     }
 
     /// <summary>
+    /// The kind of <paramref name="element"/>, with a document disposed on another thread meanwhile reported as such
+    /// (PR #62 review). A read that races <c>Dispose</c> can find the document's metadata gone before the document
+    /// reports itself disposed, and throws <see cref="ArgumentOutOfRangeException"/>.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The element's document has been disposed.</exception>
+    public static JsonValueKind KindOf(JsonElement element)
+    {
+        try
+        {
+            return element.ValueKind;
+        }
+        catch (ArgumentOutOfRangeException ex) when (IsDisposed(element))
+        {
+            throw new ObjectDisposedException(DisposedWhileRead, ex);
+        }
+    }
+
+    /// <summary>
     /// A clone of <paramref name="element"/> taken while its document was intact (PR #62 review). A document disposed
     /// on another thread while it is copied returns its pooled buffers, and the next parse in the process rents them,
     /// so the clone can hold another document's bytes and still be well formed. The source is read again after the
@@ -186,19 +205,35 @@ internal static class JsonInputCheck
     /// <exception cref="ObjectDisposedException">The document was disposed before or while the element was copied.</exception>
     public static JsonElement CloneUndisposed(JsonElement element)
     {
+        JsonElement clone;
         try
         {
-            var clone = element.Clone();
-
-            // Without the barrier the read below may be satisfied before the copy's own reads (seen on arm64).
-            Interlocked.MemoryBarrier();
-            _ = element.ValueKind;
-            return clone;
+            clone = element.Clone();
         }
-        catch (ArgumentOutOfRangeException ex)
+        catch (ArgumentOutOfRangeException ex) when (IsDisposed(element))
         {
-            // A read that races Dispose finds the metadata gone before the document reports itself disposed.
-            throw new ObjectDisposedException("The JSON document was disposed while it was copied.", ex);
+            throw new ObjectDisposedException(DisposedWhileRead, ex);
+        }
+
+        // Without the barrier the read below may be satisfied before the copy's own reads: the PR #62 review saw that
+        // let 2 in 5.4 million raced calls through on arm64. It has not been reproduced since.
+        Interlocked.MemoryBarrier();
+        _ = KindOf(element);
+        return clone;
+    }
+
+    // Disposal is one way, so a document whose read failed for that reason fails every later read too. An
+    // ArgumentOutOfRangeException from an intact document came from the caller's memory and propagates unchanged.
+    private static bool IsDisposed(JsonElement element)
+    {
+        try
+        {
+            _ = element.ValueKind;
+            return false;
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or ArgumentOutOfRangeException)
+        {
+            return true;
         }
     }
 
@@ -207,7 +242,7 @@ internal static class JsonInputCheck
     {
         try
         {
-            return element.ValueKind == JsonValueKind.Undefined ? element : CloneUndisposed(element);
+            return KindOf(element) == JsonValueKind.Undefined ? element : CloneUndisposed(element);
         }
         catch (ObjectDisposedException ex)
         {

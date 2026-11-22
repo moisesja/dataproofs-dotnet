@@ -191,8 +191,8 @@ public sealed class DataIntegrityProofPipeline
     /// public key — the signature-only raw-key form (FR-7); no controller authorization is
     /// performed because no controller document is available.
     /// </summary>
-    /// <param name="securedDocument">The secured JSON document. Copied before it is read, so every result is about the
-    /// document as given (PR #62).</param>
+    /// <param name="securedDocument">The secured JSON document. Copied once its kind is checked, before anything else
+    /// reads it, so every result is about the document as given (PR #62).</param>
     /// <param name="publicKey">The verification key for every proof.</param>
     /// <param name="options">Verifier expectations (purpose, domain, challenge, clock).</param>
     public DocumentVerificationResult Verify(
@@ -219,8 +219,8 @@ public sealed class DataIntegrityProofPipeline
     /// (<see cref="ProofProblemCodes.InvalidVerificationMethod"/> otherwise), and the
     /// controller must control the method.
     /// </summary>
-    /// <param name="securedDocument">The secured JSON document. Copied before it is read, so every result is about the
-    /// document as given (PR #62).</param>
+    /// <param name="securedDocument">The secured JSON document. Copied once its kind is checked, before anything else
+    /// reads it, so every result is about the document as given (PR #62).</param>
     /// <param name="resolver">The verification-method resolver.</param>
     /// <param name="options">Verifier expectations (purpose, domain, challenge, clock).</param>
     /// <param name="cancellationToken">Cancels resolution.</param>
@@ -303,7 +303,7 @@ public sealed class DataIntegrityProofPipeline
     {
         options ??= new ProofVerificationOptions();
 
-        if (securedDocument.ValueKind != JsonValueKind.Object)
+        if (JsonInputCheck.KindOf(securedDocument) != JsonValueKind.Object)
         {
             return DocumentFailure(ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.");
         }

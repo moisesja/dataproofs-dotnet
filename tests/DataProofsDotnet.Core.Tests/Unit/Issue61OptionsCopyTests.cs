@@ -148,18 +148,77 @@ public sealed class Issue61PipelineVerifyCopyTests
         result.Verified.Should().BeTrue();
     }
 
-    public static TheoryData<bool, bool> DisposedCases() => new()
+    public static TheoryData<string, bool> DisposedCases()
     {
-        { false, false }, { false, true }, { true, false }, { true, true },
-    };
+        var cases = new TheoryData<string, bool>();
+        foreach (var how in new[]
+        {
+            "disposed before the call", "disposed while it is copied", "caught mid-dispose before the call",
+            "caught mid-dispose while it is copied", "caught mid-dispose, and the copy throws",
+        })
+        {
+            cases.Add(how, false);
+            cases.Add(how, true);
+        }
+
+        return cases;
+    }
 
     [Theory]
     [MemberData(nameof(DisposedCases))]
-    public async Task ADisposedSecuredDocument_ThrowsObjectDisposedException(bool whileItIsCopied, bool withAResolver)
+    public async Task ADisposedSecuredDocument_ThrowsObjectDisposedException(string how, bool withAResolver)
     {
         // Verification reports a document disposed before the call as JsonDocument does, and one disposed while it is
-        // copied the same way, rather than verifying whatever document rented its buffers (PR #62 review). It is not a
+        // read or copied the same way, rather than verifying whatever document rented its buffers or letting the
+        // ArgumentOutOfRangeException of a read caught mid-dispose out (PR #62 review). It is not a
         // ProofGenerationException: verification creates nothing.
+        var (pipeline, key, resolver, secured) = await SecuredAsync();
+        var memory = new CallerMemory(secured.GetRawText());
+        switch (how)
+        {
+            case "disposed before the call":
+                memory.Document.Dispose();
+                break;
+            case "disposed while it is copied":
+                memory.DisposeOnNextRead();
+                break;
+            case "caught mid-dispose before the call":
+                CallerMemory.MidDispose(memory.Document);
+                break;
+            case "caught mid-dispose while it is copied":
+                memory.OnNextRead(CallerMemory.MidDispose);
+                break;
+            default:
+                memory.OnNextRead(document =>
+                {
+                    CallerMemory.MidDispose(document);
+                    throw new ArgumentOutOfRangeException("start");
+                });
+                break;
+        }
+
+        await Verifying(pipeline, memory.Document.RootElement, key, resolver, withAResolver)
+            .Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WhatTheCallersMemoryThrows_PropagatesUnchanged(bool withAResolver)
+    {
+        // An ArgumentOutOfRangeException from the memory behind a document that was never disposed is the caller's
+        // (PR #62 review: it was reported as a dispose).
+        var (pipeline, key, resolver, secured) = await SecuredAsync();
+        var memory = new CallerMemory(secured.GetRawText());
+        var fault = new ArgumentOutOfRangeException("the caller's own");
+        memory.OnNextRead(_ => throw fault);
+
+        (await Verifying(pipeline, memory.Document.RootElement, key, resolver, withAResolver)
+            .Should().ThrowAsync<ArgumentOutOfRangeException>()).Which.Should().BeSameAs(fault);
+    }
+
+    private static async Task<(DataIntegrityProofPipeline Pipeline, PublicKeyMaterial Key, IVerificationMethodResolver Resolver, JsonElement Secured)> SecuredAsync()
+    {
         var signer = Fx.Signer(Fx.SeedKey(0x21));
         var key = PublicKeyMaterial.FromRaw(signer.KeyType, signer.PublicKey.Span);
         var pipeline = new DataIntegrityProofPipeline(CryptosuiteRegistry.CreateDefault());
@@ -170,17 +229,6 @@ public sealed class Issue61PipelineVerifyCopyTests
             VerificationMethod = "did:example:x#k",
             ProofPurpose = ProofPurposes.AssertionMethod,
         }, signer);
-        var memory = new DisposingMemory(secured.GetRawText());
-        var document = memory.Document.RootElement;
-        if (whileItIsCopied)
-        {
-            memory.DisposeOnNextRead();
-        }
-        else
-        {
-            memory.Document.Dispose();
-        }
-
         var resolver = new RewritingResolver(
             new ResolvedVerificationMethod
             {
@@ -190,12 +238,14 @@ public sealed class Issue61PipelineVerifyCopyTests
                 Relationships = new HashSet<string>(StringComparer.Ordinal) { ProofPurposes.AssertionMethod },
             },
             () => { });
-        Func<Task> act = withAResolver
+        return (pipeline, key, resolver, secured);
+    }
+
+    private static Func<Task> Verifying(
+        DataIntegrityProofPipeline pipeline, JsonElement document, PublicKeyMaterial key, IVerificationMethodResolver resolver, bool withAResolver)
+        => withAResolver
             ? () => pipeline.VerifyAsync(document, resolver)
             : () => Task.FromResult(pipeline.Verify(document, key));
-
-        await act.Should().ThrowAsync<ObjectDisposedException>();
-    }
 
     private sealed class RewritingResolver(ResolvedVerificationMethod method, Action rewrite) : IVerificationMethodResolver
     {
