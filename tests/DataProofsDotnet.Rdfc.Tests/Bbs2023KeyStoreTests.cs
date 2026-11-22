@@ -1164,6 +1164,108 @@ public sealed class Bbs2023KeyStoreTests
         await act.Should().ThrowAsync<ProofGenerationException>().WithMessage(message);
     }
 
+    // A reveal and its derived proof, with an extension member signed into the base proof, and the key to verify them.
+    private static async Task<(JsonElement Reveal, DataIntegrityProof Proof, KeyValuePair<string, JsonElement> Note, PublicKeyMaterial Key)> RevealAsync()
+    {
+        var (sk, hmacKey) = KeyMaterial();
+        var (_, info) = await StoreWithVectorKeyAsync();
+        var note = new KeyValuePair<string, JsonElement>("https://example.org/vocab#note", Parse("\"x\""));
+        var options = BaseOptions() with { AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = note.Value } };
+        var secured = Embed(WindDoc(), await new Bbs2023Cryptosuite().CreateBaseProofAsync(WindDoc(), options, sk, hmacKey, WindMandatory()));
+        var reveal = new Bbs2023Cryptosuite().DeriveProof(secured, ["/credentialSubject/sails/0"], Convert.FromHexString("113377aa"));
+        var proof = reveal.GetProperty("proof").Deserialize<DataIntegrityProof>(DataProofsJsonOptions.Default)!;
+        proof.AdditionalProperties.Should().ContainKey(note.Key, "the derived proof carries the base proof's extension members");
+        return (WithoutProof(reveal), proof, note, PublicKeyMaterial.FromRaw(KeyType.Bls12381G2, info.PublicKey));
+    }
+
+    [BbsTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VerifyProof_IsAboutTheRevealAsGiven_WhateverReadingTheProofDoes(bool tampered)
+    {
+        // Reading the proof's extension dictionary runs the caller's code, so the suite copies the reveal first: a proof
+        // that rewrites the caller's buffer as it is read can neither make a tampered reveal verify nor a genuine one
+        // fail (PR #62 review: a suite's own VerifyProof read the caller's document as given).
+        var (reveal, derived, note, key) = await RevealAsync();
+        var buffer = Encoding.UTF8.GetBytes(reveal.GetRawText());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        at.Should().BeGreaterThan(7, "the reveal discloses the sail number");
+        if (tampered)
+        {
+            buffer[at] = (byte)'2';
+        }
+
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var proof = derived with
+        {
+            AdditionalProperties = new ScriptedDictionary([note], count: 1, onRead: () => buffer[at] = (byte)(tampered ? '1' : '2')),
+        };
+
+        new Bbs2023Cryptosuite().VerifyProof(document.RootElement, proof, key).Verified.Should().Be(!tampered);
+    }
+
+    [BbsFact]
+    public async Task VerifyProof_TheResultHoldsTheProofAsVerified()
+    {
+        // The result carries the copy that was verified, so changing the caller's proof afterwards changes nothing in
+        // it (PR #62 review).
+        var (reveal, proof, note, key) = await RevealAsync();
+        var mine = proof with { AdditionalProperties = new Dictionary<string, JsonElement>(proof.AdditionalProperties!) };
+
+        var result = new Bbs2023Cryptosuite().VerifyProof(reveal, mine, key);
+        mine.Type = "ChangedType";
+        mine.AdditionalProperties![note.Key] = Parse("\"changed\"");
+
+        result.Verified.Should().BeTrue();
+        var verified = result.Proof!;
+        verified.Should().NotBeSameAs(mine);
+        verified.Type.Should().Be(DataIntegrityProof.DataIntegrityProofType);
+        verified.AdditionalProperties![note.Key].GetString().Should().Be("x");
+    }
+
+    [BbsFact]
+    public async Task VerifyProof_ATamperedRevealACanonicalizerRepairs_DoesNotVerify()
+    {
+        // A canonicalizer of the caller's runs while the reveal is verified, and is handed the suite's copy, so
+        // rewriting the caller's buffer cannot make a tampered reveal verify (PR #62 review).
+        var (reveal, proof, _, key) = await RevealAsync();
+        var buffer = Encoding.UTF8.GetBytes(reveal.GetRawText());
+        var at = buffer.AsSpan().IndexOf("Earth101"u8) + 7;
+        buffer[at] = (byte)'2';
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+
+        new Bbs2023Cryptosuite(new HookedCanonicalizer(() => buffer[at] = (byte)'1'))
+            .VerifyProof(document.RootElement, proof, key).Verified.Should().BeFalse();
+
+        // Control: the repaired reveal verifies.
+        new Bbs2023Cryptosuite().VerifyProof(document.RootElement, proof, key).Verified.Should().BeTrue();
+    }
+
+    [BbsTheory]
+    [InlineData("disposed before the call")]
+    [InlineData("disposed while it is copied")]
+    [InlineData("caught mid-dispose before the call")]
+    [InlineData("caught mid-dispose while it is copied")]
+    public async Task VerifyProof_ADisposedReveal_IsAFailedResult(string how)
+    {
+        // Verification never throws for its input: a reveal disposed before or while the suite copies it is a failed
+        // result, never one about whichever document rented its buffers (PR #62 review).
+        var (reveal, proof, _, key) = await RevealAsync();
+        var memory = new CallerMemory(reveal.GetRawText());
+        switch (how)
+        {
+            case "disposed before the call": memory.Document.Dispose(); break;
+            case "disposed while it is copied": memory.DisposeOnNextRead(); break;
+            case "caught mid-dispose before the call": CallerMemory.MidDispose(memory.Document); break;
+            default: memory.OnNextRead(CallerMemory.MidDispose); break;
+        }
+
+        var result = new Bbs2023Cryptosuite().VerifyProof(memory.Document.RootElement, proof, key);
+
+        result.Verified.Should().BeFalse();
+        result.Problems.Should().ContainSingle().Which.Message.Should().Be("Verification failed unexpectedly (ObjectDisposedException).");
+    }
+
     // Caller memory whose GetSpan runs the caller's code first. Lent does not call GetSpan, as Memory does.
     private sealed class HookedMemory(byte[] bytes, Action onRead) : System.Buffers.MemoryManager<byte>
     {

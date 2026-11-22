@@ -277,11 +277,18 @@ internal abstract class LegacyCryptosuiteBase : ICryptosuite
 
         try
         {
-            if (unsecuredDocument.ValueKind != JsonValueKind.Object)
+            if (JsonInputCheck.KindOf(unsecuredDocument) != JsonValueKind.Object)
             {
                 return ProofVerificationResult.Failure(
                     ProofProblemCodes.ProofVerificationError, "The secured document must be a JSON object.", proof);
             }
+
+            // Verified from copies the caller cannot dispose or rewrite during the call: a document disposed on another
+            // thread meanwhile could be read as whichever document rented its buffers, and verify (PR #62 review). The
+            // document comes first, because reading the proof's extension dictionary runs the caller's code. What the
+            // copies find is a failed result, below, as every other fault is; the result carries the copy verified.
+            unsecuredDocument = JsonInputCheck.CloneUndisposed(unsecuredDocument);
+            proof = JsonInputCheck.OwnedCopy(proof);
 
             // Legacy family: dispatch is by type; cryptosuite MUST be absent on the wire.
             if (!string.Equals(proof.Type, LegacyProofType, StringComparison.Ordinal))

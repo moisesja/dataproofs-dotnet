@@ -642,6 +642,134 @@ public abstract class Issue61OptionsCopyTestsBase
         (await act.Should().ThrowAsync<ArgumentOutOfRangeException>()).Which.Should().BeSameAs(fault);
     }
 
+    public static TheoryData<string> RewritingProofCases() =>
+        ["a tampered document the proof repairs", "a signed document the proof tampers with"];
+
+    [Theory]
+    [MemberData(nameof(RewritingProofCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task VerifyProof_IsAboutTheDocumentAsGiven_WhateverReadingTheProofDoes(string start)
+    {
+        // Reading the proof's extension dictionary runs the caller's code, so the suite copies the document first: a
+        // proof that rewrites the caller's buffer as it is read can neither make a tampered document verify nor a
+        // signed one fail (PR #62 review: a suite's own VerifyProof read the caller's document as given).
+        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var buffer = Encoding.UTF8.GetBytes(HostileJson.BaseDocument);
+        var at = Array.LastIndexOf(buffer, (byte)'1');
+        var tampered = start.StartsWith("a tampered", StringComparison.Ordinal);
+        if (tampered)
+        {
+            buffer[at] = (byte)'2';
+        }
+
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+        var proof = signed with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new(NoteName, signed.AdditionalProperties![NoteName])], count: 1,
+                onRead: () => buffer[at] = (byte)(tampered ? '1' : '2')),
+        };
+
+        Suite.VerifyProof(document.RootElement, proof, PublicKey).Verified.Should().Be(!tampered);
+    }
+
+    [Fact]
+    public async Task VerifyProof_ReadsTheProofOnce()
+    {
+        // Every check and the hash see the one copy taken of the proof (PR #62 review: the RDFC binding check read the
+        // caller's extension members again).
+        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var proof = signed with
+        {
+            AdditionalProperties = new ScriptedDictionary(
+                [new(NoteName, signed.AdditionalProperties![NoteName])], count: 1,
+                later: [new(NoteName, HostileJson.Parse("\"changed\""))]),
+        };
+
+        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task VerifyProof_TheResultHoldsTheProofAsVerified()
+    {
+        // The result carries the copy that was verified, so changing the caller's proof afterwards changes nothing in
+        // it (PR #62 review).
+        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var proof = signed with { AdditionalProperties = new Dictionary<string, JsonElement>(signed.AdditionalProperties!) };
+
+        var result = Suite.VerifyProof(Document(), proof, PublicKey);
+        Tamper(proof);
+
+        result.Verified.Should().BeTrue();
+        var verified = result.Proof!;
+        verified.Should().NotBeSameAs(proof);
+        verified.Type.Should().Be(ProofType);
+        verified.AdditionalProperties![NoteName].GetString().Should().Be("as signed");
+        verified.AdditionalProperties.Should().NotContainKey("proofValue");
+    }
+
+    public static TheoryData<string> VerifyDisposedCases() =>
+    [
+        "document disposed before the call",
+        "document disposed while it is copied",
+        "document caught mid-dispose before the call",
+        "document caught mid-dispose while it is copied",
+        "document caught mid-dispose, and the copy throws",
+        "proof @context disposed while it is copied",
+        "proof extension value disposed while it is copied",
+    ];
+
+    [Theory]
+    [MemberData(nameof(VerifyDisposedCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task VerifyProof_ADisposedInput_IsAFailedResult(string how)
+    {
+        // Verification never throws for its input (FR-3): a document or proof value disposed before or while the suite
+        // copies it is a failed result, never one about whichever document rented its buffers (PR #62 review).
+        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
+        var memory = new CallerMemory(how.StartsWith("document", StringComparison.Ordinal)
+            ? HostileJson.BaseDocument
+            : how.Contains("@context", StringComparison.Ordinal) ? FallbackContext : "\"as signed\"");
+        var document = how.StartsWith("document", StringComparison.Ordinal) ? memory.Document.RootElement : Document();
+        var proof = how switch
+        {
+            "proof @context disposed while it is copied" => signed with { Context = memory.Document.RootElement },
+            "proof extension value disposed while it is copied" => signed with
+            {
+                AdditionalProperties = new Dictionary<string, JsonElement> { [NoteName] = memory.Document.RootElement },
+            },
+            _ => signed,
+        };
+        switch (how)
+        {
+            case "document disposed before the call":
+                memory.Document.Dispose();
+                break;
+            case "document caught mid-dispose before the call":
+                CallerMemory.MidDispose(memory.Document);
+                break;
+            case "document caught mid-dispose while it is copied":
+                memory.OnNextRead(CallerMemory.MidDispose);
+                break;
+            case "document caught mid-dispose, and the copy throws":
+                memory.OnNextRead(disposing =>
+                {
+                    CallerMemory.MidDispose(disposing);
+                    throw new ArgumentOutOfRangeException("start");
+                });
+                break;
+            default:
+                memory.DisposeOnNextRead();
+                break;
+        }
+
+        var result = Suite.VerifyProof(document, proof, PublicKey);
+
+        result.Verified.Should().BeFalse();
+        // A disposed proof value is the options copy's fault, reported by the copy as a ProofGenerationException.
+        result.Problems.Should().ContainSingle().Which.Message.Should().Be(how.StartsWith("document", StringComparison.Ordinal)
+            ? "Verification failed unexpectedly (ObjectDisposedException)."
+            : "Verification failed unexpectedly (ProofGenerationException).");
+    }
+
     [Theory]
     [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
     public async Task AnEmptyExtensionDictionaryFilledWhileTheSignerRuns_LeavesTheProofAsAskedFor(bool throughThePipeline)
