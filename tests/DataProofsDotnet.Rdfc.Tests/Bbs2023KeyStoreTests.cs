@@ -1242,28 +1242,68 @@ public sealed class Bbs2023KeyStoreTests
     }
 
     [BbsTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VerifyProof_IsAboutTheProofAsGiven_WhateverTheCallersCanonicalizerDoes(bool tampered)
+    {
+        // bbs-2023 canonicalizes the reveal before it reads the proof configuration, so a canonicalizer of the
+        // caller's could rewrite a proof value the suite had not read yet. The proof is copied before it runs (PR #62
+        // review: a tampered value repaired that way verified).
+        var (reveal, derived, note, key) = await RevealAsync();
+        var buffer = Encoding.UTF8.GetBytes("\"x\"");
+        if (tampered)
+        {
+            buffer[1] = (byte)'y';
+        }
+
+        using var value = JsonDocument.Parse(buffer.AsMemory());
+        var proof = derived with { AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = value.RootElement } };
+        var suite = new Bbs2023Cryptosuite(new HookedCanonicalizer(() => buffer[1] = (byte)(tampered ? 'x' : 'y')));
+
+        suite.VerifyProof(reveal, proof, key).Verified.Should().Be(!tampered);
+    }
+
+    [BbsTheory]
     [InlineData("disposed before the call")]
     [InlineData("disposed while it is copied")]
     [InlineData("caught mid-dispose before the call")]
     [InlineData("caught mid-dispose while it is copied")]
-    public async Task VerifyProof_ADisposedReveal_IsAFailedResult(string how)
+    [InlineData("proof @context disposed while it is copied")]
+    [InlineData("proof extension value disposed while it is copied")]
+    public async Task VerifyProof_ADisposedInput_IsAFailedResult(string how)
     {
-        // Verification never throws for its input: a reveal disposed before or while the suite copies it is a failed
-        // result, never one about whichever document rented its buffers (PR #62 review).
-        var (reveal, proof, _, key) = await RevealAsync();
-        var memory = new CallerMemory(reveal.GetRawText());
+        // Verification never throws for its input: a reveal or proof value disposed before or while the suite copies it
+        // is a failed result, never one about whichever document rented its buffers (PR #62 review).
+        var (reveal, proof, note, key) = await RevealAsync();
+        var onTheProof = how.StartsWith("proof", StringComparison.Ordinal);
+        var memory = new CallerMemory(!onTheProof
+            ? reveal.GetRawText()
+            : how.Contains("@context", StringComparison.Ordinal) ? "\"https://www.w3.org/ns/credentials/v2\"" : "\"x\"");
+        var document = onTheProof ? reveal : memory.Document.RootElement;
+        proof = how switch
+        {
+            "proof @context disposed while it is copied" => proof with { Context = memory.Document.RootElement },
+            "proof extension value disposed while it is copied" => proof with
+            {
+                AdditionalProperties = new Dictionary<string, JsonElement> { [note.Key] = memory.Document.RootElement },
+            },
+            _ => proof,
+        };
         switch (how)
         {
             case "disposed before the call": memory.Document.Dispose(); break;
-            case "disposed while it is copied": memory.DisposeOnNextRead(); break;
             case "caught mid-dispose before the call": CallerMemory.MidDispose(memory.Document); break;
-            default: memory.OnNextRead(CallerMemory.MidDispose); break;
+            case "caught mid-dispose while it is copied": memory.OnNextRead(CallerMemory.MidDispose); break;
+            default: memory.DisposeOnNextRead(); break;
         }
 
-        var result = new Bbs2023Cryptosuite().VerifyProof(memory.Document.RootElement, proof, key);
+        var result = new Bbs2023Cryptosuite().VerifyProof(document, proof, key);
 
         result.Verified.Should().BeFalse();
-        result.Problems.Should().ContainSingle().Which.Message.Should().Be("Verification failed unexpectedly (ObjectDisposedException).");
+        // A disposed proof value is the options copy's fault, which it reports as a ProofGenerationException.
+        result.Problems.Should().ContainSingle().Which.Message.Should().Be(onTheProof
+            ? "Verification failed unexpectedly (ProofGenerationException)."
+            : "Verification failed unexpectedly (ObjectDisposedException).");
     }
 
     // Caller memory whose GetSpan runs the caller's code first. Lent does not call GetSpan, as Memory does.

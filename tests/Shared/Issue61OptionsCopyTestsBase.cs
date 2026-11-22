@@ -42,13 +42,20 @@ public abstract class Issue61OptionsCopyTestsBase
     /// </summary>
     protected virtual bool TakesTheOptionsContext => true;
 
+    /// <summary>
+    /// The suite over an RDF canonicalizer that runs <paramref name="during"/> before each canonicalization, as a
+    /// canonicalizer of the caller's may; <see langword="null"/> for a suite that takes none.
+    /// </summary>
+    protected virtual ICryptosuite? SuiteWhoseCanonicalizerRuns(Action during) => null;
+
     private PublicKeyMaterial PublicKey => PublicKeyMaterial.FromRaw(Signer.KeyType, Signer.PublicKey.Span);
 
     private static JsonElement Document() => HostileJson.Parse(HostileJson.BaseDocument);
 
     // No @context, so the proof configuration takes the options' own (the fallback the suites keep).
-    private static JsonElement ContextlessDocument() => HostileJson.Parse(
-        """{"@id": "urn:example:credential", "https://example.org/vocab#name": "Alice"}""");
+    private const string ContextlessJson = """{"@id": "urn:example:credential", "https://example.org/vocab#name": "Alice"}""";
+
+    private static JsonElement ContextlessDocument() => HostileJson.Parse(ContextlessJson);
 
     private const string FallbackContext = "[\"" + HostileJson.Context + "\",\"" + HostileJson.UndefinedTermsContext + "\"]";
 
@@ -644,23 +651,26 @@ public abstract class Issue61OptionsCopyTestsBase
         }
     }
 
-    public static TheoryData<string> RewritingProofCases() =>
-        ["a tampered document the proof repairs", "a signed document the proof tampers with"];
+    // (whether the document carries @context, whether the document as given is tampered with)
+    public static TheoryData<bool, bool> RewritingProofCases() => new()
+    {
+        { true, true }, { true, false }, { false, true }, { false, false },
+    };
 
     [Theory]
     [MemberData(nameof(RewritingProofCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
-    public async Task VerifyProof_IsAboutTheDocumentAsGiven_WhateverReadingTheProofDoes(string start)
+    public async Task VerifyProof_IsAboutTheDocumentAsGiven_WhateverReadingTheProofDoes(bool documentHasContext, bool tampered)
     {
         // Reading the proof's extension dictionary runs the caller's code, so the suite copies the document first: a
         // proof that rewrites the caller's buffer as it is read can neither make a tampered document verify nor a
-        // signed one fail (PR #62 review: a suite's own VerifyProof read the caller's document as given).
-        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
-        var buffer = Encoding.UTF8.GetBytes(HostileJson.BaseDocument);
-        var at = Array.LastIndexOf(buffer, (byte)'1');
-        var tampered = start.StartsWith("a tampered", StringComparison.Ordinal);
+        // signed one fail (PR #62 review: a suite's own VerifyProof read the caller's document as given). Without an
+        // @context, JCS reads the caller's document only after the proof (the adversarial pass's route).
+        var (buffer, at, original) = SignedBuffer(documentHasContext);
+        var signed = await Suite.CreateProofAsync(HostileJson.Parse(Encoding.UTF8.GetString(buffer)), NoteOptions(documentHasContext), Signer);
+        var other = (byte)(original + 1);
         if (tampered)
         {
-            buffer[at] = (byte)'2';
+            buffer[at] = other;
         }
 
         using var document = JsonDocument.Parse(buffer.AsMemory());
@@ -668,27 +678,50 @@ public abstract class Issue61OptionsCopyTestsBase
         {
             AdditionalProperties = new ScriptedDictionary(
                 [new(NoteName, signed.AdditionalProperties![NoteName])], count: 1,
-                onRead: () => buffer[at] = (byte)(tampered ? '1' : '2')),
+                onRead: () => buffer[at] = tampered ? original : other),
         };
 
         Suite.VerifyProof(document.RootElement, proof, PublicKey).Verified.Should().Be(!tampered);
     }
 
-    [Fact]
-    public async Task VerifyProof_ReadsTheProofOnce()
+    [Theory]
+    [MemberData(nameof(RewritingProofCases), MemberType = typeof(Issue61OptionsCopyTestsBase))]
+    public async Task VerifyProof_IsAboutTheDocumentAsGiven_WhateverTheCallersCanonicalizerDoes(bool documentHasContext, bool tampered)
     {
-        // Every check and the hash see the one copy taken of the proof (PR #62 review: the RDFC binding check read the
-        // caller's extension members again).
-        var signed = await Suite.CreateProofAsync(Document(), WithNote(), Signer);
-        var proof = signed with
+        // An RDF canonicalizer of the caller's runs during verification and is handed the suite's copy, so rewriting
+        // the caller's buffer cannot make a tampered document verify, nor a signed one fail (PR #62 review: no row
+        // covered this route, which gave the wrong verdict before). Suites that take no canonicalizer have no such route.
+        var (buffer, at, original) = SignedBuffer(documentHasContext);
+        var other = (byte)(original + 1);
+        var suite = SuiteWhoseCanonicalizerRuns(() => buffer[at] = tampered ? original : other);
+        if (suite is null)
         {
-            AdditionalProperties = new ScriptedDictionary(
-                [new(NoteName, signed.AdditionalProperties![NoteName])], count: 1,
-                later: [new(NoteName, HostileJson.Parse("\"changed\""))]),
-        };
+            return;
+        }
 
-        Suite.VerifyProof(Document(), proof, PublicKey).Verified.Should().BeTrue();
+        var signed = await Suite.CreateProofAsync(HostileJson.Parse(Encoding.UTF8.GetString(buffer)), NoteOptions(documentHasContext), Signer);
+        if (tampered)
+        {
+            buffer[at] = other;
+        }
+
+        using var document = JsonDocument.Parse(buffer.AsMemory());
+
+        suite.VerifyProof(document.RootElement, signed, PublicKey).Verified.Should().Be(!tampered);
     }
+
+    // The bytes of a document to sign, with the position of one character in it and that character.
+    private static (byte[] Buffer, int At, byte Original) SignedBuffer(bool withContext)
+    {
+        var buffer = Encoding.UTF8.GetBytes(withContext ? HostileJson.BaseDocument : ContextlessJson);
+        var at = Array.LastIndexOf(buffer, (byte)(withContext ? '1' : 'e'));
+        return (buffer, at, buffer[at]);
+    }
+
+    // Options with a note, and for a document without @context the fallback a suite that takes one needs.
+    private DataIntegrityProof NoteOptions(bool documentHasContext) => documentHasContext
+        ? WithNote()
+        : WithNote() with { Context = TakesTheOptionsContext ? HostileJson.Parse(FallbackContext) : null };
 
     [Fact]
     public async Task VerifyProof_TheResultHoldsTheProofAsVerified()
