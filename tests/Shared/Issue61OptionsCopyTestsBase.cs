@@ -631,15 +631,17 @@ public abstract class Issue61OptionsCopyTestsBase
     [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
     public async Task WhatTheCallersMemoryThrows_PropagatesUnchanged(bool throughThePipeline)
     {
-        // An ArgumentOutOfRangeException from the memory behind a document that was never disposed is the caller's,
-        // and not a dispose (PR #62 review: it was reported as "disposed").
-        var memory = new CallerMemory(HostileJson.BaseDocument);
-        var fault = new ArgumentOutOfRangeException("the caller's own");
-        memory.OnNextRead(_ => throw fault);
+        // An ArgumentOutOfRangeException or ObjectDisposedException from the memory behind a document that was never
+        // disposed is the caller's, and not a dispose (PR #62 review: each was reported as "disposed").
+        foreach (var fault in new Exception[] { new ArgumentOutOfRangeException("the caller's own"), new ObjectDisposedException("the caller's own") })
+        {
+            var memory = new CallerMemory(HostileJson.BaseDocument);
+            memory.OnNextRead(_ => throw fault);
 
-        var act = () => IssueAsync(memory.Document.RootElement, WithNote(), Signer, throughThePipeline);
+            var act = () => IssueAsync(memory.Document.RootElement, WithNote(), Signer, throughThePipeline);
 
-        (await act.Should().ThrowAsync<ArgumentOutOfRangeException>()).Which.Should().BeSameAs(fault);
+            (await act.Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(fault);
+        }
     }
 
     public static TheoryData<string> RewritingProofCases() =>

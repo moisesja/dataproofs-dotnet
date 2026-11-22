@@ -244,8 +244,9 @@ internal static class JsonInputCheck
         {
             return KindOf(element) == JsonValueKind.Undefined ? element : CloneUndisposed(element);
         }
-        catch (ObjectDisposedException ex)
+        catch (ObjectDisposedException ex) when (IsDisposed(element))
         {
+            // One thrown by the caller's memory behind an intact document is the caller's, and propagates unchanged.
             throw new ProofGenerationException(disposedMessage, ex);
         }
     }

@@ -206,15 +206,17 @@ public sealed class Issue61PipelineVerifyCopyTests
     [InlineData(true)]
     public async Task WhatTheCallersMemoryThrows_PropagatesUnchanged(bool withAResolver)
     {
-        // An ArgumentOutOfRangeException from the memory behind a document that was never disposed is the caller's
-        // (PR #62 review: it was reported as a dispose).
+        // An ArgumentOutOfRangeException or ObjectDisposedException from the memory behind a document that was never
+        // disposed is the caller's (PR #62 review: the first was reported as a dispose).
         var (pipeline, key, resolver, secured) = await SecuredAsync();
-        var memory = new CallerMemory(secured.GetRawText());
-        var fault = new ArgumentOutOfRangeException("the caller's own");
-        memory.OnNextRead(_ => throw fault);
+        foreach (var fault in new Exception[] { new ArgumentOutOfRangeException("the caller's own"), new ObjectDisposedException("the caller's own") })
+        {
+            var memory = new CallerMemory(secured.GetRawText());
+            memory.OnNextRead(_ => throw fault);
 
-        (await Verifying(pipeline, memory.Document.RootElement, key, resolver, withAResolver)
-            .Should().ThrowAsync<ArgumentOutOfRangeException>()).Which.Should().BeSameAs(fault);
+            (await Verifying(pipeline, memory.Document.RootElement, key, resolver, withAResolver)
+                .Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(fault);
+        }
     }
 
     private static async Task<(DataIntegrityProofPipeline Pipeline, PublicKeyMaterial Key, IVerificationMethodResolver Resolver, JsonElement Secured)> SecuredAsync()
