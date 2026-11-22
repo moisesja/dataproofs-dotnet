@@ -478,8 +478,8 @@ public abstract class Issue61OptionsCopyTestsBase
     [MemberData(nameof(DirectAndThroughThePipeline), MemberType = typeof(Issue61OptionsCopyTestsBase))]
     public async Task AnExtensionDictionaryThatRewritesTheCallersBuffer_CannotChangeTheDocument(bool throughThePipeline)
     {
-        // Reading the options' dictionary runs the caller's code, so the document is copied before it: the copy of the
-        // document runs none (PR #62 review: the dictionary ran first, and the proof was over the rewritten document).
+        // Reading the options' dictionary runs the caller's code, so the document is copied before it (PR #62 review:
+        // the dictionary ran first, and the proof was over the rewritten document).
         var buffer = Encoding.UTF8.GetBytes(HostileJson.BaseDocument);
         using var document = JsonDocument.Parse(buffer.AsMemory());
         var at = Array.LastIndexOf(buffer, (byte)'1');

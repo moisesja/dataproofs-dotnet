@@ -67,9 +67,8 @@ internal abstract class RdfcCryptosuite : ICryptosuite
         ArgumentNullException.ThrowIfNull(signer);
 
         // The proof is built from this document and these options after the signer is awaited (issue #61), so both
-        // are copied before anything reads them. The document comes first: copying it runs no code of the caller's,
-        // while reading the options' extension dictionary does, and that code must not change the document before it
-        // is copied (PR #62).
+        // are copied before anything reads them. The document comes first: reading the options' extension dictionary
+        // runs the caller's code, and that code must not change the document before it is copied (PR #62).
         unsecuredDocument = JsonInputCheck.Owned(unsecuredDocument, "The document to secure");
         proofOptions = JsonInputCheck.OwnedCopy(proofOptions);
 

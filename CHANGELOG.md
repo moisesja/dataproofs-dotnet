@@ -506,33 +506,55 @@ the end of this section.
   Every create entry point now copies the document before reading it, as it copies the options: the JCS, RDFC and
   legacy suites, both `bbs-2023` base-proof overloads, and `AddProofAsync`. It is copied before the options, because
   reading the options' extension dictionary runs the caller's code. `DeriveProof` copies the base document too.
-  `VerifyAsync` and `Verify` copy the
-  secured document too, because they verify each proof after its resolver is awaited. A document disposed before a
-  create call, or to `DeriveProof`, is now a `ProofGenerationException` ("The document to secure has been disposed.",
-  "The secured base document has been disposed."), as a disposed options value is. Verification is unchanged for such a document: it still throws `ObjectDisposedException`. The
-  JCS, RDFC and legacy suites also read `ISigner.KeyType` once, where they first read it before. They used to read it for the
-  support check, the hash and the signature encoding, and the RDFC suites read it between the proof-options binding
-  check and the hash. Emitted bytes do not change.
+  `VerifyAsync` copies the secured document too, because it verifies each proof after its resolver is awaited, and
+  `Verify` runs the same steps. A document disposed before a create call, or before `DeriveProof`, is now a
+  `ProofGenerationException` ("The document to secure has been disposed.", "The secured base document has been
+  disposed."), as a disposed options value is. Verification is unchanged for such a document: it still throws
+  `ObjectDisposedException`. The JCS, RDFC and legacy suites also read `ISigner.KeyType` once, where they first read
+  it before. They used to read it for the support check, the hash and the signature encoding, and the RDFC suites read
+  it between the proof-options binding check and the hash. Emitted bytes do not change.
+
+  **A document disposed while it is copied** (PR #62 review). Disposing a `JsonDocument` on one thread while another
+  passes it in is a caller bug, for example a `using` document handed to a task that is not awaited, or a cached
+  document evicted while a request uses it. `Dispose` returns the document's pooled buffers, and the next parse in
+  the process rents them. A copy in flight at that moment could therefore hold another document's bytes and still be
+  well formed. Because the copy is now the only read, everything after it would succeed, so `AddProofAsync` could
+  sign that other document. Before the copy existed, a later read of the disposed document failed the call instead.
+  Every copy, on creation and on verification, and of options values too, now reads the source again after the copy.
+  A document disposed meanwhile is refused: `ProofGenerationException` on creation, `ObjectDisposedException` on
+  verification. A read that races `Dispose` can find the document's metadata gone before the document reports itself
+  disposed, and throws `ArgumentOutOfRangeException`. That exception is reported as the disposal it is only when the
+  document is in fact disposed. One thrown by a caller's `MemoryManager<byte>` behind an intact document propagates
+  unchanged. The check relies on .NET 10's `JsonDocument.Dispose` dropping each buffer reference before it returns
+  the buffer to the pool. That order is the runtime's implementation, not a documented contract: it was measured, not
+  proven. In the reviewer's probe of this check, raced `AddProofAsync` calls that signed another document's content
+  fell from 134 per 150,000 to none in 450,000. 2.0.0 had the same exposure in a suite's own `CreateProofAsync` and in
+  `DataIntegrityProofPipeline.Verify`, and this closes it there too. A suite's own `VerifyProof`, which awaits
+  nothing, still reads the caller's document as given.
 - **JCS: proofs their own verifier refuses are no longer issued** (PR #62). Create Proof step 2 of
   `eddsa-jcs-2022` and `ecdsa-jcs-2019` copies the document's `@context` into the proof only when the document has
   one. Otherwise the proof kept the options' `@context`, and Verify Proof step 4.1 refuses a proof whose `@context`
   the document's does not start with. So the suites issued a proof they could never verify. They now throw
   `ProofGenerationException` instead, as the RDFC suites do for a proof their verifier would refuse. A document
   whose `@context` is JSON `null` is refused too. Its proof was signed with `"@context":null`, but a proof read
-  back from JSON has no `@context`, so neither the suite nor the pipeline verified it. Every other input gets the
-  same bytes. The legacy JCS variant is unaffected: it verifies its proofs for both shapes.
+  back from JSON has no `@context`, so it verified only until it was serialized. Every other input gets the
+  same bytes, an empty `@context` array included. The legacy JCS variant is unaffected: it verifies its proofs for both shapes.
 - **`bbs-2023`: caller values are read once around a caller's canonicalizer** (PR #62). In each case below, a
   canonicalizer passed to the constructor ran between two reads of a value the caller still held. Each fault
   failed closed:
   - `DeriveProof` used the selective pointers several times. `Concat(...).ToList()` handed the caller's collection
     the list's own array, which the reveal document was then selected with. The pointers are now copied once, by
-    enumeration, as the mandatory pointers are.
+    enumeration, as the mandatory pointers are. What the caller's collection throws while it is copied now
+    propagates unchanged, as for the options' dictionary: an `ArgumentException` from its enumerator used to be
+    reported as `ProofGenerationException` "A selective pointer is invalid."
   - `DeriveProof` read the presentation header for the BBS proof and again for the derived `proofValue`. It is now
     copied once, with the base document, before the pointers are read.
   - The raw-key `CreateBaseProofAsync` derived the public key before the canonicalizer ran and signed after it. So a
-    base proof could pack one key's public key with another key's signature. The key is now read once, first, into a
-    pinned copy that is cleared after use, and the NetCrypto key pair that derives the public key is disposed, which
-    clears its own copy of the key. The key-store overload needed no change: NetCrypto's
+    base proof could pack one key's public key with another key's signature. The key is now read once, right after
+    the document is copied, into a pinned copy that is cleared after use. The NetCrypto key pair that derives the
+    public key is disposed, which clears its own copy of the key. The copy takes at most 33 bytes, so a caller's oversized
+    buffer is no longer pinned whole. A key of the wrong length is still refused with the same message, and the inner
+    exception reports the length the caller gave. The key-store overload needed no change: NetCrypto's
     `StoredKeyInfo.PublicKey` returns a copy.
 
 ### Why this is a minor and not a major
@@ -557,8 +579,9 @@ was held to that. The owner added issue #44 to it on 2026-11-20, under the same 
 - *Emitted output does not change.* For input that 2.0.0 issued, the issuers emit the same bytes, and `x5c`
   appears only when the caller sets `JwsSigner.CertificateChain`.
   Two JCS inputs that 2.0.0 issued are now refused: options carrying `@context` over a document without one, and a
-  document whose `@context` is `null`. 2.0.0's own verifier refused every such proof, so no consumer could rely on
-  it. This release counts that as a fix.
+  document whose `@context` is `null`. 2.0.0's own verifier refused the first proof outright. It accepted the second
+  only until the proof was serialized and read back. So no consumer could rely on either. This release counts that as
+  a fix.
 - *`PreviousProofReference.Values` no longer hands out its backing array (issue #61).* Its declared type,
   `IReadOnlyList<string>`, is unchanged and never promised an array. Code that cast it to `string[]` or to another
   collection interface the array implements, such as `IList<string>`, still compiles but now throws
